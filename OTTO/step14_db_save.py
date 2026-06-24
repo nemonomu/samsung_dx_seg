@@ -1,7 +1,7 @@
 ﻿"""Step14: DB save dry-run for OTTO outputs."""
 from __future__ import annotations
 
-from step00_config import OUTPUT_ROOT, read_csv, read_json, write_json
+from step00_config import OUTPUT_ROOT, UNIQUE_KEY, read_csv, read_json, write_json
 
 FINAL_TARGETS = OUTPUT_ROOT / "otto_final_targets.csv"
 DETAIL_SUMMARY = OUTPUT_ROOT / "otto_detail_probe_summary.json"
@@ -20,16 +20,16 @@ def main() -> int:
         "planned_input_rows": len(final_rows),
         "planned_detail_available": bool(detail),
         "planned_compare_available": bool(compare),
-        "unique_key": "variation_id",
+        "unique_key": UNIQUE_KEY,
         "required_before_live_insert": [
             "confirm final DB table names",
             "confirm full field mapping from Deloitte workbook",
-            "validate review 20 collection source",
+            "replace sample detail/review/compare parser with final target batch collection",
             "run insert with transaction and row-count manifest",
         ],
     }
     write_json(MANIFEST_OUTPUT, manifest)
-    print(f"[step14] dry_run final_rows={len(final_rows)} manifest={MANIFEST_OUTPUT}")
+    print(f"[step14] dry_run final_rows={len(final_rows)} unique_key={UNIQUE_KEY} manifest={MANIFEST_OUTPUT}")
     return 0
 
 

@@ -1,4 +1,4 @@
-"""Step02: build final OTTO TV targets from listing positions."""
+﻿"""Step02: build final OTTO TV targets from listing positions."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -25,16 +25,23 @@ TV_POSITIVE_KEYWORDS = (
     "lcd tv",
 )
 
-NON_TV_EXCLUDE_KEYWORDS = (
+TV_PRODUCT_PATTERNS = (
+    r"\b(?:mini-led|lcd-led|dled|qled|oled|led|lcd)-fernseher\b",
+    r"\b(?:mini-led|lcd-led|dled|qled|oled|led|lcd) fernseher\b",
+    r"\b(?:oled|qled|led|lcd)-tv\b",
+)
+
+HARD_NON_TV_EXCLUDE_KEYWORDS = (
     "wandhalter",
     "halterung",
     "tv-schrank",
+    "fernsehschrank",
     "schrank",
     "lowboard",
-    "tv-st?nder",
+    "tv-st\u00e4nder",
     "tv staender",
     "tv-staender",
-    "st?nder",
+    "st\u00e4nder",
     "staender",
     "tv-board",
     "tv board",
@@ -48,11 +55,20 @@ NON_TV_EXCLUDE_KEYWORDS = (
     "receiver",
     "antenne",
     "kabel",
-    "fernbedienung",
-    "soundbar",
     "streaming-stick",
     "streaming stick",
+    "streaming-box",
+    "streaming box",
+    "ci+-modul",
 )
+
+ACCESSORY_EXCLUDE_KEYWORDS = (
+    "fernbedienung",
+    "soundbar",
+)
+
+NON_TV_EXCLUDE_KEYWORDS = HARD_NON_TV_EXCLUDE_KEYWORDS + ACCESSORY_EXCLUDE_KEYWORDS
+TV_PRODUCT_REGEXES = tuple(re.compile(pattern) for pattern in TV_PRODUCT_PATTERNS)
 
 
 def to_int(value):
@@ -71,14 +87,30 @@ def normalized_name(value: str | None) -> str | None:
     return cleaned.casefold() or None
 
 
+def has_tv_product_signature(key: str) -> bool:
+    return any(regex.search(key) for regex in TV_PRODUCT_REGEXES)
+
+
 def classify_tv_sku(row: dict) -> tuple[bool, str]:
     name = row.get("retailer_sku_name") or ""
     key = normalized_name(name)
     if not key:
         return False, "missing_retailer_sku_name"
-    exclude_hits = [term for term in NON_TV_EXCLUDE_KEYWORDS if term in key]
-    if exclude_hits:
-        return False, "exclude_keyword:" + ",".join(exclude_hits)
+
+    product_signature = has_tv_product_signature(key)
+    hard_exclude_hits = [term for term in HARD_NON_TV_EXCLUDE_KEYWORDS if term in key]
+    if hard_exclude_hits:
+        return False, "exclude_keyword:" + ",".join(hard_exclude_hits)
+
+    accessory_hits = [term for term in ACCESSORY_EXCLUDE_KEYWORDS if term in key]
+    if accessory_hits and not product_signature:
+        return False, "exclude_accessory_keyword:" + ",".join(accessory_hits)
+
+    if product_signature:
+        if accessory_hits:
+            return True, "tv_product_signature_with_accessory_bundle"
+        return True, "tv_product_signature"
+
     if any(term in key for term in TV_POSITIVE_KEYWORDS):
         return True, "tv_keyword"
     return False, "missing_tv_positive_keyword"
@@ -191,6 +223,7 @@ def main() -> int:
     sponsored_rows = [row for row in rows if is_sponsored(row)]
     tv_position_rows = [row for row in rows if classify_tv_sku(row)[0]]
     tv_name_keys = {normalized_name(row.get("retailer_sku_name")) for row in tv_position_rows if normalized_name(row.get("retailer_sku_name"))}
+    target_shortfall = max(0, MAIN_TARGET_UNIQUE - len(final_rows))
 
     write_csv(OUTPUT_CSV, final_rows)
     write_csv(EXCLUDED_OUTPUT_CSV, excluded_rows)
@@ -205,13 +238,21 @@ def main() -> int:
         "tv_unique_retailer_sku_names_available": len(tv_name_keys),
         "final_target_rows": len(final_rows),
         "main_target_unique": MAIN_TARGET_UNIQUE,
+        "main_target_shortfall": target_shortfall,
+        "main_target_shortfall_reason": (
+            f"Only {len(final_rows)} unique TV retailer_sku_name values were found inside the configured listing pages."
+            if target_shortfall
+            else None
+        ),
         "bsr_rank_limit": BSR_TARGET_RANK,
         "bsr_tagged_rows": sum(1 for row in final_rows if row.get("bsr_rank") not in (None, "")),
         "unique_key": UNIQUE_KEY,
         "rank_basis": "sequential_after_tv_filter_and_retailer_sku_name_dedupe",
-        "target_rule": "Collect listing positions through configured pages, exclude non-TV SKUs, dedupe by retailer_sku_name, then assign final target ranks 1..300 in listing order.",
-        "tv_filter_positive_keywords": TV_POSITIVE_KEYWORDS,
-        "non_tv_exclude_keywords": NON_TV_EXCLUDE_KEYWORDS,
+        "target_rule": "Collect configured listing pages, exclude non-TV SKUs, dedupe by retailer_sku_name, then assign final target ranks up to 1..300 in listing order.",
+        "tv_positive_keywords": TV_POSITIVE_KEYWORDS,
+        "tv_product_patterns": TV_PRODUCT_PATTERNS,
+        "hard_non_tv_exclude_keywords": HARD_NON_TV_EXCLUDE_KEYWORDS,
+        "accessory_exclude_keywords": ACCESSORY_EXCLUDE_KEYWORDS,
         "outputs": {
             "final_targets": str(OUTPUT_CSV),
             "excluded_non_tv_rows": str(EXCLUDED_OUTPUT_CSV),
@@ -221,7 +262,7 @@ def main() -> int:
     print(
         f"[step02] input_positions={len(rows)} tv_positions={len(tv_position_rows)} "
         f"excluded_non_tv={len(excluded_rows)} final_targets={len(final_rows)} "
-        f"bsr_tagged={manifest['bsr_tagged_rows']} output={OUTPUT_CSV}"
+        f"shortfall={target_shortfall} bsr_tagged={manifest['bsr_tagged_rows']} output={OUTPUT_CSV}"
     )
     return 0
 

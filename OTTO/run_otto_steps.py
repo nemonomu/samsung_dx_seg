@@ -1,4 +1,4 @@
-﻿"""Run the current OTTO captured-page pipeline."""
+﻿"""Run the current OTTO API listing plus sample detail pipeline."""
 from __future__ import annotations
 
 import subprocess
