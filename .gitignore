@@ -19,3 +19,6 @@ OTTO/references/har/document_body_extract_summary.json
 OTTO/references/har/extracted_document_bodies/*429*.html
 OTTO/references/har/sample_philips/detail_philips*.html
 OTTO/references/har/sample_philips/detail_philips*_summary.json
+
+# OTTO detail ZenRows structure probes
+OTTO/references/har/detail_zenrows*_structure_*/
