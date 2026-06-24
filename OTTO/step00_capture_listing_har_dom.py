@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--start-url", default=DEFAULT_START_URL)
     parser.add_argument("--pages", type=int, default=4)
-    parser.add_argument("--mode", choices=["click", "offset"], default="click")
+    parser.add_argument("--mode", choices=["click", "offset", "manual"], default="click")
     parser.add_argument("--page-param", default="o")
     parser.add_argument("--page-size", type=int, default=120)
     parser.add_argument("--no-fallback-offset", dest="fallback_offset", action="store_false")
@@ -587,6 +587,11 @@ def run_capture(args: argparse.Namespace) -> int:
                     requested_url = build_offset_url(args.start_url, page_index, args.page_param, args.page_size)
                     page_manifest["navigation"] = {"method": "offset", "requested_url": requested_url}
                     page.goto(requested_url, wait_until="domcontentloaded", timeout=args.timeout_ms)
+                elif args.mode == "manual":
+                    page_manifest["navigation"] = {
+                        "method": "manual",
+                        "url_before_operator": page.url,
+                    }
                 else:
                     click_result = click_next_page(page, args.timeout_ms, playwright_timeout)
                     if click_result["method"] == "click_failed" and args.fallback_offset:
@@ -599,11 +604,19 @@ def run_capture(args: argparse.Namespace) -> int:
                 consent_clicks = dismiss_consent(page)
                 ready = wait_for_page_ready(page, args.timeout_ms, args.settle_ms, playwright_timeout)
 
-                if (page_index == 1 and args.pause_first_page) or args.pause_each_page:
-                    print(
-                        f"[capture] page {page_index} is open. Resolve consent/blockers in the browser, then press Enter here."
-                    )
+                if args.mode == "manual" or (page_index == 1 and args.pause_first_page) or args.pause_each_page:
+                    if args.mode == "manual":
+                        print(
+                            f"[capture] Navigate the browser to the exact target listing page {page_index}, "
+                            "then press Enter here."
+                        )
+                    else:
+                        print(
+                            f"[capture] page {page_index} is open. Resolve consent/blockers in the browser, then press Enter here."
+                        )
                     input()
+                    if isinstance(page_manifest.get("navigation"), dict):
+                        page_manifest["navigation"]["url_after_operator"] = page.url
                     consent_clicks.extend(dismiss_consent(page))
                     ready = wait_for_page_ready(page, args.timeout_ms, args.settle_ms, playwright_timeout)
 
@@ -635,6 +648,13 @@ def run_capture(args: argparse.Namespace) -> int:
                     )
                 )
 
+            if context is not None:
+                try:
+                    context.close()
+                except Exception as exc:
+                    manifest["context_close_error"] = repr(exc)
+                finally:
+                    context = None
             manifest["completed"] = True
             return_code = 0
     except KeyboardInterrupt:
