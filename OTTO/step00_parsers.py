@@ -289,12 +289,83 @@ def extract_similar_product_names(soup: BeautifulSoup) -> str | None:
     return MULTI_VALUE_DELIMITER.join(names) if names else None
 
 
-def extract_summarized_review_content(soup: BeautifulSoup) -> str | None:
-    summary = soup.select_one(".js_pdp_cr-summary")
-    if not summary:
-        return None
-    return text_clean(summary.get_text(" ", strip=True))
+SUMMARY_REVIEW_HEADING_KEYS = {
+    "was unseren kunden gefiel",
+    "was du ausserdem wissen solltest",
+}
+SUMMARY_REVIEW_FOOTER_PATTERNS = (
+    "Aus Kundenrezensionen",
+    "durch KI zusammengefasst",
+)
 
+
+def summary_text_key(value: str | None) -> str:
+    normalized = text_clean(value) or ""
+    return normalized.rstrip(":").casefold().replace("\u00df", "ss")
+
+
+def is_summary_heading(value: str) -> bool:
+    return summary_text_key(value) in SUMMARY_REVIEW_HEADING_KEYS
+
+
+def is_summary_footer(value: str) -> bool:
+    normalized = text_clean(value) or ""
+    if normalized == "OTTO":
+        return True
+    return any(pattern.casefold() in normalized.casefold() for pattern in SUMMARY_REVIEW_FOOTER_PATTERNS)
+
+
+def summary_review_scope(soup: BeautifulSoup):
+    summary = soup.select_one(".js_pdp_cr-summary")
+    if summary and text_clean(summary.get_text(" ", strip=True)):
+        return summary
+
+    header_pattern = re.compile(r"Was unseren Kunden gefiel|Was du au(?:.|ss)erdem wissen solltest", re.I)
+    header_text = soup.find(string=header_pattern)
+    if not header_text:
+        return None
+
+    node = header_text.parent
+    for candidate in [node, *list(node.parents)]:
+        if not getattr(candidate, "get_text", None):
+            continue
+        text = text_clean(candidate.get_text(" ", strip=True)) or ""
+        if len(text) > 5000:
+            continue
+        key = summary_text_key(text)
+        has_positive = "was unseren kunden gefiel" in key
+        has_notice = "was du ausserdem wissen solltest" in key
+        if has_positive or has_notice:
+            return candidate
+    return node
+
+
+def clean_summary_review_item(value: str | None) -> str | None:
+    cleaned = text_clean(value)
+    if not cleaned:
+        return None
+    cleaned = re.sub(r"^Was unseren Kunden gefiel:?\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"^Was du au(?:.|ss)erdem wissen solltest:?\s*", "", cleaned, flags=re.I)
+    cleaned = text_clean(cleaned)
+    if not cleaned or is_summary_heading(cleaned) or is_summary_footer(cleaned):
+        return None
+    if len(cleaned) < 12:
+        return None
+    return cleaned
+
+
+def extract_summarized_review_content(soup: BeautifulSoup) -> str | None:
+    scope = summary_review_scope(soup)
+    if not scope:
+        return None
+
+    items: list[str] = []
+    for raw_text in scope.stripped_strings:
+        item = clean_summary_review_item(raw_text)
+        if item and item not in items:
+            items.append(item)
+
+    return MULTI_VALUE_DELIMITER.join(items) if items else None
 
 def parse_detail_reviews(soup: BeautifulSoup) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
