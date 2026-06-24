@@ -58,6 +58,13 @@ def decode_base64_url(value: str | None) -> str | None:
     return urljoin(OTTO_BASE, decoded)
 
 
+def ensure_variation_query(url: str | None, variation_id: str | None) -> str | None:
+    if not url or not variation_id or "variationId=" in url:
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}variationId={variation_id}"
+
+
 def first_decoded_link(tile) -> str | None:
     links = []
     for tag in tile.find_all(attrs={"base64-href": True}):
@@ -70,9 +77,45 @@ def first_decoded_link(tile) -> str | None:
     return links[0] if links else None
 
 
+def first_product_href(tile) -> str | None:
+    for tag in tile.find_all(href=True):
+        href = tag.get("href")
+        if href and "/p/" in href:
+            return urljoin(OTTO_BASE, href)
+    return None
+
+
+def first_product_url(tile) -> str | None:
+    variation_id = tile.get("data-variation-id")
+    decoded = first_decoded_link(tile)
+    if decoded and "/p/" in decoded:
+        return ensure_variation_query(decoded, variation_id)
+    return ensure_variation_query(first_product_href(tile), variation_id)
+
+
 def first_image_alt(tile) -> str | None:
     img = tile.find("img", alt=True)
     return text_clean(img.get("alt")) if img else None
+
+
+def first_listing_name(tile) -> str | None:
+    for tag in tile.find_all(href=True):
+        href = tag.get("href")
+        if not href or "/p/" not in href:
+            continue
+        title = text_clean(tag.get("title"))
+        if title:
+            return title
+        link_text = text_clean(tag.get_text(" ", strip=True))
+        if link_text:
+            return link_text
+    alt = first_image_alt(tile)
+    if alt:
+        return alt
+    text = text_clean(tile.get_text(" ", strip=True)) or ""
+    text = re.sub(r"^(Sehr beliebt|gesponsert|Gesponsert|Deal des Monats)\s+", "", text)
+    text = re.split(r"\s+Produktdatenblatt\b", text, maxsplit=1)[0]
+    return text_clean(text) if text else None
 
 
 def extract_price_texts(tile) -> dict[str, str | None]:
@@ -111,21 +154,56 @@ def extract_listing_labels(tile) -> dict[str, str | None]:
     }
 
 
+def listing_render_state(tile) -> str:
+    if tile.select_one(".reptile-tile-placeholder"):
+        return "placeholder_link_only"
+    if tile.select_one(".reptile-price") or tile.find("script", attrs={"type": "application/ld+json"}):
+        return "fully_loaded_card"
+    return "loaded_partial"
+
+
 def parse_listing_html(path: Path, source_name: str) -> list[dict[str, Any]]:
     soup = BeautifulSoup(path.read_text(encoding="utf-8", errors="replace"), "lxml")
+    target_section = soup.select_one("#reptile-search-result section.reptile-tile-list")
+    tile_scope = target_section or soup
+    listing_area = "#reptile-search-result section.reptile-tile-list" if target_section else "document_fallback"
     rows: list[dict[str, Any]] = []
-    for idx, tile in enumerate(soup.find_all("article", attrs={"data-qa": "reptile-product-tile"}), start=1):
+    organic_rank = 0
+    sponsored_rank = 0
+    tiles = tile_scope.find_all("article", attrs={"data-qa": "reptile-product-tile"})
+    for idx, tile in enumerate(tiles, start=1):
+        display_rank = int_or_none(tile.get("data-list-position")) or idx
+        exposure_type = "sponsored" if tile.get("data-origin") == "sponsored" else "organic"
+        render_state = listing_render_state(tile)
+        if exposure_type == "sponsored":
+            sponsored_rank += 1
+            row_organic_rank = None
+            row_sponsored_rank = sponsored_rank
+        else:
+            organic_rank += 1
+            row_organic_rank = organic_rank
+            row_sponsored_rank = None
         row: dict[str, Any] = {
             "source": source_name,
+            "listing_area": listing_area,
             "row_index": idx,
+            "display_rank": display_rank,
+            "organic_rank": row_organic_rank,
+            "sponsored_rank": row_sponsored_rank,
+            "target_rank": display_rank,
+            "exposure_type": exposure_type,
+            "render_state": render_state,
+            "is_fully_loaded_card": render_state == "fully_loaded_card",
+            "is_placeholder_card": render_state == "placeholder_link_only",
+            "is_listing_target": True,
             "article_number": tile.get("data-article-number"),
             "product_id": tile.get("data-product-id"),
             "variation_id": tile.get("data-variation-id"),
             "list_position": int_or_none(tile.get("data-list-position")),
             "local_list_position": int_or_none(tile.get("data-local-list-position")),
             "origin": tile.get("data-origin"),
-            "product_url": first_decoded_link(tile),
-            "retailer_sku_name": first_image_alt(tile),
+            "product_url": first_product_url(tile),
+            "retailer_sku_name": first_listing_name(tile),
         }
         row.update(extract_price_texts(tile))
         row.update(extract_listing_labels(tile))
@@ -211,6 +289,13 @@ def extract_similar_product_names(soup: BeautifulSoup) -> str | None:
     return MULTI_VALUE_DELIMITER.join(names) if names else None
 
 
+def extract_summarized_review_content(soup: BeautifulSoup) -> str | None:
+    summary = soup.select_one(".js_pdp_cr-summary")
+    if not summary:
+        return None
+    return text_clean(summary.get_text(" ", strip=True))
+
+
 def parse_detail_reviews(soup: BeautifulSoup) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
@@ -258,6 +343,7 @@ def parse_review_html(path: Path) -> dict[str, Any]:
         "review_rows": len(reviews),
         "review_text_rows": len(non_empty_reviews),
         "reviews": reviews,
+        "summarized_review_content": extract_summarized_review_content(soup),
         "detailed_review_content": format_detailed_review_content(reviews),
         "detailed_review_count": min(20, len(non_empty_reviews)),
         "recommendation_intent": extract_recommendation_intent(soup),
@@ -298,7 +384,7 @@ def parse_detail_html(path: Path) -> dict[str, Any]:
         "count_of_star_ratings": review_count,
         "count_of_reviews": review_count,
         "recommendation_intent": extract_recommendation_intent(soup),
-        "summarized_review_content": None,
+        "summarized_review_content": extract_summarized_review_content(soup),
         "detailed_review_content": detailed_reviews,
         "jsonld_name": product_jsonld.get("name") if isinstance(product_jsonld, dict) else None,
         "jsonld_sku": product_jsonld.get("sku") if isinstance(product_jsonld, dict) else None,

@@ -26,6 +26,14 @@ def main() -> int:
     review = parse_review_html(REVIEW_SAMPLE_HTML) if REVIEW_SAMPLE_HTML.exists() else {}
     compare = parse_compare_html(COMPARE_SAMPLE_HTML)
 
+    if review.get("summarized_review_content") and not detail.get("summarized_review_content"):
+        detail["summarized_review_content"] = review.get("summarized_review_content")
+        detail["summarized_review_source"] = "review_page"
+    elif detail.get("summarized_review_content"):
+        detail["summarized_review_source"] = "detail_page"
+    else:
+        detail["summarized_review_source"] = None
+
     if review.get("detailed_review_content"):
         detail["detailed_review_content"] = review.get("detailed_review_content")
         detail["detailed_review_count"] = review.get("detailed_review_count")
@@ -51,6 +59,8 @@ def main() -> int:
         "review_page_rows": review.get("review_rows"),
         "review_page_text_rows": review.get("review_text_rows"),
         "detailed_review_count": review.get("detailed_review_count"),
+        "summarized_review_present": bool(detail.get("summarized_review_content")),
+        "summarized_review_source": detail.get("summarized_review_source"),
         "delivery_availability": detail.get("delivery_availability"),
         "sku": detail.get("sku"),
         "screen_size": detail.get("screen_size"),

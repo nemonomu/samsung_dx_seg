@@ -67,6 +67,7 @@
   "jsonld_review_count": "299",
   "jsonld_price": "139.00",
   "jsonld_price_currency": "EUR",
+  "summarized_review_source": null,
   "detailed_review_count": 20,
   "review_page_rows": 30,
   "review_page_text_rows": 28,

@@ -10,6 +10,8 @@
   "review_page_rows": 30,
   "review_page_text_rows": 28,
   "detailed_review_count": 20,
+  "summarized_review_present": false,
+  "summarized_review_source": null,
   "delivery_availability": "Available - at your door the next working day",
   "sku": "32PHS6000/12",
   "screen_size": "32 \"",
