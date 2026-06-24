@@ -94,6 +94,37 @@ def truncate_text(value: str | None, limit: int = 10000) -> str | None:
     return value[:limit] + f"...[truncated {len(value) - limit} chars]"
 
 
+def safe_request_post_data(request: Any, limit: int = 10000, prefix: str = "post_data") -> dict[str, Any]:
+    """Read request body metadata without letting binary payloads break capture."""
+    result: dict[str, Any] = {prefix: None}
+    try:
+        result[prefix] = truncate_text(request.post_data, limit)
+        return result
+    except BaseException as exc:
+        result[f"{prefix}_error"] = repr(exc)
+
+    try:
+        body = request.post_data_buffer
+    except BaseException as exc:
+        result[f"{prefix}_buffer_error"] = repr(exc)
+        return result
+
+    if body is None:
+        return result
+    if not isinstance(body, bytes):
+        result[f"{prefix}_buffer_type"] = type(body).__name__
+        result[prefix] = truncate_text(str(body), limit)
+        return result
+
+    result[f"{prefix}_bytes"] = len(body)
+    result[f"{prefix}_sha1"] = hashlib.sha1(body).hexdigest()
+    result[f"{prefix}_decode"] = "utf-8-replace"
+    result[prefix] = body[:limit].decode("utf-8", errors="replace")
+    if len(body) > limit:
+        result[f"{prefix}_truncated_bytes"] = len(body) - limit
+    return result
+
+
 def build_offset_url(start_url: str, page_index: int, page_param: str, page_size: int) -> str:
     if page_index <= 1:
         return start_url
@@ -403,7 +434,7 @@ def save_xhr_body(
             pass
     try:
         body = response.body()
-    except Exception as exc:
+    except BaseException as exc:
         return {"body_saved": False, "body_error": repr(exc)}
     if len(body) > max_bytes:
         return {"body_saved": False, "body_bytes": len(body), "body_skip_reason": f"body>{max_bytes}"}
@@ -451,55 +482,85 @@ def run_capture(args: argparse.Namespace) -> int:
     body_sequence = {"value": 0}
 
     def on_request(request: Any) -> None:
-        rec = {
-            "ts": time.time(),
-            "event": "request",
-            "page_index": state.get("page_index"),
-            "method": request.method,
-            "url": request.url,
-            "resource_type": request.resource_type,
-            "post_data": truncate_text(request.post_data, 10000),
-        }
-        network_events.append(rec)
+        try:
+            rec = {
+                "ts": time.time(),
+                "event": "request",
+                "page_index": state.get("page_index"),
+                "method": request.method,
+                "url": request.url,
+                "resource_type": request.resource_type,
+            }
+            rec.update(safe_request_post_data(request, 10000, "post_data"))
+            network_events.append(rec)
+        except BaseException as exc:
+            network_events.append(
+                {
+                    "ts": time.time(),
+                    "event": "request_listener_error",
+                    "page_index": state.get("page_index"),
+                    "error": repr(exc),
+                }
+            )
 
     def on_response(response: Any) -> None:
-        request = response.request
-        rec = {
-            "ts": time.time(),
-            "event": "response",
-            "page_index": state.get("page_index"),
-            "method": request.method,
-            "url": response.url,
-            "resource_type": request.resource_type,
-            "status": response.status,
-            "content_type": response.headers.get("content-type"),
-            "from_service_worker": response.from_service_worker,
-            "request_post_data": truncate_text(request.post_data, 10000),
-        }
-        network_events.append(rec)
-        if request.resource_type in {"xhr", "fetch"}:
-            body_sequence["value"] += 1
-            rec.update(
-                save_xhr_body(
-                    response=response,
-                    output_dir=output_dir,
-                    xhr_body_dir=xhr_body_dir,
-                    page_index=state.get("page_index"),
-                    sequence=body_sequence["value"],
-                    max_bytes=args.save_xhr_body_max_bytes,
+        try:
+            request = response.request
+            rec = {
+                "ts": time.time(),
+                "event": "response",
+                "page_index": state.get("page_index"),
+                "method": request.method,
+                "url": response.url,
+                "resource_type": request.resource_type,
+                "status": response.status,
+                "content_type": response.headers.get("content-type"),
+                "from_service_worker": response.from_service_worker,
+            }
+            rec.update(safe_request_post_data(request, 10000, "request_post_data"))
+            network_events.append(rec)
+            if request.resource_type in {"xhr", "fetch"}:
+                body_sequence["value"] += 1
+                rec.update(
+                    save_xhr_body(
+                        response=response,
+                        output_dir=output_dir,
+                        xhr_body_dir=xhr_body_dir,
+                        page_index=state.get("page_index"),
+                        sequence=body_sequence["value"],
+                        max_bytes=args.save_xhr_body_max_bytes,
+                    )
                 )
+                xhr_fetch_events.append(rec)
+        except BaseException as exc:
+            network_events.append(
+                {
+                    "ts": time.time(),
+                    "event": "response_listener_error",
+                    "page_index": state.get("page_index"),
+                    "error": repr(exc),
+                }
             )
-            xhr_fetch_events.append(rec)
 
     def on_console(message: Any) -> None:
-        console_events.append(
-            {
-                "ts": time.time(),
-                "page_index": state.get("page_index"),
-                "type": message.type,
-                "text": truncate_text(message.text, 2000),
-            }
-        )
+        try:
+            console_events.append(
+                {
+                    "ts": time.time(),
+                    "page_index": state.get("page_index"),
+                    "type": message.type,
+                    "text": truncate_text(message.text, 2000),
+                }
+            )
+        except BaseException as exc:
+            console_events.append(
+                {
+                    "ts": time.time(),
+                    "page_index": state.get("page_index"),
+                    "type": "listener_error",
+                    "text": repr(exc),
+                }
+            )
 
     context = None
     try:
