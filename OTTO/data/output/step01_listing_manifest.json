@@ -1,0 +1,455 @@
+{
+  "run_type": "step01_listing",
+  "source_url": "https://www.otto.de/suche/fernseher/?sortiertnach=topseller",
+  "canonical_html": "C:\\samsung_dx_seg\\OTTO\\references\\har\\listing_bsr_o120.html",
+  "canonical_rows": 120,
+  "canonical_unique_variation_ids": 109,
+  "bsr_rank_rule": "main and bsr both use the same Topseller exposure order from Deloitte workbook.",
+  "top_rank_stats": {
+    "raw_rank_rows": 100,
+    "unique_variation_ids": 89,
+    "duplicate_variation_ids": {
+      "1844694670": 2,
+      "1975567464": 2,
+      "1975567591": 2,
+      "1975567647": 2,
+      "1975567811": 2,
+      "1975567880": 2,
+      "1975567931": 2,
+      "1975568021": 2,
+      "1975568030": 2,
+      "1995107348": 2,
+      "2037941360": 2
+    },
+    "sponsored_duplicate_variation_ids": {
+      "1844694670": 1,
+      "1975567464": 1,
+      "1975567591": 1,
+      "1975567647": 1,
+      "1975567811": 1,
+      "1975567880": 1,
+      "1975567931": 1,
+      "1975568021": 1,
+      "1975568030": 1,
+      "1995107348": 1,
+      "2037941360": 1
+    }
+  },
+  "capture_drift": {
+    "same_rank_count": 42,
+    "mismatch_count": 58,
+    "mismatches": [
+      {
+        "rank": 16,
+        "main_variation_id": "1975567464",
+        "bsr_variation_id": "1975568030",
+        "main_name": "Samsung GU65U8079FU LED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)",
+        "bsr_name": "Samsung GU43U7099FU LED-Fernseher (108 cm/43 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)"
+      },
+      {
+        "rank": 19,
+        "main_variation_id": null,
+        "bsr_variation_id": "1980401030",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 20,
+        "main_variation_id": "1980401030",
+        "bsr_variation_id": "2082949651",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 21,
+        "main_variation_id": "2082949651",
+        "bsr_variation_id": "2087551468",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 22,
+        "main_variation_id": "2087551468",
+        "bsr_variation_id": "1975567836",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 23,
+        "main_variation_id": "1975567836",
+        "bsr_variation_id": "1975567647",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 24,
+        "main_variation_id": "1975567647",
+        "bsr_variation_id": "1975567931",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 25,
+        "main_variation_id": "1975567931",
+        "bsr_variation_id": "S0IFT07GF08J",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 26,
+        "main_variation_id": "S0IFT07GF08J",
+        "bsr_variation_id": "2093626032",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 27,
+        "main_variation_id": "2093626032",
+        "bsr_variation_id": "1975567931",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 28,
+        "main_variation_id": "1975567931",
+        "bsr_variation_id": "S06ED0PF6AY2",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 29,
+        "main_variation_id": "S06ED0PF6AY2",
+        "bsr_variation_id": "1970617923",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 30,
+        "main_variation_id": "1970617923",
+        "bsr_variation_id": "1975567591",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 31,
+        "main_variation_id": "1975567591",
+        "bsr_variation_id": "1980401075",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 32,
+        "main_variation_id": "1980401075",
+        "bsr_variation_id": "1975567464",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 33,
+        "main_variation_id": "1975568030",
+        "bsr_variation_id": "1975567878",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 34,
+        "main_variation_id": "1975567878",
+        "bsr_variation_id": "S01H00Y49LOC",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 35,
+        "main_variation_id": "S01H00Y49LOC",
+        "bsr_variation_id": "2022351560",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 36,
+        "main_variation_id": "2022351560",
+        "bsr_variation_id": "2087551477",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 37,
+        "main_variation_id": "2087551477",
+        "bsr_variation_id": "1955108338",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 38,
+        "main_variation_id": "1955108338",
+        "bsr_variation_id": "S07AU0B55ENF",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 40,
+        "main_variation_id": "2024627864",
+        "bsr_variation_id": "1975567880",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 41,
+        "main_variation_id": "1832845862",
+        "bsr_variation_id": "2024627864",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 48,
+        "main_variation_id": "2077443308",
+        "bsr_variation_id": "1975567811",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 49,
+        "main_variation_id": "1975567647",
+        "bsr_variation_id": "2077443308",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 56,
+        "main_variation_id": "S0IFT0797TWX",
+        "bsr_variation_id": "1844694670",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 57,
+        "main_variation_id": "1975567880",
+        "bsr_variation_id": "S0IFT0797TWX",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 64,
+        "main_variation_id": "1968874108",
+        "bsr_variation_id": "1975568021",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 65,
+        "main_variation_id": "1975567836",
+        "bsr_variation_id": "1968874108",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 72,
+        "main_variation_id": "1975567707",
+        "bsr_variation_id": "1975567647",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 73,
+        "main_variation_id": "1975568021",
+        "bsr_variation_id": "1975567707",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 74,
+        "main_variation_id": "2042293621",
+        "bsr_variation_id": "S0H9U0651NQK",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 75,
+        "main_variation_id": "S03ED0HNXKCH",
+        "bsr_variation_id": "2042293621",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 76,
+        "main_variation_id": "1968873879",
+        "bsr_variation_id": "S03ED0HNXKCH",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 77,
+        "main_variation_id": "1962381541",
+        "bsr_variation_id": "1968873879",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 78,
+        "main_variation_id": "S0DH50TVXQM5",
+        "bsr_variation_id": "2033481051",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 79,
+        "main_variation_id": "S0UFK0PDUGC6",
+        "bsr_variation_id": "1962381541",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 80,
+        "main_variation_id": "S0TFK0DD94ZX",
+        "bsr_variation_id": "S0DH50TVXQM5",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 81,
+        "main_variation_id": "2082949642",
+        "bsr_variation_id": "S0UFK0PDUGC6",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 82,
+        "main_variation_id": "1955807872",
+        "bsr_variation_id": "S0TFK0DD94ZX",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 83,
+        "main_variation_id": "1975567720",
+        "bsr_variation_id": "2082949642",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 84,
+        "main_variation_id": "1955807842",
+        "bsr_variation_id": "1955807872",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 85,
+        "main_variation_id": "1980401147",
+        "bsr_variation_id": "1975567720",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 86,
+        "main_variation_id": "1975568021",
+        "bsr_variation_id": "1955807842",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 87,
+        "main_variation_id": "1970617938",
+        "bsr_variation_id": "1980401147",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 88,
+        "main_variation_id": "1975567828",
+        "bsr_variation_id": "1975568021",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 89,
+        "main_variation_id": "S0KH50THBP33",
+        "bsr_variation_id": "1970617938",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 90,
+        "main_variation_id": "2037941369",
+        "bsr_variation_id": "1975567828",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 91,
+        "main_variation_id": "S0PFU03G6BCE",
+        "bsr_variation_id": "S0KH50THBP33",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 92,
+        "main_variation_id": "2040419136",
+        "bsr_variation_id": "2037941369",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 93,
+        "main_variation_id": "S0WEP0S4A7KV",
+        "bsr_variation_id": "2040419136",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 94,
+        "main_variation_id": "2007673884",
+        "bsr_variation_id": "S0WEP0S4A7KV",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 95,
+        "main_variation_id": "1832845844",
+        "bsr_variation_id": "2007673884",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 96,
+        "main_variation_id": "1970618117",
+        "bsr_variation_id": "1832845844",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 97,
+        "main_variation_id": "S0RGN07SVXKG",
+        "bsr_variation_id": "1970618117",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 98,
+        "main_variation_id": "1832845898",
+        "bsr_variation_id": "S0RGN07SVXKG",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 99,
+        "main_variation_id": "2093626014",
+        "bsr_variation_id": "1832845898",
+        "main_name": null,
+        "bsr_name": null
+      },
+      {
+        "rank": 100,
+        "main_variation_id": "2007673875",
+        "bsr_variation_id": "2093626014",
+        "main_name": null,
+        "bsr_name": null
+      }
+    ]
+  },
+  "outputs": {
+    "listing_rows": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_listing_topseller_rows.csv",
+    "main_capture_rows": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_listing_main_capture_rows.csv",
+    "bsr_capture_rows": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_listing_bsr_capture_rows.csv"
+  }
+}

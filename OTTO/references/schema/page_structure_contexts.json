@@ -1,0 +1,30 @@
+{
+  "mediamarkt_product_sample.html": [
+    {
+      "term": "Bestseller",
+      "context": "n: Unsere Deals zum Spiel³\nTV & Audio\nFernseher\nLED & LCD Fernseher\nPreisheld\nGratis Standard-Lieferung\n0% Finanzierung\nBestseller\nSAMSUNG\n|\nArt.-Nr. 2988691\nSAMSUNG GQ55Q7F QLED TV Vision AI Smart TV (Flat, 55 Zoll / 138 cm, UHD 4K, SMART TV)\nSAMSUNG\n|\nArt.-Nr. 2988691\n|\n4.7\n|\n(613 Bewertungen)\nProduktdatenblatt\n-55%\nUVP\n899,– €\n899,00€\n399,\n–\n€\n399,00€\ninkl. MwSt. versandkost"
+    },
+    {
+      "term": "Energieverbrauch",
+      "context": "t TV, Premium Solar Smart Remote\nPackmaße (BxHxT) (cm)\n1369 mm / 819 mm / 127 mm\nHersteller Artikelnummer\nGQ55Q7FAAUXZG\nEnergieverbrauchsangaben (EU 2017/1369)\nModelkennung\nGQ55Q7FAAU\nEnergieeffizienzklasse (EU 2017/1369)\nG\nEU Energy Efficiency Scale (EU 2017/1369)\nA-G\nLeistungsaufnahme in Ein-Zustand (SDR)\n79 Watt\nEnergieverbrauch im Ein-Zustand in kWh pro 1 000 h bei der Wied"
+    },
+    {
+      "term": "kWh",
+      "context": "y Efficiency Scale (EU 2017/1369)\nA-G\nLeistungsaufnahme in Ein-Zustand (SDR)\n79 Watt\nEnergieverbrauch im Ein-Zustand in kWh pro 1 000 h bei der Wiedergabe von SDR-Inhalten\n79 kWh\nEnergieeffizienzklasse (HDR)\nG\nLeistungsaufnahme in Ein-Zustand (HDR)\n118 Watt\nEnergieverbrauch im Ein-Zustand in kWh pro 1 000 h bei der Wiedergabe von HDR-Inhalten\n118 kWh\nLeistungsaufnahme in Bereit"
+    },
+    {
+      "term": "Bewertungen",
+      "context": "G GQ55Q7F QLED TV Vision AI Smart TV (Flat, 55 Zoll / 138 cm, UHD 4K, SMART TV)\nSAMSUNG\n|\nArt.-Nr. 2988691\n|\n4.7\n|\n(613 Bewertungen)\nProduktdatenblatt\n-55%\nUVP\n899,– €\n899,00€\n399,\n–\n€\n399,00€\ninkl. MwSt. versandkostenfrei\nFinanzierung\neff. Zins p.a. 10.90%**\n12 mtl. Raten\n35,15 € monatlich\nGesamtbetrag: 421,80 €\n**Zum Ratenrechner & rechtl. Hinweise\nVergleichen\nZum Vergleich\nB"
+    }
+  ],
+  "amazon_de_product_sample.html": [
+    {
+      "term": "Best Sellers Rank",
+      "context": "video content, gaming\nManufacturer\nHisense\nManufacturer Part Number\n43E6NT\nCountry of Origin\nChina\nUnit Count\n1.0 count\nBest Sellers Rank\n204 in Electronics & Photo (\nSee Top 100 in Electronics & Photo\n)\n4 in\nTVs\nASIN\nB0CZWNDNXW\nCustomer Reviews\n4.4\n4.4 out of 5 stars\n(4,332)\n4.4 out of 5 stars\nConnectivity\nNetwork Connectivity Technology\nEthernet, HDMI\nInternet Applications\nAp"
+    },
+    {
+      "term": "Customer Reviews",
+      "context": "\n1.0 count\nBest Sellers Rank\n204 in Electronics & Photo (\nSee Top 100 in Electronics & Photo\n)\n4 in\nTVs\nASIN\nB0CZWNDNXW\nCustomer Reviews\n4.4\n4.4 out of 5 stars\n(4,332)\n4.4 out of 5 stars\nConnectivity\nNetwork Connectivity Technology\nEthernet, HDMI\nInternet Applications\nApple TV, Disney Plus, Netflix, Prime Video, YouTube\nAudio Input\nBluetooth, HDMI, RCA, 3.5 mm auxiliary, optica"
+    }
+  ]
+}

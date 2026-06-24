@@ -1,0 +1,15 @@
+OTTO SEG TV crawler report
+
+Listing rows: 120
+Listing unique variation_ids: 109
+Top 100 unique variation_ids: 89
+Final targets: 109
+BSR tagged rows: 89
+Detail top reviews from PDP HTML: 3
+Compare variation ids in sample: 2
+DB save dry-run: True
+
+Known gaps:
+- Need live Topseller pagination/scroll capture until 300 unique variation_ids.
+- Need review page or interaction HAR to collect up to 20 reviews per SKU.
+- Need final DB field mapping before live insert.

@@ -1,0 +1,11 @@
+{
+  "run_type": "step02_final_targets",
+  "input_rows": 120,
+  "output_rows": 109,
+  "main_target_unique": 300,
+  "bsr_rank_limit": 100,
+  "bsr_tagged_rows": 89,
+  "unique_key": "variation_id",
+  "rank_rule": "main_rank and bsr_rank are from the same Topseller order; bsr_rank is populated only for raw ranks 1..100 before SKU dedupe.",
+  "output_csv": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_final_targets.csv"
+}

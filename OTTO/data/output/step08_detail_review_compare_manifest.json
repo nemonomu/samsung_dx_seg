@@ -1,0 +1,28 @@
+{
+  "run_type": "step08_detail_review_compare",
+  "detail_html": "C:\\samsung_dx_seg\\OTTO\\references\\detail.html",
+  "next_detail_sample_url": "https://www.otto.de/p/philips-32phs6000-12-led-fernseher-80-cm-32-zoll-hd-ready-smart-tv-pixel-plus-hd-hdr10-hlg-dolby-audio-vocal-boost-C2000548368/",
+  "next_review_sample_url": "https://www.otto.de/kundenbewertungen/C2000548368/",
+  "review_html": "C:\\samsung_dx_seg\\OTTO\\references\\har\\sample_philips\\review_philips.html",
+  "compare_html": "C:\\samsung_dx_seg\\OTTO\\references\\har\\compare_sample.html",
+  "detail_jsonld_count": 2,
+  "detail_top_review_rows": 3,
+  "review_page_rows": 30,
+  "review_page_text_rows": 28,
+  "detailed_review_count": 20,
+  "delivery_availability": "Available - at your door the next working day",
+  "sku": "32PHS6000/12",
+  "screen_size": "32 \"",
+  "estimated_annual_electricity_use": "36 W",
+  "count_of_star_ratings": "299",
+  "count_of_reviews": "299",
+  "compare_variation_id_count": 2,
+  "known_gap": null,
+  "outputs": {
+    "detail_summary": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_detail_probe_summary.json",
+    "detail_top_reviews": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_detail_top_reviews.csv",
+    "review_summary": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_review_probe_summary.json",
+    "review_rows": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_review_rows.csv",
+    "compare_summary": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_compare_probe_summary.json"
+  }
+}

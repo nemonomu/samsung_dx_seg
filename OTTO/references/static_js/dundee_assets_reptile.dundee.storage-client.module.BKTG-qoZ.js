@@ -1,0 +1,1 @@
+export*from"https://static.otto.de/assets-static/global-resources/exports/storage.js?v=4.2.0";

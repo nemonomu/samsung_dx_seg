@@ -1,0 +1,15 @@
+{
+  "run_type": "step14_db_save_dry_run",
+  "dry_run": true,
+  "reason": "DB connection and target table contract are not configured yet.",
+  "planned_input_rows": 109,
+  "planned_detail_available": true,
+  "planned_compare_available": true,
+  "unique_key": "variation_id",
+  "required_before_live_insert": [
+    "confirm final DB table names",
+    "confirm full field mapping from Deloitte workbook",
+    "validate review 20 collection source",
+    "run insert with transaction and row-count manifest"
+  ]
+}

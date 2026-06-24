@@ -1,0 +1,114 @@
+[
+  {
+    "url": "https://static.otto.de/apps-assets/assets/apps.apps-assets.haptic-feedback.module.B4B28BYn.js",
+    "status": 200,
+    "bytes": 498,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\apps-assets_assets_apps.apps-assets.haptic-feedback.module.B4B28BYn.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.TileList.module.AKaBFZe3.js",
+    "status": 200,
+    "bytes": 223223,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.TileList.module.AKaBFZe3.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.TileListPageError.module.q8QTDnYw.js",
+    "status": 200,
+    "bytes": 893,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.TileListPageError.module.q8QTDnYw.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.client-entry.module.3WBd4k_d.js",
+    "status": 200,
+    "bytes": 999,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.client-entry.module.3WBd4k_d.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.debug-client.module.BX1HGZBa.js",
+    "status": 200,
+    "bytes": 720,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.debug-client.module.BX1HGZBa.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.disclose-version.module.mnYOexRF.js",
+    "status": 200,
+    "bytes": 61132,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.disclose-version.module.mnYOexRF.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.index-client.module.B5CzW3fC.js",
+    "status": 200,
+    "bytes": 209,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.index-client.module.B5CzW3fC.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.page.module.CL8u6Szo.js",
+    "status": 200,
+    "bytes": 26519,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.page.module.CL8u6Szo.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.preload-helper.module.BV5snTOS.js",
+    "status": 200,
+    "bytes": 1382,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.preload-helper.module.BV5snTOS.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.resolve.module.DAK54234.js",
+    "status": 200,
+    "bytes": 9842,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.resolve.module.DAK54234.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/dundee/assets/reptile.dundee.storage-client.module.BKTG-qoZ.js",
+    "status": 200,
+    "bytes": 94,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\dundee_assets_reptile.dundee.storage-client.module.BKTG-qoZ.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://static.otto.de/product-assets/product-comparison-api-27YBFZDP.js",
+    "status": 200,
+    "bytes": 11751,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\product-assets_product-comparison-api-27YBFZDP.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://www.otto.de/static-proxy/dolittle/reptile.feedback.feedback.module.Dhs5zSzK.js",
+    "status": 403,
+    "bytes": 254,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\static-proxy_dolittle_reptile.feedback.feedback.module.Dhs5zSzK.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://www.otto.de/static-proxy/turtle/reptile.turtle.body-js.module.B7_NeaKB.js",
+    "status": 403,
+    "bytes": 254,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\static-proxy_turtle_reptile.turtle.body-js.module.B7_NeaKB.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://www.otto.de/static-proxy/turtle/reptile.turtle.dom-client.module.Dl8zL94A.js",
+    "status": 403,
+    "bytes": 253,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\static-proxy_turtle_reptile.turtle.dom-client.module.Dl8zL94A.js",
+    "endpoint_hits": []
+  },
+  {
+    "url": "https://www.otto.de/static-proxy/turtle/reptile.turtle.head-js.module.CuU0bd70.js",
+    "status": 403,
+    "bytes": 253,
+    "path": "C:\\samsung_dx_seg\\artifacts\\otto_static_js\\static-proxy_turtle_reptile.turtle.head-js.module.CuU0bd70.js",
+    "endpoint_hits": []
+  }
+]

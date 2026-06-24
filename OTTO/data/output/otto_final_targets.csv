@@ -1,0 +1,110 @@
+﻿source,row_index,article_number,product_id,variation_id,list_position,local_list_position,origin,product_url,retailer_sku_name,final_sku_price,original_sku_price,savings,final_sku_price_text,original_sku_price_text,savings_text,sku_popularity_raw,sku_popularity,sku_status_raw,sku_status,discount_type_raw,discount_type,main_rank,bsr_rank,selection_source
+topseller,1,75363068,2037941359,2037941360,1,1,sponsored,https://www.otto.de/p/samsung-gq65q6faau-qled-fernseher-163-cm-65-zoll-4k-ultra-hd-smart-tv-2037941359/?variationId=2037941360,"Samsung GQ65Q6FAAU QLED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV)","579,00 €","1.049,00 €",-45%,"579,00 €","1.049,00 €",-45%,Sehr beliebt,Very popular,Gesponsert,Sponsored,,,1,1,topseller_main_bsr
+topseller,2,78592729,1975567586,1975567591,2,2,sponsored,https://www.otto.de/p/samsung-gq65qn70fau-qled-fernseher-163-cm-65-zoll-4k-ultra-hd-smart-tv-neo-quantum-hdr-4k-ai-upscaling-gaming-hub-motion-xcelerator-144hz-1975567586/?variationId=1975567591,"Samsung GQ65QN70FAU QLED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, Neo Quantum HDR, 4K AI Upscaling, Gaming Hub, Motion Xcelerator 144Hz)","777,00 €","1.499,00 €",-48%,"777,00 €","1.499,00 €",-48%,Sehr beliebt,Very popular,Gesponsert,Sponsored,,,2,2,topseller_main_bsr
+topseller,3,56104054,C2000548368,2000548369,3,3,,https://www.otto.de/p/philips-32phs6000-12-led-fernseher-80-cm-32-zoll-hd-ready-smart-tv-pixel-plus-hd-hdr10-hlg-dolby-audio-vocal-boost-C2000548368/?variationId=2000548369,"Philips 32PHS6000/12 LED-Fernseher (80 cm/32 Zoll, HD ready, Smart-TV, Pixel Plus HD, HDR10 & HLG, Dolby Audio & Vocal Boost)","139,00 €","299,00 €",-54%,"139,00 €","299,00 €",-54%,Sehr beliebt,Very popular,,,,,3,3,topseller_main_bsr
+topseller,4,94362409,1975568002,1975568003,4,4,,https://www.otto.de/p/samsung-gu65u7099fu-led-fernseher-163-cm-65-zoll-4k-ultra-hd-smart-tv-crystal-uhd-q-symphony-dolby-surround-sound-triple-tuner-smart-hub-1975568002/?variationId=1975568003,"Samsung GU65U7099FU LED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)","439,99 €","899,00 €",-51%,"439,99 €","899,00 €",-51%,Sehr beliebt,Very popular,,,,,4,4,topseller_main_bsr
+topseller,5,10666503,1995107347,1995107348,5,5,,https://www.otto.de/p/samsung-gq55q6faau-qled-fernseher-138-cm-55-zoll-4k-ultra-hd-smart-tv-1995107347/?variationId=1995107348,"Samsung GQ55Q6FAAU QLED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV)","399,00 €","849,00 €",-53%,"399,00 €","849,00 €",-53%,Sehr beliebt,Very popular,,,,,5,5,topseller_main_bsr
+topseller,6,45966249,1975568029,1975568030,6,6,,https://www.otto.de/p/samsung-gu43u7099fu-led-fernseher-108-cm-43-zoll-4k-ultra-hd-smart-tv-crystal-uhd-q-symphony-dolby-surround-sound-triple-tuner-smart-hub-1975568029/?variationId=1975568030,"Samsung GU43U7099FU LED-Fernseher (108 cm/43 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)","269,00 €","499,00 €",-46%,"269,00 €","499,00 €",-46%,Sehr beliebt,Very popular,,,,,6,6,topseller_main_bsr
+topseller,7,41615311,2022351586,2022351587,7,7,,https://www.otto.de/p/philips-43pfs5500-12-led-fernseher-108-cm-43-zoll-full-hd-non-smart-pixel-plus-hd-dolby-audio-triple-tuner-2022351586/?variationId=2022351587,"Philips 43PFS5500/12 LED-Fernseher (108 cm/43 Zoll, Full HD, Non-Smart, Pixel Plus HD, Dolby Audio, Triple Tuner)","199,00 €","429,00 €",-54%,"199,00 €","429,00 €",-54%,Sehr beliebt,Very popular,,,,,7,7,topseller_main_bsr
+topseller,9,S00FF0SA,S00FF0SA,S00FF0SAMTZB,9,9,,https://www.otto.de/p/hisense-hisense-136mxq-mini-led-fernseher-345-cm-S00FF0SA/?variationId=S00FF0SAMTZB,Hisense HISENSE 136MXQ Mini-LED-Fernseher (345 cm),"129.000,00 €","3.745,22 €",,"129.000,00 €","3.745,22 €",,,,,,,,9,9,topseller_main_bsr
+topseller,10,40516132,C1980401110,1980401111,10,10,,https://www.otto.de/p/philips-50pus7000-12-led-fernseher-126-cm-50-zoll-4k-ultra-hd-smart-tv-pixel-precise-uhd-hdr10plus-dolby-atmos-dts-x-sound-gaming-C1980401110/?variationId=1980401111,"Philips 50PUS7000/12 LED-Fernseher (126 cm/50 Zoll, 4K Ultra HD, Smart-TV, Pixel Precise UHD, HDR10+, Dolby Atmos & DTS:X Sound, Gaming)","299,00 €","549,00 €",-46%,"299,00 €","549,00 €",-46%,Sehr beliebt,Very popular,,,,,10,10,topseller_main_bsr
+topseller,11,40598822,1975567879,1975567880,11,11,,https://www.otto.de/p/samsung-gu55u7099fu-led-fernseher-139-cm-55-zoll-4k-ultra-hd-smart-tv-crystal-uhd-q-symphony-dolby-surround-sound-triple-tuner-smart-hub-1975567879/?variationId=1975567880,"Samsung GU55U7099FU LED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)","359,00 €","699,00 €",-49%,"359,00 €","699,00 €",-49%,Sehr beliebt,Very popular,,,,,11,11,topseller_main_bsr
+topseller,12,94017841,C1842439031,1842439032,12,12,,https://www.otto.de/p/hisense-58e6nt-dled-fernseher-146-00-cm-58-zoll-vidaa-u7-6-game-mode-plus-uhd-ai-upscaler-sprachassistenten-C1842439031/?variationId=1842439032,"Hisense 58E6NT LED-Fernseher (146 cm/58 Zoll, 4K Ultra HD, Smart-TV, 4K UHD)","339,99 €","699,00 €",-51%,"339,99 €","699,00 €",-51%,Sehr beliebt,Very popular,,,,,12,12,topseller_main_bsr
+topseller,13,47409007,1844694669,1844694670,13,13,,https://www.otto.de/p/samsung-gu98du9079u-led-fernseher-249-cm-98-zoll-4k-ultra-hd-smart-tv-crystal-uhd-q-symphony-dolby-surround-sound-triple-tuner-smart-hub-1844694669/?variationId=1844694670,"Samsung GU98DU9079U LED-Fernseher (249 cm/98 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)","1.399,00 €","4.299,00 €",-67%,"1.399,00 €","4.299,00 €",-67%,Sehr beliebt,Very popular,,,,,13,13,topseller_main_bsr
+topseller,15,99294724,2082949677,2082949678,15,15,,https://www.otto.de/p/sharp-1t-c32he3x-qled-fernseher-80-cm-32-zoll-hd-smart-tv-2082949677/?variationId=2082949678,"Sharp 1T-C32HE3x QLED-Fernseher (80 cm/32 Zoll, HD, Smart-TV)","139,00 €","329,00 €",-58%,"139,00 €","329,00 €",-58%,,,,,,,15,15,topseller_main_bsr
+topseller,17,19836968,C1968874003,1968874005,17,17,,https://www.otto.de/p/lg-50ua73006la-led-fernseher-50-zoll-uhd-smart-tv-mit-internetzugang-uhd-aufloesung-fuer-scharfe-bilder-C1968874003/?variationId=1968874005,"LG 43UA73006LA LED-Fernseher (108 cm/43 Zoll, 4K Ultra HD, Smart-TV)","249,00 €","529,00 €",-53%,"249,00 €","529,00 €",-53%,Sehr beliebt,Very popular,,,,,17,17,topseller_main_bsr
+topseller,18,13754127,C1962381449,1962381450,18,18,,https://www.otto.de/p/tcl-75v6cxb-led-fernseher-189-cm-75-zoll-4k-ultra-hd-smart-tv-google-tv-4k-hdr-multi-hdr-dolby-vision-game-master-smart-tv-apple-tv-C1962381449/?variationId=1962381450,"TCL 75V6CXB LED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV, Google TV, 4K HDR, Multi-HDR, Dolby Vision, Game Master, Smart TV, Apple TV)","549,00 €","849,00 €",-35%,"549,00 €","849,00 €",-35%,,,,,,,18,18,topseller_main_bsr
+topseller,19,96406113,C1980401029,1980401030,19,19,,,,,,,,,,,,,,,,19,19,topseller_main_bsr
+topseller,20,75149407,2082949650,2082949651,20,20,,,,,,,,,,,,,,,,20,20,topseller_main_bsr
+topseller,21,18323407,C2087551467,2087551468,21,21,,,,,,,,,,,,,,,,21,21,topseller_main_bsr
+topseller,22,52153760,1975567834,1975567836,22,22,,,,,,,,,,,,,,,,22,22,topseller_main_bsr
+topseller,23,70673617,1975567645,1975567647,23,23,,,,,,,,,,,,,,,,23,23,topseller_main_bsr
+topseller,24,74085358,1975567930,1975567931,24,24,sponsored,,,,,,,,,,,Gesponsert,Sponsored,,,24,24,topseller_main_bsr
+topseller,25,S0DJ806KQTR,S0DJ806K,S0IFT07GF08J,25,25,,,,,,,,,,,,,,,,25,25,topseller_main_bsr
+topseller,26,40333352,2093626031,2093626032,26,26,,,,,,,,,,,,,,,,26,26,topseller_main_bsr
+topseller,28,S0DJ806HQTR,S0DJ806H,S06ED0PF6AY2,28,28,,,,,,,,,,,,,,,,28,28,topseller_main_bsr
+topseller,29,38565503,1970617922,1970617923,29,29,,,,,,,,,,,,,,,,29,29,topseller_main_bsr
+topseller,31,30295408,C1980401074,1980401075,31,31,,,,,,,,,,,,,,,,31,31,topseller_main_bsr
+topseller,32,54293357,1975567463,1975567464,32,32,sponsored,,,,,,,,,,,Gesponsert,Sponsored,,,32,32,topseller_main_bsr
+topseller,33,38696940,1975567876,1975567878,33,33,,,,,,,,,,,,,,,,33,33,topseller_main_bsr
+topseller,34,S01H00Y4,C1955108292,S01H00Y49LOC,34,34,,,,,,,,,,,,,,,,34,34,topseller_main_bsr
+topseller,35,87158709,C2022351559,2022351560,35,35,,,,,,,,,,,,,,,,35,35,topseller_main_bsr
+topseller,36,33675058,C2087551476,2087551477,36,36,,,,,,,,,,,,,,,,36,36,topseller_main_bsr
+topseller,37,60990040,C1955108337,1955108338,37,37,,,,,,,,,,,,,,,,37,37,topseller_main_bsr
+topseller,38,,S07AU0B5,S07AU0B55ENF,38,38,,,,,,,,,,,,,,,,38,38,topseller_main_bsr
+topseller,39,S03H00EE,S03H00EE,S03H00EE3YGH,39,39,,,,,,,,,,,,,,,,39,39,topseller_main_bsr
+topseller,41,51838924,2024627863,2024627864,41,41,,,,,,,,,,,,,,,,41,41,topseller_main_bsr
+topseller,42,50665126,1975567809,1975567811,42,42,,,,,,,,,,,,,,,,42,42,topseller_main_bsr
+topseller,43,54093852,C2093628489,1962381501,43,43,,,,,,,,,,,,,,,,43,43,topseller_main_bsr
+topseller,44,91784847,C1980401038,1980401039,44,44,,,,,,,,,,,,,,,,44,44,topseller_main_bsr
+topseller,45,81251256,C1994700742,1994700743,45,45,,,,,,,,,,,,,,,,45,45,topseller_main_bsr
+topseller,46,12835934,1975567839,1975567840,46,46,,,,,,,,,,,,,,,,46,46,topseller_main_bsr
+topseller,47,S0ABE05W,S0ABE05W,S0ABE05W4D8Y,47,47,,,,,,,,,,,,,,,,47,47,topseller_main_bsr
+topseller,49,25597924,2077443306,2077443308,49,49,,,,,,,,,,,,,,,,49,49,topseller_main_bsr
+topseller,50,11654767,1962381523,1962381524,50,50,,,,,,,,,,,,,,,,50,50,topseller_main_bsr
+topseller,51,27167261,1966695244,1966695245,51,51,,,,,,,,,,,,,,,,51,51,topseller_main_bsr
+topseller,52,34568554,C1955108311,1955108313,52,52,,,,,,,,,,,,,,,,52,52,topseller_main_bsr
+topseller,53,52275229,1975567478,1975567481,53,53,,,,,,,,,,,,,,,,53,53,topseller_main_bsr
+topseller,54,85228123,2093625842,2093625843,54,54,,,,,,,,,,,,,,,,54,54,topseller_main_bsr
+topseller,55,22165346,1970617854,1970617855,55,55,,,,,,,,,,,,,,,,55,55,topseller_main_bsr
+topseller,57,S0DJ806DQTR,S0DJ806D,S0IFT0797TWX,57,57,,,,,,,,,,,,,,,,57,57,topseller_main_bsr
+topseller,58,,C1582142828,1582142829,58,58,,,,,,,,,,,,,,,,58,58,topseller_main_bsr
+topseller,59,53088944,C1970617890,1970617891,59,59,,,,,,,,,,,,,,,,59,59,topseller_main_bsr
+topseller,60,S0MBV0QW,S0MBV0QW,S0MBV0QWWIM5,60,60,,,,,,,,,,,,,,,,60,60,topseller_main_bsr
+topseller,61,66250507,1975567984,1975567985,61,61,,,,,,,,,,,,,,,,61,61,topseller_main_bsr
+topseller,62,S0FFD0DQ,S0FFD0DQ,S0FFD0DQHEXW,62,62,,,,,,,,,,,,,,,,62,62,topseller_main_bsr
+topseller,64,44010563,1975568020,1975568021,64,64,sponsored,,,,,,,,,,,Gesponsert,Sponsored,,,64,64,topseller_main_bsr
+topseller,65,78173651,1968874107,1968874108,65,65,,,,,,,,,,,,,,,,65,65,topseller_main_bsr
+topseller,66,13411740,1975567750,1975567753,66,66,,,,,,,,,,,,,,,,66,66,topseller_main_bsr
+topseller,67,91535131,2093626166,2093626167,67,67,,,,,,,,,,,,,,,,67,67,topseller_main_bsr
+topseller,68,72859027,1197586134,1197586135,68,68,,,,,,,,,,,,,,,,68,68,topseller_main_bsr
+topseller,69,36228644,C2087551485,2087551486,69,69,,,,,,,,,,,,,,,,69,69,topseller_main_bsr
+topseller,70,98502912,1975567989,1975567990,70,70,,,,,,,,,,,,,,,,70,70,topseller_main_bsr
+topseller,71,11836422,1723522817,1723522818,71,71,,,,,,,,,,,,,,,,71,71,topseller_main_bsr
+topseller,73,98602503,1975567703,1975567707,73,73,,,,,,,,,,,,,,,,73,73,topseller_main_bsr
+topseller,74,,S0H9U065,S0H9U0651NQK,74,74,,,,,,,,,,,,,,,,74,74,topseller_main_bsr
+topseller,75,49699520,C2042293620,2042293621,75,75,,,,,,,,,,,,,,,,75,75,topseller_main_bsr
+topseller,76,S03ED0HN,C1962462162,S03ED0HNXKCH,76,76,,,,,,,,,,,,,,,,76,76,topseller_main_bsr
+topseller,77,61436648,C1968873877,1968873879,77,77,,,,,,,,,,,,,,,,77,77,topseller_main_bsr
+topseller,78,,C2033481050,2033481051,78,78,,,,,,,,,,,,,,,,78,78,topseller_main_bsr
+topseller,79,77393325,1962381540,1962381541,79,79,,,,,,,,,,,,,,,,79,79,topseller_main_bsr
+topseller,80,S0DH50TV,S0DH50TV,S0DH50TVXQM5,80,80,,,,,,,,,,,,,,,,80,80,topseller_main_bsr
+topseller,81,S0UFK0PDTNS,S0UFK0PD,S0UFK0PDUGC6,81,81,,,,,,,,,,,,,,,,81,81,topseller_main_bsr
+topseller,82,S07IZ0D9UKJ,S07IZ0D9,S0TFK0DD94ZX,82,82,,,,,,,,,,,,,,,,82,82,topseller_main_bsr
+topseller,83,96907919,2082949641,2082949642,83,83,,,,,,,,,,,,,,,,83,83,topseller_main_bsr
+topseller,84,95015705,C1955807871,1955807872,84,84,,,,,,,,,,,,,,,,84,84,topseller_main_bsr
+topseller,85,44035102,1975567717,1975567720,85,85,,,,,,,,,,,,,,,,85,85,topseller_main_bsr
+topseller,86,82544867,C1955807841,1955807842,86,86,,,,,,,,,,,,,,,,86,86,topseller_main_bsr
+topseller,87,18395039,C1980401146,1980401147,87,87,,,,,,,,,,,,,,,,87,87,topseller_main_bsr
+topseller,89,63164417,1970617936,1970617938,89,89,,,,,,,,,,,,,,,,89,89,topseller_main_bsr
+topseller,90,58021547,1975567827,1975567828,90,90,,,,,,,,,,,,,,,,90,90,topseller_main_bsr
+topseller,91,S0DJ8068,S0DJ8068,S0KH50THBP33,91,91,,,,,,,,,,,,,,,,91,91,topseller_main_bsr
+topseller,92,18623958,2037941368,2037941369,92,92,,,,,,,,,,,,,,,,92,92,topseller_main_bsr
+topseller,93,27479833,2040419135,2040419136,93,93,,,,,,,,,,,,,,,,93,93,topseller_main_bsr
+topseller,94,S0DJ806IQTR,S0DJ806I,S0WEP0S4A7KV,94,94,,,,,,,,,,,,,,,,94,94,topseller_main_bsr
+topseller,95,92343447,C2007673883,2007673884,95,95,,,,,,,,,,,,,,,,95,95,topseller_main_bsr
+topseller,96,14721265,C1832845843,1832845844,96,96,,,,,,,,,,,,,,,,96,96,topseller_main_bsr
+topseller,97,88376059,C1970618116,1970618117,97,97,,,,,,,,,,,,,,,,97,97,topseller_main_bsr
+topseller,98,S0RGN07S,S0RGN07S,S0RGN07SVXKG,98,98,,,,,,,,,,,,,,,,98,98,topseller_main_bsr
+topseller,99,35286914,C1832845897,1832845898,99,99,,,,,,,,,,,,,,,,99,99,topseller_main_bsr
+topseller,100,41189461,2093626013,2093626014,100,100,,,,,,,,,,,,,,,,100,100,topseller_main_bsr
+topseller,101,,S0MFB0H9,S0MFB0H9BMYP,101,101,,,,,,,,,,,,,,,,101,,topseller_main
+topseller,102,46538307,C2007673874,2007673875,102,102,,,,,,,,,,,,,,,,102,,topseller_main
+topseller,103,49872968,C1955108382,1955108383,103,103,,,,,,,,,,,,,,,,103,,topseller_main
+topseller,104,42499966,C1970617859,1970617860,104,104,,,,,,,,,,,,,,,,104,,topseller_main
+topseller,105,,C1582142363,1582142364,105,105,,,,,,,,,,,,,,,,105,,topseller_main
+topseller,106,96850721,1975567686,1975567687,106,106,,,,,,,,,,,,,,,,106,,topseller_main
+topseller,107,S0LGJ0MG,S0LGJ0MG,S0LGJ0MGVY1Q,107,107,,,,,,,,,,,,,,,,107,,topseller_main
+topseller,108,30935923,1197586166,1197586167,108,108,,,,,,,,,,,,,,,,108,,topseller_main
+topseller,109,S06J4047C4J,S06J4047,SA1UKZ3GKCLD,109,109,,,,,,,,,,,,,,,,109,,topseller_main
+topseller,110,11857956,C2092091256,2092091257,110,110,,,,,,,,,,,,,,,,110,,topseller_main
+topseller,111,77150837,C1970617908,1970617909,111,111,,,,,,,,,,,,,,,,111,,topseller_main
+topseller,112,87435745,1975567668,1975567669,112,112,,,,,,,,,,,,,,,,112,,topseller_main
+topseller,113,S0DJ806FTNS,S0DJ806F,SK83JQTGMM3E,113,113,,,,,,,,,,,,,,,,113,,topseller_main
+topseller,114,56895204,1729037349,1729037350,114,114,,,,,,,,,,,,,,,,114,,topseller_main
+topseller,115,48439937,C1970617998,1970617999,115,115,,,,,,,,,,,,,,,,115,,topseller_main
+topseller,116,74305564,C1968873954,1968873955,116,116,,,,,,,,,,,,,,,,116,,topseller_main
+topseller,117,,C1582142336,1582142337,117,117,,,,,,,,,,,,,,,,117,,topseller_main
+topseller,118,18963230,C2087551458,2087551459,118,118,,,,,,,,,,,,,,,,118,,topseller_main
+topseller,119,S0YGE0UXKM5,S0YGE0UX,S0YGE0UXBMD8,119,119,,,,,,,,,,,,,,,,119,,topseller_main
+topseller,120,,S0H4T04G,S0H4T04G155Q,120,120,,,,,,,,,,,,,,,,120,,topseller_main

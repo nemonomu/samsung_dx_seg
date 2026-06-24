@@ -1,0 +1,50 @@
+[
+  {
+    "name": "detail_philips",
+    "url": "https://www.otto.de/p/philips-32phs6000-12-led-fernseher-80-cm-32-zoll-hd-ready-smart-tv-pixel-plus-hd-hdr10-hlg-dolby-audio-vocal-boost-C2000548368/",
+    "final_url": "https://www.otto.de/p/philips-32phs6000-12-led-fernseher-80-cm-32-zoll-hd-ready-smart-tv-pixel-plus-hd-hdr10-hlg-dolby-audio-vocal-boost-C2000548368/",
+    "response_status": 429,
+    "title": "",
+    "error": null,
+    "html": "C:\\samsung_dx_seg\\OTTO\\references\\har\\sample_philips\\detail_philips.html",
+    "har": "C:\\samsung_dx_seg\\OTTO\\references\\har\\sample_philips\\detail_philips.har",
+    "png": "C:\\samsung_dx_seg\\OTTO\\references\\har\\sample_philips\\detail_philips.png",
+    "xhr_summary": "C:\\samsung_dx_seg\\OTTO\\references\\xhr\\sample_philips\\detail_philips_endpoint_summary.json",
+    "counts": {
+      "len": 925,
+      "product_tiles": 0,
+      "review_items": 0,
+      "customer_review_terms": 0,
+      "detail_rows": 0,
+      "devalue_scripts": 0,
+      "ld_json": 0,
+      "variation_id": 0,
+      "graphql": 0
+    },
+    "endpoint_count": 0
+  },
+  {
+    "name": "review_philips",
+    "url": "https://www.otto.de/kundenbewertungen/C2000548368/",
+    "final_url": "https://www.otto.de/kundenbewertungen/C2000548368/",
+    "response_status": 200,
+    "title": "Kunden-Test & Erfahrungen zu Philips 32PHS6000/12 LED-Fernseher (80 cm/32 Zoll, HD ready, Smart-TV, Pixel Plus HD, HDR10 & HLG, Dolby Audio & Vocal Boost)",
+    "error": null,
+    "html": "C:\\samsung_dx_seg\\OTTO\\references\\har\\sample_philips\\review_philips.html",
+    "har": "C:\\samsung_dx_seg\\OTTO\\references\\har\\sample_philips\\review_philips.har",
+    "png": "C:\\samsung_dx_seg\\OTTO\\references\\har\\sample_philips\\review_philips.png",
+    "xhr_summary": "C:\\samsung_dx_seg\\OTTO\\references\\xhr\\sample_philips\\review_philips_endpoint_summary.json",
+    "counts": {
+      "len": 430895,
+      "product_tiles": 0,
+      "review_items": 580,
+      "customer_review_terms": 200,
+      "detail_rows": 0,
+      "devalue_scripts": 0,
+      "ld_json": 0,
+      "variation_id": 3,
+      "graphql": 0
+    },
+    "endpoint_count": 29
+  }
+]

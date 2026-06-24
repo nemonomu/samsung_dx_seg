@@ -1,0 +1,2 @@
+import{i as e,n as t,t as n}from"./apps.apps-assets.appInfo.module.Dm3YfETp.js";var r=e.hapticFeedback;r.triggerHapticFeedback,r.assignNamespace({triggerHapticFeedback:function(){if(t()==n.ANDROID){var e,r;(e=window.o_apps_android)==null||(r=e.triggerHapticFeedback)==null||r.call(e)}else if(t()==n.IOS){var i;(i=window.webkit)==null||(i=i.messageHandlers)==null||(i=i.triggerHapticFeedback)==null||i.postMessage({})}}});
+//# sourceMappingURL=apps.apps-assets.haptic-feedback.module.B4B28BYn.js.map

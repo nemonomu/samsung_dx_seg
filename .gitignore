@@ -1,0 +1,21 @@
+﻿.env
+deloitte.xlsx
+
+# Local Python/runtime artifacts
+__pycache__/
+*.py[cod]
+
+# Temporary investigation artifacts stay local.
+OTTO/archive/
+
+# Raw browser/network captures can contain cookies and session headers.
+*.har
+*curl*.txt
+OTTO/references/xhr/
+OTTO/references/**/*.png
+OTTO/references/har/har_endpoint_summary.json
+OTTO/references/har/local_har_summary.json
+OTTO/references/har/document_body_extract_summary.json
+OTTO/references/har/extracted_document_bodies/*429*.html
+OTTO/references/har/sample_philips/detail_philips*.html
+OTTO/references/har/sample_philips/detail_philips*_summary.json
