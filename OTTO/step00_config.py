@@ -22,7 +22,7 @@ SEARCH_TERM = "fernseher"
 TOPSELLER_URL = "https://www.otto.de/suche/fernseher/?sortiertnach=topseller"
 MAIN_TARGET_UNIQUE = int(os.getenv("OTTO_MAIN_TARGET_UNIQUE", "300"))
 BSR_TARGET_RANK = int(os.getenv("OTTO_BSR_TARGET_RANK", "100"))
-LISTING_PAGES_TO_COLLECT = int(os.getenv("OTTO_LISTING_PAGES_TO_COLLECT", "4"))
+LISTING_PAGES_TO_COLLECT = int(os.getenv("OTTO_LISTING_PAGES_TO_COLLECT", "5"))
 LISTING_POSITIONS_PER_PAGE = int(os.getenv("OTTO_LISTING_POSITIONS_PER_PAGE", "120"))
 UNIQUE_KEY = "retailer_sku_name"
 
