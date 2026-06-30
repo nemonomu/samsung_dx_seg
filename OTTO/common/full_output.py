@@ -17,7 +17,9 @@ from urllib.request import Request, urlopen
 
 from common import datasheet, raw_html
 from common.io_util import category_output_root
-from common.parsers import parse_review_html
+from common.parsers import format_detailed_review_content, parse_review_html
+
+REVIEW_DETAIL_LIMIT = 20  # detailed_review_content collects up to this many written reviews
 from common.reco import fetch_similar_product_names
 
 BASE_HEAD = [
@@ -89,6 +91,59 @@ def first(*values):
     return None
 
 
+def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int = 45) -> dict[str, Any]:
+    """Fetch the review page and follow ?page=N until REVIEW_DETAIL_LIMIT written reviews
+    are gathered (OTTO paginates reviews). Rating summary / recommendation come from page 1.
+    Returns the page-1 parse dict with reviews/detailed_review_content spanning all pages."""
+    if not base_url:
+        return {}
+    resp = fetch_html(base_url, timeout=timeout, retries=3)  # no rating fallback -> retry hard
+    if resp.get("status") != 200:
+        return {}
+    rp = out / "_tmp_review.html"
+
+    def _parse(body: bytes) -> dict[str, Any]:
+        rp.write_bytes(body)
+        try:
+            return parse_review_html(rp)
+        finally:
+            try:
+                rp.unlink()
+            except OSError:
+                pass
+
+    raw_html.save(f"review_{save_pid}", resp.get("body", b""))
+    page1 = _parse(resp.get("body", b""))
+    reviews = list(page1.get("reviews") or [])
+    last_page = page1.get("last_page") or 1
+    seen = {r.get("review_id") for r in reviews if r.get("review_id")}
+    written = lambda: sum(1 for r in reviews if r.get("review_text"))
+    page = 1
+    sep = "&" if "?" in base_url else "?"
+    while written() < REVIEW_DETAIL_LIMIT and page < last_page:
+        page += 1
+        nxt = fetch_html(f"{base_url}{sep}page={page}", timeout=timeout, retries=2)
+        if nxt.get("status") != 200:
+            break
+        raw_html.save(f"review_{save_pid}_p{page}", nxt.get("body", b""))
+        more = _parse(nxt.get("body", b"")).get("reviews") or []
+        added = 0
+        for r in more:
+            rid = r.get("review_id")
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            reviews.append(r)
+            added += 1
+        if added == 0:
+            break
+    page1["reviews"] = reviews
+    page1["review_text_rows"] = written()
+    page1["detailed_review_content"] = format_detailed_review_content(reviews, limit=REVIEW_DETAIL_LIMIT)
+    return page1
+
+
 def write_output(path: Path, fields: list[str], rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     extra = [k for r in rows for k in r if k not in fields]
@@ -152,25 +207,15 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "none", ti
                 body, ds_status, _ = datasheet.fetch_datasheet_bytes(target["energy_datasheet_uri"], timeout)
                 ds = datasheet.parse(body)
             spec = cfg.extract_spec(target, ds, ctx)
-            sku = first(ds.get("sku") if ds else None, sku_from_name(target.get("retailer_sku_name")))
+            # sku: datasheet Modellkennung, then a category hook (e.g. LDY /vergleich/
+            # Modellbezeichnung), then the name-token heuristic.
+            ctx_sku = cfg.extract_sku(target, ds, ctx) if hasattr(cfg, "extract_sku") else None
+            sku = first(ds.get("sku") if ds else None, ctx_sku, sku_from_name(target.get("retailer_sku_name")))
 
             reco = fetch_similar_product_names(target.get("variation_id"), timeout=timeout)
-            # no listing fallback for ratings, so retry harder to avoid a transient 0
-            review_resp = fetch_html(review_url_for(target), timeout=timeout, retries=3)
-            review = {}
-            if review_resp.get("status") == 200:
-                body = review_resp.get("body", b"")
-                pid = (target.get("product_id") or "").strip() or product_id_from_url(target.get("product_url")) or str(target.get("main_rank"))
-                raw_html.save(f"review_{pid}", body)  # opt-in audit copy (OTTO_SAVE_HTML)
-                rp = out / "_tmp_review.html"
-                rp.write_bytes(body)
-                try:
-                    review = parse_review_html(rp)
-                finally:
-                    try:
-                        rp.unlink()
-                    except OSError:
-                        pass
+            pid = (target.get("product_id") or "").strip() or product_id_from_url(target.get("product_url")) or str(target.get("main_rank"))
+            review = collect_review(review_url_for(target), out, pid, timeout=timeout)
+            review_resp = {"status": 200 if review else None}
 
             # optional PDP-only fields (e.g. LDY Bauart) via ZenRows
             if session is not None:

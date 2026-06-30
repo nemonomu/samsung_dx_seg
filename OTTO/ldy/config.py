@@ -9,10 +9,23 @@ translate Frontlader -> Front loader, Toplader -> Top-loading (other values -> N
 """
 from __future__ import annotations
 
+import json
+import re
+import time
+import urllib.request
 from typing import Any
+from urllib.parse import urlencode
 
 from common import compare
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, top_info, transliterate
+
+EVERGLADES_URL = "https://www.otto.de/everglades/products"
+_EVER_HDR = {
+    "Accept": "application/json",
+    "Accept-Language": "de-DE,de;q=0.9",
+    "Referer": "https://www.otto.de/suche/waschmaschinen/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+}
 
 PRODUCT = "LDY"
 COUNTRY = _COUNTRY
@@ -43,10 +56,14 @@ EXCLUDE_KEYWORDS = (
     # covers / mats / locks / boxes / care  (specific compounds only, no bare "matte")
     "abdeckung", "bezug", "antirutsch", "rutschmatte", "kabelschloss",
     "steckerschloss", "transportbehälter", "pulverbox", "perle", "parfüm",
+    # anti-vibration mats / pads
+    "gummimatte", "antivibration", "anti-vibration", "vibrationsdämpfer",
+    "schwingungsdämpfer", "dämpfer", "waschschutz",
     # spin dryers / wash basins / toys / generic accessories
     # (use specific compounds, not bare "schleuder", to never hit a real washer model)
     "wäscheschleuder", "schleuderfunktion", "waschschüssel",
-    "spielzeug", "spielküche", "lernspiel",
+    "spielzeug", "spielküche", "lernspiel", "kinder-waschmaschine", "kinderwaschmaschine",
+    "ballonmütze", "mütze",
     "griff", "türgriff", "zubehör", "ersatzteil", "ersatz",
 )
 
@@ -103,30 +120,154 @@ def resolve_loading(bauart: str | None, name: str | None) -> str | None:
     return _loading_from_text(name)
 
 
+# /vergleich/ characteristic labels we read per SKU (Kasada-free). Capacity is the wash
+# capacity; prefer the "(Waschen)" variant (washer-dryers also list a drying capacity).
+VERGLEICH_LABELS = ["Bauart", "Modellbezeichnung",
+                    "Nennkapazität (Waschen)", "Fassungsvermögen", "Nennkapazität"]
+_CAPACITY_LABELS = ["Nennkapazität (Waschen)", "Fassungsvermögen", "Nennkapazität"]
+_COLOR_SUFFIX = re.compile(r"\s+(weiss|weiß|schwarz|grau|silber|anthrazit|edelstahl|inox|titan)\s*$", re.I)
+
+
+def _capacity_from_name(name: str | None) -> str | None:
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", name or "", re.I)
+    return f"{m.group(1)} kg" if m else None
+
+
+def _capacity_from_datasheet(ds: dict[str, Any] | None) -> str | None:
+    """EU energy datasheet 'Nennkapazität(a) 9,0 ... (kg)' — authoritative rated wash
+    capacity, used when no listing/name/comparison source has it."""
+    text = (ds or {}).get("text") or ""
+    m = re.search(r"Nennkapazit[äa]t\D*?(\d+(?:[.,]\d+)?)", text)
+    return f"{m.group(1)} kg" if m else None
+
+
+def _ever_fetch(rule: str, offset: int, timeout: int = 45, attempts: int = 3) -> dict | None:
+    url = EVERGLADES_URL + "?" + urlencode([("rule", rule), ("intents", "ranked"), ("ranked.offset", str(offset))])
+    for attempt in range(attempts):
+        try:
+            return json.loads(urllib.request.urlopen(urllib.request.Request(url, headers=_EVER_HDR), timeout=timeout).read())
+        except Exception:
+            time.sleep(1.5)
+    return None
+
+
+def _category_vids(cat: str, hard_cap: int = 4000) -> set[str]:
+    """All bestVariationIds in the waschmaschinen>{cat} subcategory (Kasada-free everglades).
+    The loading_type fallback when OTTO ships no Bauart. Pages are retried so a transient
+    failure does not silently truncate the set (an incomplete set = missed frontloaders)."""
+    vids: set[str] = set()
+    offset = 0
+    total = None
+    consecutive_fail = 0
+    rule = f"(und.(sind.kategorien.waschmaschinen.{cat}).(suchbegriff.waschmaschinen).(~.(v.1)))"
+    while offset < hard_cap:
+        data = _ever_fetch(rule, offset)
+        if data is None:
+            consecutive_fail += 1
+            if consecutive_fail >= 3:
+                break  # give up rather than loop forever; partial set still helps
+            continue  # retry the same offset
+        consecutive_fail = 0
+        intent = next((it for it in data.get("intents", []) if it.get("intent") == "ranked"), {})
+        products = intent.get("products", []) or []
+        if total is None:
+            total = intent.get("count")
+        if not products:
+            break
+        for p in products:
+            vid = p.get("bestVariationId") or p.get("id")
+            if vid:
+                vids.add(str(vid))
+        offset += len(products)
+        if total and len(vids) >= total:
+            break
+    return vids
+
+
 def prepare_context(targets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """Build {variation_id: Bauart} (+ subtitle fallback names) for the run's targets,
-    via the Kasada-free /vergleich/ comparison page."""
+    """Per-SKU {Bauart, Modellbezeichnung, capacity} from the Kasada-free /vergleich/ page,
+    plus listing subtitles, plus everglades frontlader/toplader category sets — the
+    loading_type fallback for washers OTTO ships with no Bauart."""
     vids = []
     for t in (targets or []):
         vid = str(t.get("variation_id") or "").strip()
         if vid and vid not in vids:
             vids.append(vid)
-    bauart = compare.characteristic_map(vids, "Bauart") if vids else {}
-    # subtitle fallback only for SKUs whose structured Bauart came back blank
-    # (empty, or an OTTO "no data" placeholder like "-")
-    missing = [v for v in vids if not _has_value(bauart.get(v))]
-    names = compare.name_map(missing) if missing else {}
-    labeled = sum(1 for v in bauart.values() if (v or "").strip())
-    print(f"[ldy] Bauart via /vergleich/: {labeled}/{len(vids)} structured; {len(names)} subtitle fallbacks", flush=True)
-    return {"bauart": bauart, "name": names}
+    chars = compare.characteristics_map(vids, VERGLEICH_LABELS) if vids else {}
+    bauart = {v: chars.get(v, {}).get("Bauart") for v in vids}
+    # full product name (with subtitle) comes from the same /vergleich/ page; it is the
+    # Bauart fallback and the capacity ("N kg") fallback.
+    names = {v: chars.get(v, {}).get(compare.NAME_KEY) for v in vids}
+    frontlader = _category_vids("frontlader")
+    toplader = _category_vids("toplader")
+    # capacity gap recovery: for the few washers with no listing/name/comparison capacity,
+    # read the EU energy datasheet (Nennkapazität). Fetched only for the gaps.
+    ds_capacity: dict[str, str] = {}
+    for t in (targets or []):
+        vid = str(t.get("variation_id") or "").strip()
+        if not vid:
+            continue
+        if _has_value(top_info(t, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")):
+            continue
+        if _capacity_from_name(names.get(vid)) or _capacity_from_name(t.get("retailer_sku_name")):
+            continue
+        if _vergleich_capacity(chars.get(vid, {})):
+            continue
+        uri = (t.get("energy_datasheet_uri") or "").strip()
+        if not uri:
+            continue
+        from common import datasheet
+        body, _st, _ = datasheet.fetch_datasheet_bytes(uri, 45)
+        cap = _capacity_from_datasheet(datasheet.parse(body))
+        if cap:
+            ds_capacity[vid] = cap
+    labeled = sum(1 for v in bauart.values() if _has_value(v))
+    rendered = sum(1 for v in vids if chars.get(v))
+    print(f"[ldy] /vergleich/: {rendered}/{len(vids)} columns; Bauart {labeled} structured; "
+          f"category sets front={len(frontlader)} top={len(toplader)}; datasheet capacity {len(ds_capacity)}", flush=True)
+    return {"chars": chars, "bauart": bauart, "name": names,
+            "frontlader": frontlader, "toplader": toplader, "ds_capacity": ds_capacity}
+
+
+def _vergleich_capacity(vid_chars: dict[str, str | None]) -> str | None:
+    for label in _CAPACITY_LABELS:
+        if _has_value(vid_chars.get(label)):
+            return vid_chars[label]
+    return None
 
 
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     ctx = ctx or {}
     vid = str(target.get("variation_id") or "")
-    loading = resolve_loading(ctx.get("bauart", {}).get(vid), ctx.get("name", {}).get(vid))
-    capacity = top_info(target, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
+    vid_chars = ctx.get("chars", {}).get(vid, {})
+    name = ctx.get("name", {}).get(vid)
+    loading = resolve_loading(ctx.get("bauart", {}).get(vid), name)
+    if loading is None:
+        # OTTO ships some frontloaders with no Bauart/name hint; fall back to its own
+        # frontlader/toplader subcategory membership (real data, not a guess).
+        if vid in ctx.get("toplader", set()):
+            loading = LOADING_MAP["toplader"]
+        elif vid in ctx.get("frontlader", set()):
+            loading = LOADING_MAP["frontlader"]
+    # capacity: listing top_info, then the product name's "N kg" (reliable, same page),
+    # then the /vergleich/ capacity labels as a last resort (batched labels are flaky).
+    capacity = (top_info(target, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
+                or _capacity_from_name(name)
+                or _capacity_from_name(target.get("retailer_sku_name"))
+                or _vergleich_capacity(vid_chars)
+                or ctx.get("ds_capacity", {}).get(vid))
     return {"ldy_loading_type": loading, "ldy_capacity": capacity}
+
+
+def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:
+    """LDY has no datasheet; use the /vergleich/ Modellbezeichnung (handles space-separated
+    models like 'BPW 814 A' that the name-token heuristic misses)."""
+    ctx = ctx or {}
+    vid = str(target.get("variation_id") or "")
+    model = ctx.get("chars", {}).get(vid, {}).get("Modellbezeichnung")
+    if not _has_value(model):
+        return None
+    return _COLOR_SUFFIX.sub("", model.strip()).strip() or None
 
 
 def extract_pdp_spec(soup) -> dict[str, Any]:

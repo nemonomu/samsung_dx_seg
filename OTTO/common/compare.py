@@ -151,3 +151,57 @@ def characteristic_map(variation_ids: list[str], label: str, *, timeout: int = 4
             if val:
                 result[vid] = val
     return result
+
+
+NAME_KEY = "_name"  # full product name (with subtitle) captured alongside characteristics
+
+
+def _multi_pass(ids: list[str], labels: list[str], timeout: int, sleep: float,
+                batch_size: int = BATCH_SIZE) -> dict[str, dict[str, str | None]]:
+    result: dict[str, dict[str, str | None]] = {v: {} for v in ids}
+    for i in range(0, len(ids), batch_size):
+        batch = ids[i:i + batch_size]
+        html = _fetch(batch, timeout)
+        if html:
+            soup = BeautifulSoup(html, "lxml")
+            for label in labels:
+                for vid, val in _row_values(soup, label).items():
+                    if vid in result and val:
+                        result[vid][label] = val
+            for vid, name in _names_from_html(soup, set(batch)).items():
+                if name and len(name) > len(result[vid].get(NAME_KEY, "") or ""):
+                    result[vid][NAME_KEY] = name
+        if sleep > 0:
+            time.sleep(sleep)
+    return result
+
+
+def characteristics_map(variation_ids: list[str], labels: list[str], *, timeout: int = 45,
+                        sleep: float = 0.6, retry_rounds: int = 2, retry_sleep: float = 1.5,
+                        final_individual: bool = True) -> dict[str, dict[str, str | None]]:
+    """{variation_id: {label: value, _name: full product name}} for several characteristics
+    in one set of /vergleich/ requests. A vid whose comparison column did not render at all
+    (no name and no labels) is re-queried in batched rounds, then per-id (batch=1). Genuinely
+    absent single labels are left missing (not every product lists every characteristic)."""
+    ids = [str(v) for v in variation_ids if v]
+    result = _multi_pass(ids, labels, timeout, sleep)
+
+    def _rendered(vid: str) -> bool:
+        d = result.get(vid, {})
+        return bool(d.get(NAME_KEY)) or any(v for k, v in d.items() if k != NAME_KEY)
+
+    def _merge(passed: dict[str, dict[str, str | None]]) -> None:
+        for vid, vals in passed.items():
+            for key, val in vals.items():
+                if val and not result[vid].get(key):
+                    result[vid][key] = val
+
+    for _ in range(retry_rounds):
+        missing = [v for v in ids if not _rendered(v)]
+        if not missing:
+            break
+        _merge(_multi_pass(missing, labels, timeout, retry_sleep))
+    if final_individual:
+        missing = [v for v in ids if not _rendered(v)]
+        _merge(_multi_pass(missing, labels, timeout, retry_sleep, batch_size=1))
+    return result

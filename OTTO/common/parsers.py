@@ -447,6 +447,17 @@ def extract_review_rating(soup: BeautifulSoup) -> tuple[str | None, int | None]:
     return average, count
 
 
+def review_last_page(soup: BeautifulSoup) -> int:
+    """Total number of review pages from the pagination control (OTTO paginates via
+    ?page=N). Returns 1 when there is no pager."""
+    el = soup.select_one(".js_cr_list-wrapper__pagination-last-page, .cr_list-wrapper__pagination-last-page")
+    if el:
+        m = re.search(r"\d+", el.get_text(" ", strip=True))
+        if m:
+            return int(m.group(0))
+    return 1
+
+
 def parse_review_html(path: Path) -> dict[str, Any]:
     html = path.read_text(encoding="utf-8", errors="replace")
     soup = BeautifulSoup(html, "lxml")
@@ -458,6 +469,7 @@ def parse_review_html(path: Path) -> dict[str, Any]:
         "title": text_clean(soup.title.get_text(" ", strip=True)) if soup.title else None,
         "review_rows": len(reviews),
         "review_text_rows": len(non_empty_reviews),
+        "last_page": review_last_page(soup),
         # per-variation star-rating summary (Kasada-free, matches the product page)
         "average_rating": average_rating,
         "rating_count": rating_count,
