@@ -1,0 +1,8 @@
+# transient/regenerable — not committed (RDP regenerates these)
+__pycache__/
+*.pyc
+common/references/
+references/
+tv/data/
+ref/data/
+ldy/data/
