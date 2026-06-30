@@ -36,7 +36,12 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
     if "full" in steps:
         full_output.run(cfg, limit=args.limit, start=args.start, pdp_supplement=args.pdp_supplement, detail_sleep=args.detail_sleep)
     if "db" in steps:
-        db_save.run(cfg, dry_run=True if args.db_dry_run else None)
+        # A DB failure (e.g. psycopg2 missing, connection error) must NOT skip the email:
+        # log it loudly and continue so notify still runs.
+        try:
+            db_save.run(cfg, dry_run=True if args.db_dry_run else None)
+        except Exception as exc:
+            print(f"[db/{cfg.PRODUCT}] FAILED: {exc!r} -- continuing to notify", flush=True)
     if "notify" in steps:
         notify.run(cfg)
     return 0

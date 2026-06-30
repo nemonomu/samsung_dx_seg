@@ -1,4 +1,7 @@
 @echo off
-REM OTTO SEG TV full pipeline. Pass-through args e.g. --pdp-supplement zenrows --limit 10
+REM OTTO SEG TV full pipeline. Default (no args) = full run + DB load + email.
+REM Pass args to override, e.g. --save-html (adds raw HTML), --only ... , --db-dry-run.
 cd /d "%~dp0"
-python tv\run.py %*
+set "OTTO_ARGS=%*"
+if "%~1"=="" set "OTTO_ARGS=--only schema,listing,targets,full,db,notify"
+python tv\run.py %OTTO_ARGS%
