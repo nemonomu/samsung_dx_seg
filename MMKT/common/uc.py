@@ -231,31 +231,33 @@ class UcSession:
         the PDP (SSR html) then in-page GraphQL for the 3 lazy fields."""
         review_pages = self.review_pages if review_pages is None else review_pages
         started = time.perf_counter()
-        nav = self.navigate(url)
-        html = nav["html"]
-        # All GraphQL for this PDP in ONE concurrent round trip.
-        specs = [("GetReviewsSummary", _summary_vars(sku_id))]
+        # GraphQL-ONLY (no page navigation): GetComparisonTableRecommendations
+        # carries the main product's specs/delivery/pickup/ratings + similar;
+        # summary + reviews come alongside. All in ONE concurrent round trip.
+        specs = [
+            ("GetComparisonTableRecommendations", _comparison_vars(sku_id)),
+            ("GetReviewsSummary", _summary_vars(sku_id)),
+        ]
         specs += [("GetProductReviews", _reviews_vars(sku_id, p)) for p in range(1, review_pages + 1)]
-        specs.append(("GetComparisonTableRecommendations", _comparison_vars(sku_id)))
         results = self._gql_many(specs)
-        summary = results[0]
-        reviews = results[1:1 + review_pages]
-        comparison = results[1 + review_pages]
+        comparison = results[0]
+        summary = results[1]
+        reviews = results[2:2 + review_pages]
         return {
             "sku_id": sku_id,
             "url": url,
-            "nav_status": 403 if nav["blocked"] else (200 if html else None),
-            "detail_present": detail_present(html),
-            "html": html,
+            "nav_status": comparison.get("status"),
+            "detail_present": comparison.get("status") == 200,
+            "html": "",
+            "comparison_resp": comparison.get("data"),
             "summary_resp": summary.get("data"),
             "review_resps": [r.get("data") for r in reviews],
-            "comparison_resp": comparison.get("data"),
             "gql_status": {
+                "comparison": comparison.get("status"),
                 "summary": summary.get("status"),
                 "reviews": [r.get("status") for r in reviews],
-                "comparison": comparison.get("status"),
             },
-            "error": nav["error"],
+            "error": None,
             "elapsed_seconds": round(time.perf_counter() - started, 2),
         }
 

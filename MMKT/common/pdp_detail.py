@@ -27,10 +27,10 @@ import importlib
 
 from common.config import REFERENCES_ROOT, ensure_dirs, write_json
 from common.parsers import (
+    parse_comparison_detail,
     parse_pdp_html,
     parse_product_reviews,
     parse_reviews_summary,
-    parse_similar,
 )
 def load_cfg(product: str):
     return importlib.import_module(f"{product}.config")
@@ -81,19 +81,21 @@ def parse_args() -> argparse.Namespace:
 
 
 def merge_detail(html: str, detail: dict[str, Any], sku_id: str, cfg) -> dict[str, Any]:
-    """Combine SSR parse with the 3 lazy GraphQL responses into one row."""
-    row = parse_pdp_html(html, sku_id, cfg)
+    """Build one detail row. GraphQL-only: the comparison response carries specs/
+    delivery/pickup/ratings/similar; reviews + summary come alongside. Falls back
+    to SSR-HTML parsing only if the comparison response is empty AND html exists."""
+    row = parse_comparison_detail(detail.get("comparison_resp"), sku_id, cfg)
+    if not row:
+        row = parse_pdp_html(html, sku_id, cfg)
     reviews = parse_product_reviews(detail.get("review_resps") or [])
     summary = parse_reviews_summary(detail.get("summary_resp"))
-    similar = parse_similar(detail.get("comparison_resp"), self_sku_id=sku_id)
-    # GraphQL values are richer than the SSR-embedded ones — prefer them.
+    # Reviews query is authoritative for counts + the top-20 written reviews.
     if reviews.get("count_of_star_ratings") is not None:
         row["count_of_star_ratings"] = reviews["count_of_star_ratings"]
     row["count_of_reviews"] = reviews.get("count_of_reviews")
     if reviews.get("detailed_review_content"):
         row["detailed_review_content"] = reviews["detailed_review_content"]
     row["summarized_review_content"] = summary
-    row["retailer_sku_name_similar"] = similar
     return row
 
 

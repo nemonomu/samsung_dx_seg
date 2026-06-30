@@ -563,3 +563,88 @@ def parse_similar(resp: Any, *, self_sku_id: str | None = None) -> str | None:
         if title and title not in titles:
             titles.append(title)
     return MULTI_VALUE_DELIMITER.join(titles) if titles else None
+
+
+def _reconstruct_delivery(deliv: dict) -> tuple[str | None, str | None]:
+    """Delivery text reconstructed from cofrDeliveryFeature (GraphQL-only path):
+    displayStatus + earliest fulfillment date — not the store-specific DOM text."""
+    status = (deliv or {}).get("displayStatus")
+    de, en = DELIVERY_STATUS_LABELS.get(status, (status, None))
+    earliest = ((deliv or {}).get("fulfillmentTime") or {}).get("earliest")
+    if status in ("AVAILABLE", "PARTIALLY_AVAILABLE") and earliest:
+        ymd = earliest[:10].split("-")
+        if len(ymd) == 3:
+            date = f"{ymd[2]}.{ymd[1]}.{ymd[0]}"
+            return f"Lieferung nach Hause ab {date}", f"Home delivery from {date}"
+    return de, en
+
+
+def _comparison_main(resp: Any, sku_id: str) -> tuple[dict | None, list[dict]]:
+    data = _unwrap_data(resp)
+    prods = (((data.get("comparisonTableRecommendations") or {}).get("tableData") or {}).get("products") or [])
+    if not prods:
+        return None, []
+    main = None
+    for p in prods:
+        pid = _norm_id((p.get("productAggregate") or {}).get("productId")) or \
+              _norm_id((p.get("cofrProductAggregate") or {}).get("id"))
+        if pid == str(sku_id):
+            main = p
+            break
+    main = main or prods[0]
+    others = [p for p in prods if p is not main]
+    return main, others
+
+
+def parse_comparison_detail(resp: Any, sku_id: str, cfg: Any = None) -> dict[str, Any] | None:
+    """GraphQL-only PDP detail from GetComparisonTableRecommendations — NO page
+    navigation. The main product (matched by sku_id) carries specs
+    (featureGroupsWithProductId), delivery, pickup, ratings; the rest are the
+    similar items. Returns None if the response has no products (caller falls back).
+    Reviews/summary are filled separately by merge_detail.
+    """
+    sku_id = str(sku_id)
+    main, others = _comparison_main(resp, sku_id)
+    if not main:
+        return None
+    pa = (main.get("productAggregate") or {}).get("product") or {}
+    fg = (pa.get("featureGroupsWithProductId") or {}).get("featureGroups") or []
+    feats: dict[str, str] = {}
+    for g in fg:
+        for f in g.get("features") or []:
+            if isinstance(f, dict) and f.get("name") is not None:
+                feats.setdefault(f["name"], f.get("value"))
+
+    spec_extractor = getattr(cfg, "extract_pdp_spec", None) or tv_extract_pdp_spec
+    spec = spec_extractor(feats)
+
+    agg = main.get("cofrProductAggregate") or {}
+    deliv = (agg.get("cofrDeliveryFeature") or {}).get("delivery") or {}
+    pickable = (agg.get("cofrPickupFeature") or {}).get("isProductPickable")
+    stats = (agg.get("cofrCoreFeature") or {}).get("reviewStatistics") or {}
+
+    d_de, d_en = _reconstruct_delivery(deliv)
+    p_de = "Im Markt abholbar" if pickable else "Nicht im Markt abholbar"
+    p_en = PICKUP_AVAILABLE_EN if pickable else PICKUP_UNAVAILABLE_EN
+    avg = stats.get("averageOverallRating")
+    total = stats.get("totalReviewCount")
+
+    similar_titles: list[str] = []
+    for o in others:
+        t = text_clean(((o.get("productAggregate") or {}).get("product") or {}).get("title"))
+        if t and t not in similar_titles:
+            similar_titles.append(t)
+
+    return {
+        "sku_id": sku_id,
+        "delivery_availability": d_de, "delivery_availability_en": d_en,
+        "pick_up_availability": p_de, "pick_up_availability_en": p_en,
+        "sku": text_clean(feats.get(SPEC_SKU)) or text_clean(pa.get("ean")),
+        **spec,
+        "retailer_sku_name_similar": MULTI_VALUE_DELIMITER.join(similar_titles) or None,
+        "star_rating": round(avg, 1) if avg is not None else None,
+        "count_of_star_ratings": total,
+        "count_of_reviews": None,
+        "summarized_review_content": None,
+        "detailed_review_content": None,
+    }

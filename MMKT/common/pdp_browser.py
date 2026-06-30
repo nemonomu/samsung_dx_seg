@@ -249,31 +249,21 @@ class PdpBrowserSession:
             return [{"status": None, "error": type(exc).__name__ + ": " + str(exc)}] * len(calls)
 
     def fetch_pdp_detail(self, url: str, sku_id: str) -> dict[str, Any]:
-        """Navigate to a PDP and return its SSR HTML + the 3 lazy GraphQL responses."""
+        """GraphQL-ONLY (no navigation): one concurrent batch of comparison +
+        summary + reviews. The comparison response carries the main product's
+        specs/delivery/pickup/ratings + similar."""
         started = time.perf_counter()
-        nav_status: int | None = None
-        html = ""
-        error = None
-        try:
-            resp = self._page.goto(url, wait_until="domcontentloaded",
-                                   timeout=self.nav_timeout_ms, referer=MMKT_HOME)
-            nav_status = resp.status if resp else None
-            self._page.wait_for_timeout(self.settle_ms)
-            html = self._page.content()
-        except Exception as exc:
-            error = type(exc).__name__ + ": " + str(exc)
-
         # Fire all GraphQL queries for this PDP concurrently in one round trip.
-        calls = [self._build_call("GetReviewsSummary", _summary_vars(sku_id))]
+        calls = [self._build_call("GetComparisonTableRecommendations", _comparison_vars(sku_id))]
+        calls.append(self._build_call("GetReviewsSummary", _summary_vars(sku_id)))
         calls += [
             self._build_call("GetProductReviews", _reviews_vars(sku_id, p))
             for p in range(1, self.review_pages + 1)
         ]
-        calls.append(self._build_call("GetComparisonTableRecommendations", _comparison_vars(sku_id)))
         results = self._gql_fetch_many(calls)
-        summary = results[0]
-        review_pages = results[1:1 + self.review_pages]
-        comparison = results[1 + self.review_pages]
+        comparison = results[0]
+        summary = results[1]
+        review_pages = results[2:2 + self.review_pages]
 
         def _body(r: dict[str, Any] | None) -> Any:
             return r.get("body") if isinstance(r, dict) else None
@@ -281,18 +271,18 @@ class PdpBrowserSession:
         return {
             "sku_id": sku_id,
             "url": url,
-            "nav_status": nav_status,
-            "detail_present": detail_present(html),
-            "html": html,
+            "nav_status": (comparison or {}).get("status"),
+            "detail_present": (comparison or {}).get("status") == 200,
+            "html": "",
             "summary_resp": _body(summary),
             "review_resps": [_body(r) for r in review_pages],
             "comparison_resp": _body(comparison),
             "gql_status": {
+                "comparison": (comparison or {}).get("status"),
                 "summary": (summary or {}).get("status"),
                 "reviews": [(r or {}).get("status") for r in review_pages],
-                "comparison": (comparison or {}).get("status"),
             },
-            "error": error,
+            "error": None,
             "elapsed_seconds": round(time.perf_counter() - started, 2),
         }
 
