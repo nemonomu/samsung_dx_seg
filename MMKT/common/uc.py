@@ -92,8 +92,8 @@ class UcSession:
         headless: bool = False,
         nav_timeout_s: int = 70,
         script_timeout_s: int = 40,
-        settle_s: float = 3.0,
-        warmup_s: float = 4.0,
+        settle_s: float = 1.2,
+        warmup_s: float = 3.0,
         review_pages: int = 2,
     ) -> None:
         self.headless = headless
@@ -119,6 +119,9 @@ class UcSession:
         options = uc.ChromeOptions()
         options.add_argument("--lang=de-DE")
         options.add_argument("--disable-blink-features=AutomationControlled")
+        # Skip images — big bandwidth/time win; SSR HTML + apollo + GraphQL are
+        # unaffected (we never read pixels). Cloudflare's JS challenge still runs.
+        options.add_argument("--blink-settings=imagesEnabled=false")
         kwargs: dict[str, Any] = {"options": options, "headless": self.headless, "use_subprocess": True}
         if self.version_main:
             kwargs["version_main"] = self.version_main
@@ -191,6 +194,34 @@ class UcSession:
                 data = None
         return {"status": (res or {}).get("status"), "data": data, "raw": body}
 
+    def _gql_many(self, specs: list[tuple[str, dict[str, Any]]]) -> list[dict[str, Any]]:
+        """Fire several persisted GraphQL fetches CONCURRENTLY (Promise.all) in one
+        round trip — much faster than sequential per-PDP."""
+        calls = [{"url": build_gql_url(op, v), "headers": _gql_headers(op)} for op, v in specs]
+        js = (
+            "const done = arguments[arguments.length-1];"
+            "Promise.all(arguments[0].map(async (c)=>{"
+            " try { const r = await fetch(c.url,{credentials:'include',headers:c.headers});"
+            "       let b=null; try{ b = await r.text(); }catch(e){} return {status:r.status, body:b}; }"
+            " catch(e){ return {status:null, error:String(e)}; }"
+            "})).then(done);"
+        )
+        try:
+            results = self.driver.execute_async_script(js, calls)
+        except Exception as exc:
+            results = [{"status": None, "error": type(exc).__name__ + ": " + str(exc)}] * len(calls)
+        out: list[dict[str, Any]] = []
+        for res in (results or []):
+            body = res.get("body") if isinstance(res, dict) else None
+            data = None
+            if body:
+                try:
+                    data = json.loads(body)
+                except Exception:
+                    data = None
+            out.append({"status": (res or {}).get("status"), "data": data})
+        return out
+
     def reconnect(self) -> None:
         self.close()
         self.open()
@@ -202,10 +233,14 @@ class UcSession:
         started = time.perf_counter()
         nav = self.navigate(url)
         html = nav["html"]
-        summary = self.gql("GetReviewsSummary", _summary_vars(sku_id))
-        reviews = [self.gql("GetProductReviews", _reviews_vars(sku_id, p))
-                   for p in range(1, review_pages + 1)]
-        comparison = self.gql("GetComparisonTableRecommendations", _comparison_vars(sku_id))
+        # All GraphQL for this PDP in ONE concurrent round trip.
+        specs = [("GetReviewsSummary", _summary_vars(sku_id))]
+        specs += [("GetProductReviews", _reviews_vars(sku_id, p)) for p in range(1, review_pages + 1)]
+        specs.append(("GetComparisonTableRecommendations", _comparison_vars(sku_id)))
+        results = self._gql_many(specs)
+        summary = results[0]
+        reviews = results[1:1 + review_pages]
+        comparison = results[1 + review_pages]
         return {
             "sku_id": sku_id,
             "url": url,

@@ -27,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--transport", choices=["uc", "zenrows"], default="uc")
     p.add_argument("--dry-db", action="store_true", help="db step runs --dry-run")
     p.add_argument("--no-replace", action="store_true", help="db step keeps existing rows (batch-replace only)")
+    p.add_argument("--resume", action="store_true", help="detail step keeps already-collected rows, fetches only the rest")
     return p.parse_args()
 
 
@@ -51,7 +52,8 @@ def main() -> int:
         run_step("common.listing", *P, "--sort", "bsr", "--target", str(args.bsr_target),
                  "--transport", T, "--sleep", "0")
     if "detail" in steps:
-        run_step("common.pdp_detail", *P, "--transport", T, "--concurrency", str(args.concurrency))
+        extra = ["--resume"] if args.resume else []
+        run_step("common.pdp_detail", *P, "--transport", T, "--concurrency", str(args.concurrency), *extra)
     if "full" in steps:
         run_step("common.full_output", *P)
     if "db" in steps:
