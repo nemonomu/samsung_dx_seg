@@ -67,7 +67,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output", default="")
     p.add_argument("--start", type=int, default=1, help="1-based start index into targets")
     p.add_argument("--limit", type=int, default=0, help="max targets (0 = all)")
-    p.add_argument("--sleep", type=float, default=0.0)
+    p.add_argument("--sleep", type=float, default=0.5,
+                   help="throttle between SKUs to stay under Cloudflare's GraphQL rate limit")
     p.add_argument("--review-pages", type=int, default=2)
     p.add_argument("--transport", choices=["uc", "zenrows"], default="uc",
                    help="uc = local undetected-chromedriver (no ZenRows); zenrows = legacy")
@@ -177,6 +178,7 @@ def main() -> int:
                 # Retry with a fresh session if the browser dropped (TargetClosedError)
                 # or the navigation failed — a dead session fails instantly otherwise.
                 for attempt in range(1, args.max_retries + 2):
+                    nav = None
                     try:
                         if session is None:
                             session = make_session(args.transport, args.review_pages)
@@ -184,31 +186,40 @@ def main() -> int:
                         detail = session.fetch_pdp_detail(url, sku_id)
                         candidate = merge_detail(detail["html"], detail, sku_id, cfg)
                         ok = detail["gql_status"]
+                        nav = detail["nav_status"]
                         candidate.update({
                             "rank": t.get("rank") or t.get("position") or i,
-                            "product_url": url, "nav_status": detail["nav_status"],
+                            "product_url": url, "nav_status": nav,
                             "gql_summary": ok["summary"],
                             "gql_reviews": ",".join(str(s) for s in ok["reviews"]),
                             "gql_comparison": ok["comparison"],
                             "fetch_error": detail.get("error"), "crawl_strdatetime": crawl_dt,
                             "attempts": attempt,
                         })
-                        if candidate.get(spec0) or detail["nav_status"] == 200:
+                        if candidate.get(spec0) or nav == 200:
                             row = candidate
                             break
                         row = candidate  # keep last even if weak
-                        last_err = detail.get("error")
+                        last_err = detail.get("error") or f"nav={nav}"
                     except Exception as exc:
                         last_err = type(exc).__name__ + ": " + str(exc)
-                    # failed or weak — rebuild the session before the next attempt
-                    try:
-                        session.reconnect()
-                    except Exception:
+                    # 429 = Cloudflare rate-limit: BACK OFF and retry with the SAME
+                    # session — reconnecting just hammers the IP harder (churn loop).
+                    if nav == 429:
+                        backoff = min(90, 20 * attempt)
+                        with lock:
+                            print(f"[step02][w{worker_id}] rate-limited (429) on {sku_id} — "
+                                  f"backing off {backoff}s", flush=True)
+                        time.sleep(backoff)
+                    else:
                         try:
-                            session.close()
+                            session.reconnect()
                         except Exception:
-                            pass
-                        session = None
+                            try:
+                                session.close()
+                            except Exception:
+                                pass
+                            session = None
                 if not row:
                     row = {"rank": i, "sku_id": sku_id, "product_url": url,
                            "fetch_error": last_err, "crawl_strdatetime": crawl_dt}
