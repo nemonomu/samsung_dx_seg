@@ -12,6 +12,7 @@ threads is unreliable — default 1.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 
@@ -34,7 +35,8 @@ def parse_args() -> argparse.Namespace:
 def run_step(mod: str, *args: str) -> None:
     cmd = [sys.executable, "-m", mod, *args]
     print(f"\n=== {' '.join(cmd)} ===", flush=True)
-    r = subprocess.run(cmd)
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}  # live (unbuffered) child output
+    r = subprocess.run(cmd, env=env)
     if r.returncode != 0:
         print(f"!! step {mod} exited {r.returncode}", flush=True)
 

@@ -119,7 +119,7 @@ def main() -> int:
             extra = [r for r in csv.DictReader(fh)
                      if (r.get("sku_id") or "").strip() not in seen_ids]
         if extra:
-            print(f"[step02] union: +{len(extra)} BSR-only SKUs added to targets")
+            print(f"[step02] union: +{len(extra)} BSR-only SKUs added to targets", flush=True)
             targets += extra
     start = max(args.start, 1) - 1
     end = len(targets) if args.limit <= 0 else min(len(targets), start + args.limit)
@@ -143,7 +143,7 @@ def main() -> int:
                     kept_rows.append(r)
         good_ids = {r["sku_id"] for r in kept_rows}
         valid = [(i, t) for i, t in valid if t["sku_id"].strip() not in good_ids]
-        print(f"[step02] resume: kept {len(kept_rows)} good rows, {len(valid)} to (re)fetch")
+        print(f"[step02] resume: kept {len(kept_rows)} good rows, {len(valid)} to (re)fetch", flush=True)
 
     concurrency = max(1, args.concurrency)
     shards: list[list[tuple[int, dict]]] = [valid[w::concurrency] for w in range(concurrency)]
@@ -154,17 +154,19 @@ def main() -> int:
     total = len(valid)
 
     print(f"[step02] targets {start + 1}..{end} of {len(targets)}, {total} valid, "
-          f"concurrency={concurrency} -> {out_path}")
+          f"concurrency={concurrency} -> {out_path}", flush=True)
 
     def worker(worker_id: int, shard: list[tuple[int, dict]]) -> None:
         if not shard:
             return
+        with lock:
+            print(f"[step02][w{worker_id}] warming up session ({len(shard)} items)...", flush=True)
         try:
             session = make_session(args.transport, args.review_pages)
             session.open()
         except Exception as exc:
             with lock:
-                print(f"[step02][w{worker_id}] session open FAILED: {exc!r}")
+                print(f"[step02][w{worker_id}] session open FAILED: {exc!r}", flush=True)
             return
         try:
             for i, t in shard:
@@ -223,7 +225,7 @@ def main() -> int:
                     page_log.append({"sku_id": sku_id, "nav_status": row.get("nav_status"),
                                      "specs_ok": specs_ok, "error": None if specs_ok else last_err})
                     done["n"] += 1
-                    print(f"[step02][w{worker_id}] {done['n']:>3}/{total} {line}")
+                    print(f"[step02][w{worker_id}] {done['n']:>3}/{total} {line}", flush=True)
                 if args.sleep > 0:
                     time.sleep(args.sleep)
         finally:
@@ -272,7 +274,7 @@ def main() -> int:
         "pages": page_log,
     }
     write_json(cfg.OUTPUT_ROOT / "mmkt_step02_pdp_detail_manifest.json", manifest)
-    print(f"[step02] DONE rows={len(rows)} specs={filled} similar={with_sim} summary={with_sum} -> {out_path}")
+    print(f"[step02] DONE rows={len(rows)} specs={filled} similar={with_sim} summary={with_sum} -> {out_path}", flush=True)
     return 0 if filled else 1
 
 
