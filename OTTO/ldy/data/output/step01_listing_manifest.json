@@ -1,0 +1,79 @@
+{
+  "run_type": "listing",
+  "product": "LDY",
+  "created_at": "2026-06-30T00:20:42+09:00",
+  "suchbegriff": "waschmaschinen",
+  "listing_pages_collected": 5,
+  "listing_positions_per_page": 120,
+  "listing_rows": 600,
+  "unique_variation_ids": 484,
+  "crocotile_returned": 484,
+  "everglades_requests": [
+    {
+      "page": 1,
+      "offset": 0,
+      "http_status": 200,
+      "body_bytes": 112653,
+      "elapsed_seconds": 3.062
+    },
+    {
+      "page": 2,
+      "offset": 109,
+      "http_status": 200,
+      "body_bytes": 148646,
+      "elapsed_seconds": 2.453
+    },
+    {
+      "page": 3,
+      "offset": 218,
+      "http_status": 200,
+      "body_bytes": 112540,
+      "elapsed_seconds": 2.364
+    },
+    {
+      "page": 4,
+      "offset": 327,
+      "http_status": 200,
+      "body_bytes": 112660,
+      "elapsed_seconds": 2.353
+    },
+    {
+      "page": 5,
+      "offset": 436,
+      "http_status": 200,
+      "body_bytes": 108076,
+      "elapsed_seconds": 2.338
+    }
+  ],
+  "crocotile_requests": [
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 4,
+      "returned": 4
+    }
+  ],
+  "output": "C:\\samsung_dx_seg\\OTTO\\ldy\\data\\output\\otto_listing_topseller_rows.csv"
+}

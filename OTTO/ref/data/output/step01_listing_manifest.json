@@ -1,0 +1,79 @@
+{
+  "run_type": "listing",
+  "product": "REF",
+  "created_at": "2026-06-29T23:25:02+09:00",
+  "suchbegriff": "kuehlschraenke",
+  "listing_pages_collected": 5,
+  "listing_positions_per_page": 120,
+  "listing_rows": 600,
+  "unique_variation_ids": 500,
+  "crocotile_returned": 500,
+  "everglades_requests": [
+    {
+      "page": 1,
+      "offset": 0,
+      "http_status": 200,
+      "body_bytes": 122267,
+      "elapsed_seconds": 3.134
+    },
+    {
+      "page": 2,
+      "offset": 109,
+      "http_status": 200,
+      "body_bytes": 118465,
+      "elapsed_seconds": 2.428
+    },
+    {
+      "page": 3,
+      "offset": 218,
+      "http_status": 200,
+      "body_bytes": 118481,
+      "elapsed_seconds": 2.422
+    },
+    {
+      "page": 4,
+      "offset": 327,
+      "http_status": 200,
+      "body_bytes": 117745,
+      "elapsed_seconds": 2.448
+    },
+    {
+      "page": 5,
+      "offset": 436,
+      "http_status": 200,
+      "body_bytes": 109206,
+      "elapsed_seconds": 2.673
+    }
+  ],
+  "crocotile_requests": [
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 20,
+      "returned": 20
+    }
+  ],
+  "output": "C:\\samsung_dx_seg\\OTTO\\ref\\data\\output\\otto_listing_topseller_rows.csv"
+}

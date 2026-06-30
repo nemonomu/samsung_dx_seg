@@ -1,0 +1,10 @@
+{
+  "run_type": "email_notify",
+  "product": "REF",
+  "notify": true,
+  "dry_run": false,
+  "sent": true,
+  "recipients_count": 1,
+  "error": null,
+  "report": "C:\\samsung_dx_seg\\OTTO\\ref\\data\\output\\otto_email_report.txt"
+}

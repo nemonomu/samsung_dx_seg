@@ -22,3 +22,9 @@ OTTO/references/har/sample_philips/detail_philips*_summary.json
 
 # OTTO detail ZenRows structure probes
 OTTO/references/har/detail_zenrows*_structure_*/
+
+# Large listing HAR/page captures
+OTTO/references/har/listing_pages_*.zip
+
+# Opt-in raw-HTML audit dumps (OTTO_SAVE_HTML) are local-only
+OTTO/**/raw_html/

@@ -1,749 +1,363 @@
 {
   "run_type": "step01_listing",
+  "created_at": "2026-06-29T10:07:36+09:00",
+  "transport": "direct_rest_xhr",
   "source_url": "https://www.otto.de/suche/fernseher/?sortiertnach=topseller",
-  "canonical_html": "C:\\samsung_dx_seg\\OTTO\\references\\har\\listing_bsr_o120.html",
-  "canonical_rows": 120,
-  "canonical_unique_variation_ids": 109,
-  "production_listing_pages_to_collect": 4,
-  "production_listing_positions_per_page": 120,
-  "production_listing_position_budget": 480,
+  "everglades_endpoint": "https://www.otto.de/everglades/products",
+  "crocotile_endpoint": "https://www.otto.de/crocotile/tile/data",
+  "everglades_rule": "(und.(suchbegriff.fernseher).(~.(v.1)))",
+  "page_offsets": [
+    0,
+    109,
+    218,
+    327,
+    436
+  ],
+  "sponsored_slot_positions": [
+    1,
+    2,
+    8,
+    16,
+    24,
+    32,
+    40,
+    48,
+    56,
+    64,
+    72
+  ],
+  "listing_pages_collected": 5,
+  "listing_positions_per_page": 120,
+  "listing_position_budget": 600,
+  "listing_rows": 600,
+  "unique_variation_ids": 474,
+  "crocotile_requested_unique_variation_ids": 474,
+  "crocotile_returned_unique_variation_ids": 474,
+  "crocotile_missing_variation_ids": [],
+  "main_target_unique": 300,
+  "bsr_rank_limit": 100,
   "listing_composition": {
-    "canonical": {
-      "total_rows": 120,
-      "organic_rows": 109,
-      "sponsored_rows": 11,
-      "organic_unique_variation_ids": 109,
-      "sponsored_unique_variation_ids": 11,
-      "sponsored_variation_ids_also_in_organic": 11
+    "all_pages": {
+      "total_rows": 600,
+      "organic_rows": 545,
+      "sponsored_rows": 55,
+      "organic_unique_variation_ids": 469,
+      "sponsored_unique_variation_ids": 40,
+      "sponsored_variation_ids_also_in_organic": 35
     },
-    "main_capture": {
-      "total_rows": 119,
-      "organic_rows": 108,
+    "bsr_top_positions": {
+      "total_rows": 100,
+      "organic_rows": 89,
       "sponsored_rows": 11,
-      "organic_unique_variation_ids": 108,
+      "organic_unique_variation_ids": 89,
       "sponsored_unique_variation_ids": 11,
-      "sponsored_variation_ids_also_in_organic": 10
-    },
-    "bsr_capture": {
-      "total_rows": 120,
-      "organic_rows": 109,
-      "sponsored_rows": 11,
-      "organic_unique_variation_ids": 109,
-      "sponsored_unique_variation_ids": 11,
-      "sponsored_variation_ids_also_in_organic": 11
+      "sponsored_variation_ids_also_in_organic": 9
     }
   },
-  "target_selection_rule": "All product positions inside the target listing area are eligible targets, including sponsored positions. Organic/sponsored is retained as exposure metadata, not used for exclusion.",
-  "listing_area_rule": "Parse product article rows only inside #reptile-search-result section.reptile-tile-list. Non-product slots inside the section, such as benefit cinema, comparison banner, and SDA ad slots, are excluded.",
+  "target_selection_rule": "All product positions in the target listing area are eligible targets, including sponsored slots. Organic/sponsored exposure is retained as metadata; final target dedupe happens in step02 by retailer_sku_name.",
+  "position_reconstruction_rule": "Each everglades page returns ranked and sponsored products separately. The displayed 120 positions are reconstructed by placing sponsored products into the observed sponsored slot positions and filling the remaining positions with ranked products in order.",
+  "bsr_rank_rule": "Main and BSR both use the same Topseller listing order; BSR is the first 100 display positions before step02 TV filtering and retailer_sku_name dedupe.",
+  "field_sources": {
+    "rank_identity_exposure": "everglades/products",
+    "price_savings_availability_reviews_images_energy": "crocotile/tile/data"
+  },
+  "page_summaries": [
+    {
+      "page_number": 1,
+      "offset": 0,
+      "ranked_products": 120,
+      "sponsored_products": 11,
+      "display_rows": 120,
+      "organic_display_rows": 109,
+      "sponsored_display_rows": 11,
+      "ranked_consumed_for_organic_slots": 109,
+      "sponsored_slot_positions": [
+        1,
+        2,
+        8,
+        16,
+        24,
+        32,
+        40,
+        48,
+        56,
+        64,
+        72
+      ]
+    },
+    {
+      "page_number": 2,
+      "offset": 109,
+      "ranked_products": 120,
+      "sponsored_products": 11,
+      "display_rows": 120,
+      "organic_display_rows": 109,
+      "sponsored_display_rows": 11,
+      "ranked_consumed_for_organic_slots": 109,
+      "sponsored_slot_positions": [
+        1,
+        2,
+        8,
+        16,
+        24,
+        32,
+        40,
+        48,
+        56,
+        64,
+        72
+      ]
+    },
+    {
+      "page_number": 3,
+      "offset": 218,
+      "ranked_products": 120,
+      "sponsored_products": 11,
+      "display_rows": 120,
+      "organic_display_rows": 109,
+      "sponsored_display_rows": 11,
+      "ranked_consumed_for_organic_slots": 109,
+      "sponsored_slot_positions": [
+        1,
+        2,
+        8,
+        16,
+        24,
+        32,
+        40,
+        48,
+        56,
+        64,
+        72
+      ]
+    },
+    {
+      "page_number": 4,
+      "offset": 327,
+      "ranked_products": 120,
+      "sponsored_products": 11,
+      "display_rows": 120,
+      "organic_display_rows": 109,
+      "sponsored_display_rows": 11,
+      "ranked_consumed_for_organic_slots": 109,
+      "sponsored_slot_positions": [
+        1,
+        2,
+        8,
+        16,
+        24,
+        32,
+        40,
+        48,
+        56,
+        64,
+        72
+      ]
+    },
+    {
+      "page_number": 5,
+      "offset": 436,
+      "ranked_products": 120,
+      "sponsored_products": 11,
+      "display_rows": 120,
+      "organic_display_rows": 109,
+      "sponsored_display_rows": 11,
+      "ranked_consumed_for_organic_slots": 109,
+      "sponsored_slot_positions": [
+        1,
+        2,
+        8,
+        16,
+        24,
+        32,
+        40,
+        48,
+        56,
+        64,
+        72
+      ]
+    }
+  ],
+  "everglades_requests": [
+    {
+      "page_number": 1,
+      "offset": 0,
+      "http_status": 200,
+      "body_bytes": 115668,
+      "body_sha1": "1d79f8df5a3ec096d438041e78ab29ded95f042a",
+      "elapsed_seconds": 2.234
+    },
+    {
+      "page_number": 2,
+      "offset": 109,
+      "http_status": 200,
+      "body_bytes": 108423,
+      "body_sha1": "594b50557a2b531ef62913e31af6897cc257d766",
+      "elapsed_seconds": 1.722
+    },
+    {
+      "page_number": 3,
+      "offset": 218,
+      "http_status": 200,
+      "body_bytes": 106443,
+      "body_sha1": "266abdd021696b25160eaeef20e1c724377cadeb",
+      "elapsed_seconds": 1.744
+    },
+    {
+      "page_number": 4,
+      "offset": 327,
+      "http_status": 200,
+      "body_bytes": 102554,
+      "body_sha1": "e604e869f988b7350581fabc4adc8e716c1caca7",
+      "elapsed_seconds": 1.731
+    },
+    {
+      "page_number": 5,
+      "offset": 436,
+      "http_status": 200,
+      "body_bytes": 103980,
+      "body_sha1": "979e83db275bf177c36a20611d39c9d1f63ea269",
+      "elapsed_seconds": 1.747
+    }
+  ],
+  "crocotile_requests": [
+    {
+      "batch_index": 1,
+      "requested": 80,
+      "returned": 80,
+      "http_status": 200,
+      "body_bytes": 201050,
+      "body_sha1": "e11a5bfd0124c181cd4426cdcba3e80df4ed3cb2",
+      "elapsed_seconds": 1.714
+    },
+    {
+      "batch_index": 2,
+      "requested": 80,
+      "returned": 80,
+      "http_status": 200,
+      "body_bytes": 188622,
+      "body_sha1": "2f1ab3c5fc14575ce3fcd14f2a852eea42fa39be",
+      "elapsed_seconds": 1.76
+    },
+    {
+      "batch_index": 3,
+      "requested": 80,
+      "returned": 80,
+      "http_status": 200,
+      "body_bytes": 188921,
+      "body_sha1": "aa601d0606b0b9750f0e8352c87addb1cb4f5c73",
+      "elapsed_seconds": 1.76
+    },
+    {
+      "batch_index": 4,
+      "requested": 80,
+      "returned": 80,
+      "http_status": 200,
+      "body_bytes": 177231,
+      "body_sha1": "f42bc2e604b27d05f926f0ac1e7d778a169d10fc",
+      "elapsed_seconds": 1.771
+    },
+    {
+      "batch_index": 5,
+      "requested": 80,
+      "returned": 80,
+      "http_status": 200,
+      "body_bytes": 166678,
+      "body_sha1": "19304b24fea1878e2e4c7165771afce77ff49f43",
+      "elapsed_seconds": 1.775
+    },
+    {
+      "batch_index": 6,
+      "requested": 74,
+      "returned": 74,
+      "http_status": 200,
+      "body_bytes": 152152,
+      "body_sha1": "d9f66c3df8f785a153d57c7442c4639d860d590d",
+      "elapsed_seconds": 1.788
+    }
+  ],
   "render_state_stats": {
-    "canonical": {
-      "by_state": {
-        "fully_loaded_card": 18,
-        "placeholder_link_only": 102
-      },
-      "by_exposure_state": {
-        "organic_fully_loaded_card": 14,
-        "organic_placeholder_link_only": 95,
-        "sponsored_fully_loaded_card": 4,
-        "sponsored_placeholder_link_only": 7
-      },
-      "display_rank_ranges": {
-        "fully_loaded_card": [
-          1,
-          18
-        ],
-        "placeholder_link_only": [
-          19,
-          120
-        ]
-      }
+    "by_state": {
+      "api_enriched": 600
     },
-    "main_capture": {
-      "by_state": {
-        "fully_loaded_card": 18,
-        "placeholder_link_only": 101
-      },
-      "by_exposure_state": {
-        "organic_fully_loaded_card": 14,
-        "organic_placeholder_link_only": 94,
-        "sponsored_fully_loaded_card": 4,
-        "sponsored_placeholder_link_only": 7
-      },
-      "display_rank_ranges": {
-        "fully_loaded_card": [
-          1,
-          18
-        ],
-        "placeholder_link_only": [
-          20,
-          120
-        ]
-      }
-    },
-    "bsr_capture": {
-      "by_state": {
-        "fully_loaded_card": 18,
-        "placeholder_link_only": 102
-      },
-      "by_exposure_state": {
-        "organic_fully_loaded_card": 14,
-        "organic_placeholder_link_only": 95,
-        "sponsored_fully_loaded_card": 4,
-        "sponsored_placeholder_link_only": 7
-      },
-      "display_rank_ranges": {
-        "fully_loaded_card": [
-          1,
-          18
-        ],
-        "placeholder_link_only": [
-          19,
-          120
-        ]
-      }
+    "by_exposure_state": {
+      "organic_api_enriched": 545,
+      "sponsored_api_enriched": 55
     }
   },
   "field_coverage": {
-    "canonical": {
-      "product_url": {
-        "present": 120,
-        "missing": 0,
-        "total": 120
-      },
-      "retailer_sku_name": {
-        "present": 120,
-        "missing": 0,
-        "total": 120
-      },
-      "final_sku_price": {
-        "present": 18,
-        "missing": 102,
-        "total": 120
-      },
-      "original_sku_price": {
-        "present": 18,
-        "missing": 102,
-        "total": 120
-      },
-      "savings": {
-        "present": 17,
-        "missing": 103,
-        "total": 120
-      },
-      "sku_popularity": {
-        "present": 15,
-        "missing": 105,
-        "total": 120
-      },
-      "sku_status": {
-        "present": 11,
-        "missing": 109,
-        "total": 120
-      },
-      "discount_type": {
-        "present": 0,
-        "missing": 120,
-        "total": 120
-      }
+    "product_url": {
+      "present": 600,
+      "missing": 0,
+      "total": 600
     },
-    "main_capture": {
-      "product_url": {
-        "present": 119,
-        "missing": 0,
-        "total": 119
-      },
-      "retailer_sku_name": {
-        "present": 119,
-        "missing": 0,
-        "total": 119
-      },
-      "final_sku_price": {
-        "present": 18,
-        "missing": 101,
-        "total": 119
-      },
-      "original_sku_price": {
-        "present": 18,
-        "missing": 101,
-        "total": 119
-      },
-      "savings": {
-        "present": 17,
-        "missing": 102,
-        "total": 119
-      },
-      "sku_popularity": {
-        "present": 15,
-        "missing": 104,
-        "total": 119
-      },
-      "sku_status": {
-        "present": 11,
-        "missing": 108,
-        "total": 119
-      },
-      "discount_type": {
-        "present": 0,
-        "missing": 119,
-        "total": 119
-      }
+    "retailer_sku_name": {
+      "present": 600,
+      "missing": 0,
+      "total": 600
     },
-    "bsr_capture": {
-      "product_url": {
-        "present": 120,
-        "missing": 0,
-        "total": 120
-      },
-      "retailer_sku_name": {
-        "present": 120,
-        "missing": 0,
-        "total": 120
-      },
-      "final_sku_price": {
-        "present": 18,
-        "missing": 102,
-        "total": 120
-      },
-      "original_sku_price": {
-        "present": 18,
-        "missing": 102,
-        "total": 120
-      },
-      "savings": {
-        "present": 17,
-        "missing": 103,
-        "total": 120
-      },
-      "sku_popularity": {
-        "present": 15,
-        "missing": 105,
-        "total": 120
-      },
-      "sku_status": {
-        "present": 11,
-        "missing": 109,
-        "total": 120
-      },
-      "discount_type": {
-        "present": 0,
-        "missing": 120,
-        "total": 120
-      }
+    "final_sku_price": {
+      "present": 600,
+      "missing": 0,
+      "total": 600
+    },
+    "original_sku_price": {
+      "present": 544,
+      "missing": 56,
+      "total": 600
+    },
+    "savings": {
+      "present": 525,
+      "missing": 75,
+      "total": 600
+    },
+    "sku_popularity": {
+      "present": 88,
+      "missing": 512,
+      "total": 600
+    },
+    "sku_status": {
+      "present": 55,
+      "missing": 545,
+      "total": 600
+    },
+    "discount_type": {
+      "present": 209,
+      "missing": 391,
+      "total": 600
+    },
+    "delivery_availability_raw": {
+      "present": 600,
+      "missing": 0,
+      "total": 600
+    },
+    "count_of_reviews_listing": {
+      "present": 453,
+      "missing": 147,
+      "total": 600
+    },
+    "average_rating_listing": {
+      "present": 453,
+      "missing": 147,
+      "total": 600
     }
   },
-  "bsr_rank_rule": "main and bsr both use the same Topseller display-position order from Deloitte workbook; sponsored positions are included in rank positions.",
-  "capture_limitations": [
-    "Current local listing captures contain only the first SERP document; the o=120 capture redirected back to /suche/fernseher/ and is not a confirmed second page.",
-    "The captured SERP HTML has variation price/savings data only for the initially loaded tile subset; later tiles require pagination/scroll variation XHR capture or the underlying pageFetcher product response."
-  ],
   "top_rank_stats": {
     "rank_basis": "display_rank_including_sponsored",
     "target_position_rows": 100,
-    "unique_variation_ids": 89,
+    "unique_variation_ids": 91,
     "sponsored_position_rows": 11,
     "duplicate_variation_ids": {
-      "1844694670": 2,
-      "1975567464": 2,
       "1975567591": 2,
       "1975567647": 2,
-      "1975567811": 2,
+      "1975567840": 2,
       "1975567880": 2,
-      "1975567931": 2,
-      "1975568021": 2,
+      "1975568003": 2,
       "1975568030": 2,
+      "1980401030": 2,
       "1995107348": 2,
       "2037941360": 2
     }
-  },
-  "capture_drift": {
-    "rank_basis": "organic_rank",
-    "same_rank_count": 31,
-    "mismatch_count": 69,
-    "mismatches": [
-      {
-        "organic_rank": 32,
-        "main_variation_id": "S03H00EE3YGH",
-        "bsr_variation_id": "S07AU0B55ENF",
-        "main_name": "JTC-24 JTCSQ32H39330G QLED-Fernseher (80 cm/32 Zoll, HD ready, Google TV, 32 Zoll, QLED, Android TV, Sprachsteuerung, Triple Tuner, Bluetooth)",
-        "bsr_name": "Lookway Lowboard COLGANTE KASCHMIR 200 cm TV-Schrank mit LED Beleuchtung"
-      },
-      {
-        "organic_rank": 33,
-        "main_variation_id": "2024627864",
-        "bsr_variation_id": "S03H00EE3YGH",
-        "main_name": "LG 27LX6TDGA LED-Fernseher (68 cm/27 Zoll, QHD, Smart-TV)",
-        "bsr_name": "JTC-24 JTCSQ32H39330G QLED-Fernseher (80 cm/32 Zoll, HD ready, Google TV, 32 Zoll, QLED, Android TV, Sprachsteuerung, Triple Tuner, Bluetooth)"
-      },
-      {
-        "organic_rank": 34,
-        "main_variation_id": "1975567811",
-        "bsr_variation_id": "2024627864",
-        "main_name": "Samsung GQ65S90FAT OLED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, HDR+, Dolby Atmos & AI Sound, Gaming Hub, Upscaling Pro, bis zu 144Hz)",
-        "bsr_name": "LG 27LX6TDGA LED-Fernseher (68 cm/27 Zoll, QHD, Smart-TV)"
-      },
-      {
-        "organic_rank": 35,
-        "main_variation_id": "1962381501",
-        "bsr_variation_id": "1975567811",
-        "main_name": "TCL 55V6CX2 LED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, Google TV, 4K HDR, Multi-HDR, Dolby Vision, Game Master, Smart TV, Apple TV)",
-        "bsr_name": "Samsung GQ65S90FAT OLED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, HDR+, Dolby Atmos & AI Sound, Gaming Hub, Upscaling Pro, bis zu 144Hz)"
-      },
-      {
-        "organic_rank": 36,
-        "main_variation_id": "1980401039",
-        "bsr_variation_id": "1962381501",
-        "main_name": "Philips 43PUS7000/12 LED-Fernseher (108 cm/43 Zoll, 4K Ultra HD, Smart-TV, Pixel Precise UHD, HDR10+, Dolby Atmos & DTS:X Sound, Gaming)",
-        "bsr_name": "TCL 55V6CX2 LED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, Google TV, 4K HDR, Multi-HDR, Dolby Vision, Game Master, Smart TV, Apple TV)"
-      },
-      {
-        "organic_rank": 37,
-        "main_variation_id": "1994700743",
-        "bsr_variation_id": "1980401039",
-        "main_name": "Sharp 4T-C50HPx QLED-Fernseher (126 cm/50 Zoll, 4K Ultra HD, Smart-TV, Google TV)",
-        "bsr_name": "Philips 43PUS7000/12 LED-Fernseher (108 cm/43 Zoll, 4K Ultra HD, Smart-TV, Pixel Precise UHD, HDR10+, Dolby Atmos & DTS:X Sound, Gaming)"
-      },
-      {
-        "organic_rank": 38,
-        "main_variation_id": "1975567840",
-        "bsr_variation_id": "1994700743",
-        "main_name": "Samsung GQ55Q7FAAU QLED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)",
-        "bsr_name": "Sharp 4T-C50HPx QLED-Fernseher (126 cm/50 Zoll, 4K Ultra HD, Smart-TV, Google TV)"
-      },
-      {
-        "organic_rank": 39,
-        "main_variation_id": "S0ABE05W4D8Y",
-        "bsr_variation_id": "1975567840",
-        "main_name": "JTC-24 JTCS50U39501FLW LED-Fernseher (126,00 cm/50 Zoll, 4K Ultra HD, Smart-TV, HDR, LAN/WLAN, DLNA, Miracast WiFi Display, Bluetooth, rahmenlos)",
-        "bsr_name": "Samsung GQ55Q7FAAU QLED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)"
-      },
-      {
-        "organic_rank": 40,
-        "main_variation_id": "2077443308",
-        "bsr_variation_id": "S0ABE05W4D8Y",
-        "main_name": "Samsung UE27LSM7FAX LED-Fernseher (68 cm/27 Zoll, QHD, Smart-TV)",
-        "bsr_name": "JTC-24 JTCS50U39501FLW LED-Fernseher (126,00 cm/50 Zoll, 4K Ultra HD, Smart-TV, HDR, LAN/WLAN, DLNA, Miracast WiFi Display, Bluetooth, rahmenlos)"
-      },
-      {
-        "organic_rank": 41,
-        "main_variation_id": "1962381524",
-        "bsr_variation_id": "2077443308",
-        "main_name": "TCL 65P81KXB QLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV, Google TV, 144Hz, Multi-HDR, Dolby Vision, Game Master, Smart TV, Apple TV, ONKYO)",
-        "bsr_name": "Samsung UE27LSM7FAX LED-Fernseher (68 cm/27 Zoll, QHD, Smart-TV)"
-      },
-      {
-        "organic_rank": 42,
-        "main_variation_id": "1966695245",
-        "bsr_variation_id": "1962381524",
-        "main_name": "TCL 98Q7CX7 Mini-LED-Fernseher (248 cm/98 Zoll, 4K Ultra HD, Smart-TV, Google TV, Audio von Bang & Olufsen, Dolby Vision, Smart TV, Apple TV, 4K HDR)",
-        "bsr_name": "TCL 65P81KXB QLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV, Google TV, 144Hz, Multi-HDR, Dolby Vision, Game Master, Smart TV, Apple TV, ONKYO)"
-      },
-      {
-        "organic_rank": 43,
-        "main_variation_id": "1955108313",
-        "bsr_variation_id": "1966695245",
-        "main_name": "Hisense 55E77Q PRO QLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, 4K UHD QLED)",
-        "bsr_name": "TCL 98Q7CX7 Mini-LED-Fernseher (248 cm/98 Zoll, 4K Ultra HD, Smart-TV, Google TV, Audio von Bang & Olufsen, Dolby Vision, Smart TV, Apple TV, 4K HDR)"
-      },
-      {
-        "organic_rank": 44,
-        "main_variation_id": "1975567481",
-        "bsr_variation_id": "1955108313",
-        "main_name": "Samsung GQ65S85FAE OLED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, HDR, Dolby Atmos & AI Sound, Pantone Farben, Gaming Hub, bis zu 120Hz)",
-        "bsr_name": "Hisense 55E77Q PRO QLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, 4K UHD QLED)"
-      },
-      {
-        "organic_rank": 45,
-        "main_variation_id": "2093625843",
-        "bsr_variation_id": "1975567481",
-        "main_name": "LG 75NU850B6LA DLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Samsung GQ65S85FAE OLED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, HDR, Dolby Atmos & AI Sound, Pantone Farben, Gaming Hub, bis zu 120Hz)"
-      },
-      {
-        "organic_rank": 46,
-        "main_variation_id": "1970617855",
-        "bsr_variation_id": "2093625843",
-        "main_name": "Philips 55PUS8000/12 LED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, Ambilight, Pixel Precise UHD, HDR10+ & HLG, Gaming, Dolby Atmos)",
-        "bsr_name": "LG 75NU850B6LA DLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 47,
-        "main_variation_id": "S0IFT0797TWX",
-        "bsr_variation_id": "1970617855",
-        "main_name": "Medion® MD843601 QLED-Fernseher (108 cm/43 Zoll, 4K Ultra HD, Smart-TV, Dolby Vision, Dolby Atmos, Netflix, HBO Max, Prime Video, Disney+, WOW)",
-        "bsr_name": "Philips 55PUS8000/12 LED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, Ambilight, Pixel Precise UHD, HDR10+ & HLG, Gaming, Dolby Atmos)"
-      },
-      {
-        "organic_rank": 48,
-        "main_variation_id": "1582142829",
-        "bsr_variation_id": "S0IFT0797TWX",
-        "main_name": "Hama TV-Wandhalterung Halterung, schwenkbar, neigbar 48 - 122 cm (19\" - 48), (bis 48 Zoll, max. 20 kg)",
-        "bsr_name": "Medion® MD843601 QLED-Fernseher (108 cm/43 Zoll, 4K Ultra HD, Smart-TV, Dolby Vision, Dolby Atmos, Netflix, HBO Max, Prime Video, Disney+, WOW)"
-      },
-      {
-        "organic_rank": 49,
-        "main_variation_id": "1970617891",
-        "bsr_variation_id": "1582142829",
-        "main_name": "Philips 32PFS6900/12 LED-Fernseher (80 cm/32 Zoll, Full HD, Smart-TV, Ambilight, Pixel Plus HD, HDR10 & HLG, Dolby Audio, Vocal Boost)",
-        "bsr_name": "Hama TV-Wandhalterung Halterung, schwenkbar, neigbar 48 - 122 cm (19\" - 48), (bis 48 Zoll, max. 20 kg)"
-      },
-      {
-        "organic_rank": 50,
-        "main_variation_id": "S0MBV0QWWIM5",
-        "bsr_variation_id": "1970617891",
-        "main_name": "Alltro Universal TV Fernbedienung passend für alle Telefunken Fernseher Fernbedienung (Mit YouTube-, Netflix-Tasten)",
-        "bsr_name": "Philips 32PFS6900/12 LED-Fernseher (80 cm/32 Zoll, Full HD, Smart-TV, Ambilight, Pixel Plus HD, HDR10 & HLG, Dolby Audio, Vocal Boost)"
-      },
-      {
-        "organic_rank": 51,
-        "main_variation_id": "1975567985",
-        "bsr_variation_id": "S0MBV0QWWIM5",
-        "main_name": "Samsung GQ55QN70FAU QLED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV, Neo Quantum HDR, 4K AI Upscaling, Gaming Hub, Motion Xcelerator 144Hz)",
-        "bsr_name": "Alltro Universal TV Fernbedienung passend für alle Telefunken Fernseher Fernbedienung (Mit YouTube-, Netflix-Tasten)"
-      },
-      {
-        "organic_rank": 52,
-        "main_variation_id": "S0FFD0DQHEXW",
-        "bsr_variation_id": "1975567985",
-        "main_name": "JVC LT-24VRH3555 LCD-LED Fernseher (60 cm/24 Zoll, HD-ready, Fire TV, Fire TV / Smart TV, HDR, Alexa Built-In, Triple-Tuner)",
-        "bsr_name": "Samsung GQ55QN70FAU QLED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV, Neo Quantum HDR, 4K AI Upscaling, Gaming Hub, Motion Xcelerator 144Hz)"
-      },
-      {
-        "organic_rank": 53,
-        "main_variation_id": "1975567464",
-        "bsr_variation_id": "S0FFD0DQHEXW",
-        "main_name": "Samsung GU65U8079FU LED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)",
-        "bsr_name": "JVC LT-24VRH3555 LCD-LED Fernseher (60 cm/24 Zoll, HD-ready, Fire TV, Fire TV / Smart TV, HDR, Alexa Built-In, Triple-Tuner)"
-      },
-      {
-        "organic_rank": 54,
-        "main_variation_id": "1968874108",
-        "bsr_variation_id": "1975567464",
-        "main_name": "LG OLED48B59LA OLED-Fernseher (121 cm/48 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Samsung GU65U8079FU LED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)"
-      },
-      {
-        "organic_rank": 55,
-        "main_variation_id": "1975567753",
-        "bsr_variation_id": "1968874108",
-        "main_name": "Samsung GQ75QN70FAU QLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV, Neo Quantum HDR, 4K AI Upscaling, Gaming Hub, Motion Xcelerator 144Hz)",
-        "bsr_name": "LG OLED48B59LA OLED-Fernseher (121 cm/48 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 56,
-        "main_variation_id": "2093626167",
-        "bsr_variation_id": "1975567753",
-        "main_name": "LG 85NU850B6LA LED-Fernseher (215 cm/85 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Samsung GQ75QN70FAU QLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV, Neo Quantum HDR, 4K AI Upscaling, Gaming Hub, Motion Xcelerator 144Hz)"
-      },
-      {
-        "organic_rank": 57,
-        "main_variation_id": "1197586135",
-        "bsr_variation_id": "2093626167",
-        "main_name": "Telefunken L24H550M4I LED-Fernseher (60 cm/24 Zoll, HD-ready)",
-        "bsr_name": "LG 85NU850B6LA LED-Fernseher (215 cm/85 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 58,
-        "main_variation_id": "2087551486",
-        "bsr_variation_id": "1197586135",
-        "main_name": "Hisense 75E7S QLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Telefunken L24H550M4I LED-Fernseher (60 cm/24 Zoll, HD-ready)"
-      },
-      {
-        "organic_rank": 59,
-        "main_variation_id": "1975567990",
-        "bsr_variation_id": "2087551486",
-        "main_name": "Samsung GQ75Q8FAAU QLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR+, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)",
-        "bsr_name": "Hisense 75E7S QLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 60,
-        "main_variation_id": "1723522818",
-        "bsr_variation_id": "1975567990",
-        "main_name": "Sony KD-85X80L LED-Fernseher (215 cm/85 Zoll, 4K Ultra HD, Smart-TV, Google TV, HDR, X1-Prozessor, BRAVIA CORE, Triluminos Pro, HDMI 2.1, Gaming-Menü)",
-        "bsr_name": "Samsung GQ75Q8FAAU QLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR+, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)"
-      },
-      {
-        "organic_rank": 61,
-        "main_variation_id": "1975567707",
-        "bsr_variation_id": "1723522818",
-        "main_name": "Samsung GQ55S85FAU OLED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV, HDR, Dolby Atmos & AI Sound, Pantone Farben, Gaming Hub, bis zu 120Hz)",
-        "bsr_name": "Sony KD-85X80L LED-Fernseher (215 cm/85 Zoll, 4K Ultra HD, Smart-TV, Google TV, HDR, X1-Prozessor, BRAVIA CORE, Triluminos Pro, HDMI 2.1, Gaming-Menü)"
-      },
-      {
-        "organic_rank": 62,
-        "main_variation_id": "2042293621",
-        "bsr_variation_id": "1975567707",
-        "main_name": "Toshiba 50UV1563DD DLED-Fernseher (126 cm/50 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Samsung GQ55S85FAU OLED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV, HDR, Dolby Atmos & AI Sound, Pantone Farben, Gaming Hub, bis zu 120Hz)"
-      },
-      {
-        "organic_rank": 63,
-        "main_variation_id": "S03ED0HNXKCH",
-        "bsr_variation_id": "S0H9U0651NQK",
-        "main_name": "Hisense 58E77Q LED-Fernseher (58 Zoll, 4K Ultra HD, Ja)",
-        "bsr_name": "Rosnek LED Stripe 2/5M, RGB, APP/Fernbedienung, USB, für Schlafzimmer TV, LED Hintergrundbeleuchtung Computer Monitore Deko"
-      },
-      {
-        "organic_rank": 64,
-        "main_variation_id": "1968873879",
-        "bsr_variation_id": "2042293621",
-        "main_name": "LG OLED65C5ELB OLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Toshiba 50UV1563DD DLED-Fernseher (126 cm/50 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 65,
-        "main_variation_id": "1962381541",
-        "bsr_variation_id": "S03ED0HNXKCH",
-        "main_name": "TCL 55P81KX2 QLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, Google TV, 144Hz, Multi-HDR, Dolby Vision, Game Master, Smart TV, Apple TV, ONKYO)",
-        "bsr_name": "Hisense 58E77Q LED-Fernseher (58 Zoll, 4K Ultra HD, Ja)"
-      },
-      {
-        "organic_rank": 66,
-        "main_variation_id": "S0DH50TVXQM5",
-        "bsr_variation_id": "1968873879",
-        "main_name": "Smart Tech 32HN01V3 LED-Fernseher (81 cm/32 Zoll, HD-ready, 3x HDMI / 2x USB, integrierter Triple-Tuner)",
-        "bsr_name": "LG OLED65C5ELB OLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 67,
-        "main_variation_id": "S0UFK0PDUGC6",
-        "bsr_variation_id": "2033481051",
-        "main_name": "CHiQ U50QST QLED-Fernseher (127 cm/50 Zoll, 4K Ultra HD, 4K UHD TV, Smart-TV, QLED TV, Google TV, Inkl. Streaming Content, Kompatibel mit Apple AirPlay, Google TV)",
-        "bsr_name": "Hama TV-Wandhalterung TV Wandhalter schwenkbar, neigbar, ausziehbar 43, 55, 58, 65, bis 75\", (bis 75 Zoll, von 32-75 Zoll, mit Kabelmanager)"
-      },
-      {
-        "organic_rank": 68,
-        "main_variation_id": "S0TFK0DD94ZX",
-        "bsr_variation_id": "1962381541",
-        "main_name": "CHiQ LF32FT LED-Fernseher (80 cm/32 Zoll, Full HD(1920*1080), Android TV, Smart-TV, Google TV, HDR 10, Dolby Audio & dbx-tv, Google TV OS mit 10.000+ Apps)",
-        "bsr_name": "TCL 55P81KX2 QLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, Google TV, 144Hz, Multi-HDR, Dolby Vision, Game Master, Smart TV, Apple TV, ONKYO)"
-      },
-      {
-        "organic_rank": 69,
-        "main_variation_id": "2082949642",
-        "bsr_variation_id": "S0DH50TVXQM5",
-        "main_name": "Sharp 4T-C70HLx LED-Fernseher (177 cm/70 Zoll, 4K Ultra HD, Smart-TV, Google TV)",
-        "bsr_name": "Smart Tech 32HN01V3 LED-Fernseher (81 cm/32 Zoll, HD-ready, 3x HDMI / 2x USB, integrierter Triple-Tuner)"
-      },
-      {
-        "organic_rank": 70,
-        "main_variation_id": "1955807872",
-        "bsr_variation_id": "S0UFK0PDUGC6",
-        "main_name": "Hisense 40E4QT LED-Fernseher (100 cm/40 Zoll, Full HD, Smart-TV, 2K FHD)",
-        "bsr_name": "CHiQ U50QST QLED-Fernseher (127 cm/50 Zoll, 4K Ultra HD, 4K UHD TV, Smart-TV, QLED TV, Google TV, Inkl. Streaming Content, Kompatibel mit Apple AirPlay, Google TV)"
-      },
-      {
-        "organic_rank": 71,
-        "main_variation_id": "1975567720",
-        "bsr_variation_id": "S0TFK0DD94ZX",
-        "main_name": "Samsung GU55U8079FU LED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)",
-        "bsr_name": "CHiQ LF32FT LED-Fernseher (80 cm/32 Zoll, Full HD(1920*1080), Android TV, Smart-TV, Google TV, HDR 10, Dolby Audio & dbx-tv, Google TV OS mit 10.000+ Apps)"
-      },
-      {
-        "organic_rank": 72,
-        "main_variation_id": "1955807842",
-        "bsr_variation_id": "2082949642",
-        "main_name": "Hisense 32E4QT LED-Fernseher (80 cm/32 Zoll, HD, Smart-TV, HD)",
-        "bsr_name": "Sharp 4T-C70HLx LED-Fernseher (177 cm/70 Zoll, 4K Ultra HD, Smart-TV, Google TV)"
-      },
-      {
-        "organic_rank": 73,
-        "main_variation_id": "1980401147",
-        "bsr_variation_id": "1955807872",
-        "main_name": "Philips 65PUS8600/12 QLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV, Ambilight, P5 Perfect Picture Engine, HDR10+ kompatibel, Dolby Atmos)",
-        "bsr_name": "Hisense 40E4QT LED-Fernseher (100 cm/40 Zoll, Full HD, Smart-TV, 2K FHD)"
-      },
-      {
-        "organic_rank": 74,
-        "main_variation_id": "1975568021",
-        "bsr_variation_id": "1975567720",
-        "main_name": "Samsung GQ65Q7FAAU QLED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)",
-        "bsr_name": "Samsung GU55U8079FU LED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV, Crystal UHD, Q-Symphony, Dolby Surround Sound, Triple Tuner, Smart-Hub)"
-      },
-      {
-        "organic_rank": 75,
-        "main_variation_id": "1970617938",
-        "bsr_variation_id": "1955807842",
-        "main_name": "Philips 50PUS9000/12 QLED-Fernseher (126 cm/50 Zoll, 4K Ultra HD, Smart-TV, Ambilight, P5 Picture Engine, Dolby Vision, Dolby Atmos, Gaming, Alexa)",
-        "bsr_name": "Hisense 32E4QT LED-Fernseher (80 cm/32 Zoll, HD, Smart-TV, HD)"
-      },
-      {
-        "organic_rank": 76,
-        "main_variation_id": "1975567828",
-        "bsr_variation_id": "1980401147",
-        "main_name": "Samsung GQ75Q7FAAU QLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)",
-        "bsr_name": "Philips 65PUS8600/12 QLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV, Ambilight, P5 Perfect Picture Engine, HDR10+ kompatibel, Dolby Atmos)"
-      },
-      {
-        "organic_rank": 77,
-        "main_variation_id": "S0KH50THBP33",
-        "bsr_variation_id": "1975568021",
-        "main_name": "Medion® MD33100 LCD-LED Fernseher (125.7 cm/50 Zoll, 4K Ultra HD, Smart-TV, Netflix, HBO Max, Prime Video, Disney+, Magenta TV, AppleTV, WOW)",
-        "bsr_name": "Samsung GQ65Q7FAAU QLED-Fernseher (163 cm/65 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)"
-      },
-      {
-        "organic_rank": 78,
-        "main_variation_id": "2037941369",
-        "bsr_variation_id": "1970617938",
-        "main_name": "Samsung GQ77S91FAE OLED-Fernseher (194 cm/77 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Philips 50PUS9000/12 QLED-Fernseher (126 cm/50 Zoll, 4K Ultra HD, Smart-TV, Ambilight, P5 Picture Engine, Dolby Vision, Dolby Atmos, Gaming, Alexa)"
-      },
-      {
-        "organic_rank": 79,
-        "main_variation_id": "S0PFU03G6BCE",
-        "bsr_variation_id": "1975567828",
-        "main_name": "ETOE Starfish plus Google TV 1080P Projektor mit Nachttischlampe LCD-Beamer (3000:1, 1920×1080 px, 140°-Drehung, automatische Trapezkorrektur, integriertes Chromecast)",
-        "bsr_name": "Samsung GQ75Q7FAAU QLED-Fernseher (189 cm/75 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)"
-      },
-      {
-        "organic_rank": 80,
-        "main_variation_id": "2040419136",
-        "bsr_variation_id": "S0KH50THBP33",
-        "main_name": "Telefunken D40F900M8CWI LED-Fernseher (100 cm/40 Zoll, Full HD, Smart-TV)",
-        "bsr_name": "Medion® MD33100 LCD-LED Fernseher (125.7 cm/50 Zoll, 4K Ultra HD, Smart-TV, Netflix, HBO Max, Prime Video, Disney+, Magenta TV, AppleTV, WOW)"
-      },
-      {
-        "organic_rank": 81,
-        "main_variation_id": "S0WEP0S4A7KV",
-        "bsr_variation_id": "2037941369",
-        "main_name": "Medion® MD843400 LCD-LED Fernseher (108 cm/43 Zoll, 4K Ultra HD, Smart-TV, Dolby Vision, Dolby Atmos, Playstore, Netflix, HBO Max, Prime Video)",
-        "bsr_name": "Samsung GQ77S91FAE OLED-Fernseher (194 cm/77 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 82,
-        "main_variation_id": "2007673884",
-        "bsr_variation_id": "2040419136",
-        "main_name": "LG OLED55B59LA OLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Telefunken D40F900M8CWI LED-Fernseher (100 cm/40 Zoll, Full HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 83,
-        "main_variation_id": "1832845844",
-        "bsr_variation_id": "S0WEP0S4A7KV",
-        "main_name": "Hisense 85E6NT LED-Fernseher (214 cm/85 Zoll, 4K Ultra HD, Smart-TV, 4K UHD)",
-        "bsr_name": "Medion® MD843400 LCD-LED Fernseher (108 cm/43 Zoll, 4K Ultra HD, Smart-TV, Dolby Vision, Dolby Atmos, Playstore, Netflix, HBO Max, Prime Video)"
-      },
-      {
-        "organic_rank": 84,
-        "main_variation_id": "1970618117",
-        "bsr_variation_id": "2007673884",
-        "main_name": "Philips 65PUS9000/12 QLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV, Ambilight, P5 Picture Engine, Dolby Vision, Dolby Atmos, Gaming, Alexa)",
-        "bsr_name": "LG OLED55B59LA OLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 85,
-        "main_variation_id": "S0RGN07SVXKG",
-        "bsr_variation_id": "1832845844",
-        "main_name": "Hikers 32FZ-B LED-Fernseher (Smart-TV, Dolby Audio; Smart TV; VESA 100 x 100 mm)",
-        "bsr_name": "Hisense 85E6NT LED-Fernseher (214 cm/85 Zoll, 4K Ultra HD, Smart-TV, 4K UHD)"
-      },
-      {
-        "organic_rank": 86,
-        "main_variation_id": "1832845898",
-        "bsr_variation_id": "1970618117",
-        "main_name": "Hisense 50E6NT LED-Fernseher (126 cm/50 Zoll, 4K Ultra HD, Smart-TV, 4K UHD)",
-        "bsr_name": "Philips 65PUS9000/12 QLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV, Ambilight, P5 Picture Engine, Dolby Vision, Dolby Atmos, Gaming, Alexa)"
-      },
-      {
-        "organic_rank": 87,
-        "main_variation_id": "2093626014",
-        "bsr_variation_id": "S0RGN07SVXKG",
-        "main_name": "LG 65QNED71B6B QNED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Hikers 32FZ-B LED-Fernseher (Smart-TV, Dolby Audio; Smart TV; VESA 100 x 100 mm)"
-      },
-      {
-        "organic_rank": 88,
-        "main_variation_id": "2007673875",
-        "bsr_variation_id": "1832845898",
-        "main_name": "LG OLED77B59LA OLED-Fernseher (195 cm/77 Zoll, 4K Ultra HD, Smart-TV)",
-        "bsr_name": "Hisense 50E6NT LED-Fernseher (126 cm/50 Zoll, 4K Ultra HD, Smart-TV, 4K UHD)"
-      },
-      {
-        "organic_rank": 89,
-        "main_variation_id": "1955108383",
-        "bsr_variation_id": "2093626014",
-        "main_name": "Hisense 55E77Q QLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, 4K UHD QLED)",
-        "bsr_name": "LG 65QNED71B6B QNED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 90,
-        "main_variation_id": "1970617860",
-        "bsr_variation_id": "S0MFB0H9BMYP",
-        "main_name": "Philips 65PUS7800/12 QLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV, Pixel Precise Ultra HD, HDR10+ & HLG, Dolby Atmos & DTS:X Sound)",
-        "bsr_name": "freenet TV Streaming-Stick Hybrid 3in1, DVB-C/T2 und Android TV, Inkl. 3 Monate freenet TV, 4K UHD, Chromecast"
-      },
-      {
-        "organic_rank": 91,
-        "main_variation_id": "S0KDS0RYPNV6",
-        "bsr_variation_id": "2007673875",
-        "main_name": "WILGOON TV-Schrank Fernsehkommode, Hochglanz TV Schrank, mit 16 Farben LED Beleuchtung (Fernsehschrank, 1-St., 2 offenes Regalfach,3 Ablagen mit Griff Klapptüren) TV Board Fernsehkommode 160cm TV schrank in wohnzimmer für TV bis 65''",
-        "bsr_name": "LG OLED77B59LA OLED-Fernseher (195 cm/77 Zoll, 4K Ultra HD, Smart-TV)"
-      },
-      {
-        "organic_rank": 92,
-        "main_variation_id": "1975567687",
-        "bsr_variation_id": "1955108383",
-        "main_name": "Samsung GQ85Q6FAAU QLED-Fernseher (214 cm/85 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)",
-        "bsr_name": "Hisense 55E77Q QLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, 4K UHD QLED)"
-      },
-      {
-        "organic_rank": 93,
-        "main_variation_id": "S0LGJ0MGVY1Q",
-        "bsr_variation_id": "1970617860",
-        "main_name": "Sharp 1T-C24HEx LCD-LED Fernseher (60 cm/24 Zoll, HD-ready, Smart TV powered by TiVo, 24HE2745E Smart TV powered by TiVo, HDR, Triple-Tuner)",
-        "bsr_name": "Philips 65PUS7800/12 QLED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Smart-TV, Pixel Precise Ultra HD, HDR10+ & HLG, Dolby Atmos & DTS:X Sound)"
-      },
-      {
-        "organic_rank": 94,
-        "main_variation_id": "1197586167",
-        "bsr_variation_id": "1582142364",
-        "main_name": "Telefunken L24H550M4-WI LED-Fernseher (60 cm/24 Zoll, HD-ready)",
-        "bsr_name": "Hama TV-Wandhalterung Halterung, schwenkbar, neigbar, ausziehbar von 48 - 122 (19\" - 48), (bis 48 Zoll, max. 20 kg)"
-      },
-      {
-        "organic_rank": 95,
-        "main_variation_id": "SA1UKZ3GKCLD",
-        "bsr_variation_id": "1975567687",
-        "main_name": "Medion® MD819001 LCD-LED Fernseher (47 cm/19 Zoll, 720p HD Ready, Pay-TV, 60Hz, E8192501)",
-        "bsr_name": "Samsung GQ85Q6FAAU QLED-Fernseher (214 cm/85 Zoll, 4K Ultra HD, Smart-TV, Quantum HDR, Knox Security, Art Store, 3D Sound, Gaming Hub, AI TV)"
-      },
-      {
-        "organic_rank": 96,
-        "main_variation_id": "2092091257",
-        "bsr_variation_id": "S0LGJ0MGVY1Q",
-        "main_name": "Philips 24PHS6050/12 LED-Fernseher (60 cm/24 Zoll, HD ready, Smart-TV)",
-        "bsr_name": "Sharp 1T-C24HEx LCD-LED Fernseher (60 cm/24 Zoll, HD-ready, Smart TV powered by TiVo, 24HE2745E Smart TV powered by TiVo, HDR, Triple-Tuner)"
-      },
-      {
-        "organic_rank": 97,
-        "main_variation_id": "1970617909",
-        "bsr_variation_id": "1197586167",
-        "main_name": "Philips 55PUS9000/12 QLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, Ambilight, P5 Picture Engine, Dolby Vision, Dolby Atmos, Gaming, Alexa)",
-        "bsr_name": "Telefunken L24H550M4-WI LED-Fernseher (60 cm/24 Zoll, HD-ready)"
-      },
-      {
-        "organic_rank": 98,
-        "main_variation_id": "1975567669",
-        "bsr_variation_id": "SA1UKZ3GKCLD",
-        "main_name": "Samsung GQ55S90FAE OLED-Fernseher (138 cm/55 Zoll, 4K Ultra HD, Smart-TV, HDR+, Dolby Atmos & AI Sound, Gaming Hub, Upscaling Pro, bis zu 144Hz)",
-        "bsr_name": "Medion® MD819001 LCD-LED Fernseher (47 cm/19 Zoll, 720p HD Ready, Pay-TV, 60Hz, E8192501)"
-      },
-      {
-        "organic_rank": 99,
-        "main_variation_id": "SK83JQTGMM3E",
-        "bsr_variation_id": "2092091257",
-        "main_name": "Medion® MD850201 LCD-LED Fernseher (125.7 cm/50 Zoll, 4K Ultra HD, Smart-TV, Netflix, HBO Max, Prime Video, Disney+, Magenta TV, AppleTV, WOW)",
-        "bsr_name": "Philips 24PHS6050/12 LED-Fernseher (60 cm/24 Zoll, HD ready, Smart-TV)"
-      },
-      {
-        "organic_rank": 100,
-        "main_variation_id": "1729037350",
-        "bsr_variation_id": "1970617909",
-        "main_name": "Sony KD-65X85L LED-Fernseher (164 cm/65 Zoll, 4K Ultra HD, Android TV, Smart-TV, Google TV, BRAVIA CORE, TRILUMINOS PRO, HDMI 2.1, Gaming-Menü)",
-        "bsr_name": "Philips 55PUS9000/12 QLED-Fernseher (139 cm/55 Zoll, 4K Ultra HD, Smart-TV, Ambilight, P5 Picture Engine, Dolby Vision, Dolby Atmos, Gaming, Alexa)"
-      }
-    ]
   },
   "outputs": {
     "listing_rows": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_listing_topseller_rows.csv",

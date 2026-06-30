@@ -1,20 +1,22 @@
 {
   "run_type": "step02_final_targets",
-  "input_rows": 120,
-  "input_target_position_rows": 120,
-  "input_organic_rows": 109,
-  "input_sponsored_rows": 11,
-  "tv_position_rows_after_filter": 111,
-  "excluded_non_tv_rows": 9,
-  "tv_unique_retailer_sku_names_available": 107,
-  "final_target_rows": 107,
+  "input_rows": 600,
+  "input_target_position_rows": 600,
+  "input_organic_rows": 545,
+  "input_sponsored_rows": 55,
+  "tv_position_rows_after_filter": 457,
+  "excluded_non_tv_rows": 143,
+  "tv_unique_retailer_sku_names_available": 350,
+  "final_target_rows": 300,
   "main_target_unique": 300,
+  "main_target_shortfall": 0,
+  "main_target_shortfall_reason": null,
   "bsr_rank_limit": 100,
   "bsr_tagged_rows": 100,
   "unique_key": "retailer_sku_name",
   "rank_basis": "sequential_after_tv_filter_and_retailer_sku_name_dedupe",
-  "target_rule": "Collect listing positions through configured pages, exclude non-TV SKUs, dedupe by retailer_sku_name, then assign final target ranks 1..300 in listing order.",
-  "tv_filter_positive_keywords": [
+  "target_rule": "Collect configured listing pages, exclude non-TV SKUs, dedupe by retailer_sku_name, then assign final target ranks up to 1..300 in listing order.",
+  "tv_positive_keywords": [
     "fernseher",
     "smart-tv",
     "smart tv",
@@ -27,16 +29,22 @@
     "lcd-tv",
     "lcd tv"
   ],
-  "non_tv_exclude_keywords": [
+  "tv_product_patterns": [
+    "\\b(?:mini-led|lcd-led|dled|qled|oled|led|lcd)-fernseher\\b",
+    "\\b(?:mini-led|lcd-led|dled|qled|oled|led|lcd) fernseher\\b",
+    "\\b(?:oled|qled|led|lcd)-tv\\b"
+  ],
+  "hard_non_tv_exclude_keywords": [
     "wandhalter",
     "halterung",
     "tv-schrank",
+    "fernsehschrank",
     "schrank",
     "lowboard",
-    "tv-st?nder",
+    "tv-ständer",
     "tv staender",
     "tv-staender",
-    "st?nder",
+    "ständer",
     "staender",
     "tv-board",
     "tv board",
@@ -50,10 +58,15 @@
     "receiver",
     "antenne",
     "kabel",
-    "fernbedienung",
-    "soundbar",
     "streaming-stick",
-    "streaming stick"
+    "streaming stick",
+    "streaming-box",
+    "streaming box",
+    "ci+-modul"
+  ],
+  "accessory_exclude_keywords": [
+    "fernbedienung",
+    "soundbar"
   ],
   "outputs": {
     "final_targets": "C:\\samsung_dx_seg\\OTTO\\data\\output\\otto_final_targets.csv",

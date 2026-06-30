@@ -1,0 +1,3016 @@
+{
+  "run_type": "full_output",
+  "product": "LDY",
+  "created_at": "2026-06-30T00:51:21+09:00",
+  "batch_id": "o_20260630_002042",
+  "output_rows": 300,
+  "spec_fields": [
+    "ldy_loading_type",
+    "ldy_capacity"
+  ],
+  "use_datasheet": false,
+  "pdp_supplement": "none",
+  "output": "C:\\samsung_dx_seg\\OTTO\\ldy\\data\\output\\otto_full_output.csv",
+  "attempts": [
+    {
+      "rank": "1",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "2",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "11 kg"
+      }
+    },
+    {
+      "rank": "3",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "4",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "5",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "6",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "7",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "8",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "9",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "12 kg"
+      }
+    },
+    {
+      "rank": "10",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "11",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "12",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "13",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "14",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "15",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "16",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "17",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "18",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "19",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "20",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "21",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "22",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "23",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "24",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "25",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "26",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "27",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "28",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "29",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "13 kg"
+      }
+    },
+    {
+      "rank": "30",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "31",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "5 kg"
+      }
+    },
+    {
+      "rank": "32",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "33",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "34",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "35",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "36",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "37",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "38",
+      "datasheet_status": null,
+      "reco": 7,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "39",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "40",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "13 kg"
+      }
+    },
+    {
+      "rank": "41",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "42",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "43",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "44",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "45",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "46",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "47",
+      "datasheet_status": null,
+      "reco": 7,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "48",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "49",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "50",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "10,5 kg"
+      }
+    },
+    {
+      "rank": "51",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "52",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "53",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "54",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "55",
+      "datasheet_status": null,
+      "reco": 7,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "56",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "57",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "58",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "59",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "60",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "61",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "62",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "63",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "64",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "65",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9.00 kg"
+      }
+    },
+    {
+      "rank": "66",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "67",
+      "datasheet_status": null,
+      "reco": 7,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "68",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "11 kg"
+      }
+    },
+    {
+      "rank": "69",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "70",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "71",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "72",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "73",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "74",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "75",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "11 kg"
+      }
+    },
+    {
+      "rank": "76",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "77",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "78",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "79",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "80",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "11 kg"
+      }
+    },
+    {
+      "rank": "81",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "82",
+      "datasheet_status": null,
+      "reco": 7,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "83",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "84",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "85",
+      "datasheet_status": null,
+      "reco": 7,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "86",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "14 kg"
+      }
+    },
+    {
+      "rank": "87",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "88",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "89",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "90",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "91",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "92",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "93",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "94",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "12 kg"
+      }
+    },
+    {
+      "rank": "95",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "96",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "97",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "13 kg"
+      }
+    },
+    {
+      "rank": "98",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "99",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "100",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "101",
+      "datasheet_status": null,
+      "reco": 13,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "102",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "7,5 kg"
+      }
+    },
+    {
+      "rank": "103",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "104",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10,5 kg"
+      }
+    },
+    {
+      "rank": "105",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "106",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "107",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "20 kg"
+      }
+    },
+    {
+      "rank": "108",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "109",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "5 kg"
+      }
+    },
+    {
+      "rank": "110",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "111",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "112",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "113",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "114",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "115",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "116",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "117",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "118",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "119",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "120",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "121",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "122",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "123",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "124",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "125",
+      "datasheet_status": null,
+      "reco": 7,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "126",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "127",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "10.5 kg"
+      }
+    },
+    {
+      "rank": "128",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "11 kg"
+      }
+    },
+    {
+      "rank": "129",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "130",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "131",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "132",
+      "datasheet_status": null,
+      "reco": 7,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "133",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "134",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "135",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "7.0 kg"
+      }
+    },
+    {
+      "rank": "136",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "137",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "11 kg"
+      }
+    },
+    {
+      "rank": "138",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "10,5 kg"
+      }
+    },
+    {
+      "rank": "139",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "5 kg"
+      }
+    },
+    {
+      "rank": "140",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "141",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "142",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "143",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "144",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "145",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "5,5 kg"
+      }
+    },
+    {
+      "rank": "146",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "4.5 kg"
+      }
+    },
+    {
+      "rank": "147",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "5 kg"
+      }
+    },
+    {
+      "rank": "148",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "149",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "150",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "151",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "152",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "153",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "154",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "155",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "156",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "157",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "158",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "159",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "160",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "161",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "162",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "163",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "164",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "165",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "11 kg"
+      }
+    },
+    {
+      "rank": "166",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "167",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "168",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "169",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "170",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "171",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "172",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "173",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "174",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "175",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "176",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "177",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "11 kg"
+      }
+    },
+    {
+      "rank": "178",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "179",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "180",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "181",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "182",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "13 kg"
+      }
+    },
+    {
+      "rank": "183",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "184",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "185",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "186",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "187",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "188",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "189",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "190",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "191",
+      "datasheet_status": null,
+      "reco": 10,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "192",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "193",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "194",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "195",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "196",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "197",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "198",
+      "datasheet_status": null,
+      "reco": 14,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "199",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "200",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "201",
+      "datasheet_status": null,
+      "reco": 14,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "202",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "203",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "204",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "205",
+      "datasheet_status": null,
+      "reco": 0,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "206",
+      "datasheet_status": null,
+      "reco": 0,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "207",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "208",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "209",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "210",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "211",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "212",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "213",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "214",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "215",
+      "datasheet_status": null,
+      "reco": 0,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "216",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "217",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "218",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "219",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "220",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "221",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "222",
+      "datasheet_status": null,
+      "reco": 3,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "223",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "224",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "225",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "226",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "227",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "228",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "229",
+      "datasheet_status": null,
+      "reco": 0,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "230",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "231",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "232",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "13 kg"
+      }
+    },
+    {
+      "rank": "233",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "234",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "235",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "236",
+      "datasheet_status": null,
+      "reco": 14,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "237",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "238",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "239",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "240",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "241",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "20 kg"
+      }
+    },
+    {
+      "rank": "242",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "243",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "244",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "245",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "246",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "247",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "12 kg"
+      }
+    },
+    {
+      "rank": "248",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "249",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "250",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "251",
+      "datasheet_status": null,
+      "reco": 4,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "252",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "253",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "254",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "255",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "256",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "257",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "258",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "259",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "260",
+      "datasheet_status": null,
+      "reco": 19,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "261",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "262",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "263",
+      "datasheet_status": null,
+      "reco": 13,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "264",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "265",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "266",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "267",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "268",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "269",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "270",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "271",
+      "datasheet_status": null,
+      "reco": 0,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "272",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "273",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "274",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "275",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "6 kg"
+      }
+    },
+    {
+      "rank": "276",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "277",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "278",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "279",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "280",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "281",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "282",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "9,00 kg"
+      }
+    },
+    {
+      "rank": "283",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "284",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "285",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "286",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "287",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "8 kg"
+      }
+    },
+    {
+      "rank": "288",
+      "datasheet_status": null,
+      "reco": 12,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "289",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "290",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "291",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "292",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "293",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "294",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "295",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    },
+    {
+      "rank": "296",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Top-loading",
+        "ldy_capacity": "7 kg"
+      }
+    },
+    {
+      "rank": "297",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": null
+      }
+    },
+    {
+      "rank": "298",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "299",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": null,
+        "ldy_capacity": "10 kg"
+      }
+    },
+    {
+      "rank": "300",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ldy_loading_type": "Front loader",
+        "ldy_capacity": "9 kg"
+      }
+    }
+  ]
+}

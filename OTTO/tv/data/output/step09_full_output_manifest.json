@@ -1,0 +1,3016 @@
+{
+  "run_type": "full_output",
+  "product": "TV",
+  "created_at": "2026-06-29T23:20:29+09:00",
+  "batch_id": "o_20260629_222600",
+  "output_rows": 300,
+  "spec_fields": [
+    "screen_size",
+    "estimated_annual_electricity_use"
+  ],
+  "use_datasheet": true,
+  "pdp_supplement": "none",
+  "output": "C:\\samsung_dx_seg\\OTTO\\tv\\data\\output\\otto_full_output.csv",
+  "attempts": [
+    {
+      "rank": "1",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "100.0 W"
+      }
+    },
+    {
+      "rank": "2",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "204.0 W"
+      }
+    },
+    {
+      "rank": "3",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "36.0 W"
+      }
+    },
+    {
+      "rank": "4",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "114.0 W"
+      }
+    },
+    {
+      "rank": "5",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "41.0 W"
+      }
+    },
+    {
+      "rank": "6",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "58",
+        "estimated_annual_electricity_use": "110 W"
+      }
+    },
+    {
+      "rank": "7",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "102.0 W"
+      }
+    },
+    {
+      "rank": "8",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "203.0 W"
+      }
+    },
+    {
+      "rank": "9",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": null,
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "10",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "89.0 W"
+      }
+    },
+    {
+      "rank": "11",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "161.0 W"
+      }
+    },
+    {
+      "rank": "12",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "140.0 W"
+      }
+    },
+    {
+      "rank": "13",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "118.0 W"
+      }
+    },
+    {
+      "rank": "14",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "98",
+        "estimated_annual_electricity_use": "498.0 W"
+      }
+    },
+    {
+      "rank": "15",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "75.0 W"
+      }
+    },
+    {
+      "rank": "16",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "131 W"
+      }
+    },
+    {
+      "rank": "17",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "139 W"
+      }
+    },
+    {
+      "rank": "18",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "90.0 W"
+      }
+    },
+    {
+      "rank": "19",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "58",
+        "estimated_annual_electricity_use": "125 W"
+      }
+    },
+    {
+      "rank": "20",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "112.0 W"
+      }
+    },
+    {
+      "rank": "21",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "165 W"
+      }
+    },
+    {
+      "rank": "22",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "199.0 W"
+      }
+    },
+    {
+      "rank": "23",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "48",
+        "estimated_annual_electricity_use": "109 W"
+      }
+    },
+    {
+      "rank": "24",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "81.0 W"
+      }
+    },
+    {
+      "rank": "25",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "118.0 W"
+      }
+    },
+    {
+      "rank": "26",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "35 W"
+      }
+    },
+    {
+      "rank": "27",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "110 W"
+      }
+    },
+    {
+      "rank": "28",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "152 W"
+      }
+    },
+    {
+      "rank": "29",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "164.0 W"
+      }
+    },
+    {
+      "rank": "30",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "40.0 W"
+      }
+    },
+    {
+      "rank": "31",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "189.0 W"
+      }
+    },
+    {
+      "rank": "32",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "111 W"
+      }
+    },
+    {
+      "rank": "33",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "64.0 W"
+      }
+    },
+    {
+      "rank": "34",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "50 W"
+      }
+    },
+    {
+      "rank": "35",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "92.0 W"
+      }
+    },
+    {
+      "rank": "36",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "135 W"
+      }
+    },
+    {
+      "rank": "37",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "100 W"
+      }
+    },
+    {
+      "rank": "38",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "85.0 W"
+      }
+    },
+    {
+      "rank": "39",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "113 W"
+      }
+    },
+    {
+      "rank": "40",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "180 W"
+      }
+    },
+    {
+      "rank": "41",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "42",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "40.0 W"
+      }
+    },
+    {
+      "rank": "43",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "181.0 W"
+      }
+    },
+    {
+      "rank": "44",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "75.0 W"
+      }
+    },
+    {
+      "rank": "45",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "180 W"
+      }
+    },
+    {
+      "rank": "46",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "50.0 W"
+      }
+    },
+    {
+      "rank": "47",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "27",
+        "estimated_annual_electricity_use": "34.0 W"
+      }
+    },
+    {
+      "rank": "48",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "226 W"
+      }
+    },
+    {
+      "rank": "49",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "48",
+        "estimated_annual_electricity_use": "132.0 W"
+      }
+    },
+    {
+      "rank": "50",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "70",
+        "estimated_annual_electricity_use": "160 W"
+      }
+    },
+    {
+      "rank": "51",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "97",
+        "estimated_annual_electricity_use": "375 W"
+      }
+    },
+    {
+      "rank": "52",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "29.0 W"
+      }
+    },
+    {
+      "rank": "53",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "122 W"
+      }
+    },
+    {
+      "rank": "54",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "255.0 W"
+      }
+    },
+    {
+      "rank": "55",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "310.0 W"
+      }
+    },
+    {
+      "rank": "56",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "107 W"
+      }
+    },
+    {
+      "rank": "57",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "188 W"
+      }
+    },
+    {
+      "rank": "58",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "90.0 W"
+      }
+    },
+    {
+      "rank": "59",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "196 W"
+      }
+    },
+    {
+      "rank": "60",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "121 W"
+      }
+    },
+    {
+      "rank": "61",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "80.0 W"
+      }
+    },
+    {
+      "rank": "62",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "140 W"
+      }
+    },
+    {
+      "rank": "63",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "175 W"
+      }
+    },
+    {
+      "rank": "64",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "350 W"
+      }
+    },
+    {
+      "rank": "65",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "115 W"
+      }
+    },
+    {
+      "rank": "66",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "112.0 W"
+      }
+    },
+    {
+      "rank": "67",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "125 W"
+      }
+    },
+    {
+      "rank": "68",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "209.0 W"
+      }
+    },
+    {
+      "rank": "69",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "54.0 W"
+      }
+    },
+    {
+      "rank": "70",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "22",
+        "estimated_annual_electricity_use": "15.0 W"
+      }
+    },
+    {
+      "rank": "71",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "234 W"
+      }
+    },
+    {
+      "rank": "72",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "390 W"
+      }
+    },
+    {
+      "rank": "73",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "39.0 W"
+      }
+    },
+    {
+      "rank": "74",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "150 W"
+      }
+    },
+    {
+      "rank": "75",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "23.0 W"
+      }
+    },
+    {
+      "rank": "76",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "83",
+        "estimated_annual_electricity_use": "379.0 W"
+      }
+    },
+    {
+      "rank": "77",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "105 W"
+      }
+    },
+    {
+      "rank": "78",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "152 W"
+      }
+    },
+    {
+      "rank": "79",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "170 W"
+      }
+    },
+    {
+      "rank": "80",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "98",
+        "estimated_annual_electricity_use": "470 W"
+      }
+    },
+    {
+      "rank": "81",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "390 W"
+      }
+    },
+    {
+      "rank": "82",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "118.0 W"
+      }
+    },
+    {
+      "rank": "83",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "268.0 W"
+      }
+    },
+    {
+      "rank": "84",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "146 W"
+      }
+    },
+    {
+      "rank": "85",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "86",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "163 W"
+      }
+    },
+    {
+      "rank": "87",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "159 W"
+      }
+    },
+    {
+      "rank": "88",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "89",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "98",
+        "estimated_annual_electricity_use": "290 W"
+      }
+    },
+    {
+      "rank": "90",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "19",
+        "estimated_annual_electricity_use": "13.0 W"
+      }
+    },
+    {
+      "rank": "91",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "345 W"
+      }
+    },
+    {
+      "rank": "92",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "171.0 W"
+      }
+    },
+    {
+      "rank": "93",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "135 W"
+      }
+    },
+    {
+      "rank": "94",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "210 W"
+      }
+    },
+    {
+      "rank": "95",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "142 W"
+      }
+    },
+    {
+      "rank": "96",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "74.0 W"
+      }
+    },
+    {
+      "rank": "97",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "100",
+        "estimated_annual_electricity_use": "380 W"
+      }
+    },
+    {
+      "rank": "98",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "180 W"
+      }
+    },
+    {
+      "rank": "99",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "143 W"
+      }
+    },
+    {
+      "rank": "100",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "100",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "101",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "300 W"
+      }
+    },
+    {
+      "rank": "102",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "95 W"
+      }
+    },
+    {
+      "rank": "103",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "152 W"
+      }
+    },
+    {
+      "rank": "104",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "70",
+        "estimated_annual_electricity_use": "220 W"
+      }
+    },
+    {
+      "rank": "105",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "118.0 W"
+      }
+    },
+    {
+      "rank": "106",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "87.0 W"
+      }
+    },
+    {
+      "rank": "107",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "256.0 W"
+      }
+    },
+    {
+      "rank": "108",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "160 W"
+      }
+    },
+    {
+      "rank": "109",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "130 W"
+      }
+    },
+    {
+      "rank": "110",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "365 W"
+      }
+    },
+    {
+      "rank": "111",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "76.0 W"
+      }
+    },
+    {
+      "rank": "112",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "90.0 W"
+      }
+    },
+    {
+      "rank": "113",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "114",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "77",
+        "estimated_annual_electricity_use": "344.0 W"
+      }
+    },
+    {
+      "rank": "115",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "100",
+        "estimated_annual_electricity_use": "350 W"
+      }
+    },
+    {
+      "rank": "116",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "30.0 W"
+      }
+    },
+    {
+      "rank": "117",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "57.0 W"
+      }
+    },
+    {
+      "rank": "118",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "100 W"
+      }
+    },
+    {
+      "rank": "119",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "77.0 W"
+      }
+    },
+    {
+      "rank": "120",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "16.0 W"
+      }
+    },
+    {
+      "rank": "121",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "16.0 W"
+      }
+    },
+    {
+      "rank": "122",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "92.0 W"
+      }
+    },
+    {
+      "rank": "123",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "72.0 W"
+      }
+    },
+    {
+      "rank": "124",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "74.0 W"
+      }
+    },
+    {
+      "rank": "125",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "186 W"
+      }
+    },
+    {
+      "rank": "126",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "153 W"
+      }
+    },
+    {
+      "rank": "127",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "110 W"
+      }
+    },
+    {
+      "rank": "128",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "129",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "64.0 W"
+      }
+    },
+    {
+      "rank": "130",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "110 W"
+      }
+    },
+    {
+      "rank": "131",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "372.0 W"
+      }
+    },
+    {
+      "rank": "132",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "27.0 W"
+      }
+    },
+    {
+      "rank": "133",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "134",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "45.0 W"
+      }
+    },
+    {
+      "rank": "135",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "77",
+        "estimated_annual_electricity_use": "233.0 W"
+      }
+    },
+    {
+      "rank": "136",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "83",
+        "estimated_annual_electricity_use": "292 W"
+      }
+    },
+    {
+      "rank": "137",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "50.0 W"
+      }
+    },
+    {
+      "rank": "138",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "54.0 W"
+      }
+    },
+    {
+      "rank": "139",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "19",
+        "estimated_annual_electricity_use": "13.0 W"
+      }
+    },
+    {
+      "rank": "140",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "97.0 W"
+      }
+    },
+    {
+      "rank": "141",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "27",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "142",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "143",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "80.0 W"
+      }
+    },
+    {
+      "rank": "144",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "102 W"
+      }
+    },
+    {
+      "rank": "145",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "136 W"
+      }
+    },
+    {
+      "rank": "146",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "107 W"
+      }
+    },
+    {
+      "rank": "147",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "102.0 W"
+      }
+    },
+    {
+      "rank": "148",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "121 W"
+      }
+    },
+    {
+      "rank": "149",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "222 W"
+      }
+    },
+    {
+      "rank": "150",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "179 W"
+      }
+    },
+    {
+      "rank": "151",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "85.0 W"
+      }
+    },
+    {
+      "rank": "152",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "77",
+        "estimated_annual_electricity_use": "215 W"
+      }
+    },
+    {
+      "rank": "153",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "51.0 W"
+      }
+    },
+    {
+      "rank": "154",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "87 W"
+      }
+    },
+    {
+      "rank": "155",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "105 W"
+      }
+    },
+    {
+      "rank": "156",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "172 W"
+      }
+    },
+    {
+      "rank": "157",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "320 W"
+      }
+    },
+    {
+      "rank": "158",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "93.0 W"
+      }
+    },
+    {
+      "rank": "159",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "46.0 W"
+      }
+    },
+    {
+      "rank": "160",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "27",
+        "estimated_annual_electricity_use": "21.6 W"
+      }
+    },
+    {
+      "rank": "161",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "169 W"
+      }
+    },
+    {
+      "rank": "162",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "77.0 W"
+      }
+    },
+    {
+      "rank": "163",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "42",
+        "estimated_annual_electricity_use": "91.0 W"
+      }
+    },
+    {
+      "rank": "164",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "154 W"
+      }
+    },
+    {
+      "rank": "165",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "166",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "114 W"
+      }
+    },
+    {
+      "rank": "167",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "152 W"
+      }
+    },
+    {
+      "rank": "168",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "135 W"
+      }
+    },
+    {
+      "rank": "169",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "170",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "38.5 W"
+      }
+    },
+    {
+      "rank": "171",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "27",
+        "estimated_annual_electricity_use": "25.0 W"
+      }
+    },
+    {
+      "rank": "172",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "100 W"
+      }
+    },
+    {
+      "rank": "173",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "174",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "211.0 W"
+      }
+    },
+    {
+      "rank": "175",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "148 W"
+      }
+    },
+    {
+      "rank": "176",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "171 W"
+      }
+    },
+    {
+      "rank": "177",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "27.0 W"
+      }
+    },
+    {
+      "rank": "178",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "206 W"
+      }
+    },
+    {
+      "rank": "179",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "27",
+        "estimated_annual_electricity_use": "21.0 W"
+      }
+    },
+    {
+      "rank": "180",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "25.0 W"
+      }
+    },
+    {
+      "rank": "181",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "182",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "92.0 W"
+      }
+    },
+    {
+      "rank": "183",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "184",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "36.0 W"
+      }
+    },
+    {
+      "rank": "185",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "16.0 W"
+      }
+    },
+    {
+      "rank": "186",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "120 W"
+      }
+    },
+    {
+      "rank": "187",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "79.0 W"
+      }
+    },
+    {
+      "rank": "188",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "189",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "18.0 W"
+      }
+    },
+    {
+      "rank": "190",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "17.0 W"
+      }
+    },
+    {
+      "rank": "191",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "192",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": null,
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "193",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "45.0 W"
+      }
+    },
+    {
+      "rank": "194",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "195",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "40.0 W"
+      }
+    },
+    {
+      "rank": "196",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "77",
+        "estimated_annual_electricity_use": "326 W"
+      }
+    },
+    {
+      "rank": "197",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "132 W"
+      }
+    },
+    {
+      "rank": "198",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "42.0 W"
+      }
+    },
+    {
+      "rank": "199",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "180 W"
+      }
+    },
+    {
+      "rank": "200",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "51.0 W"
+      }
+    },
+    {
+      "rank": "201",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "91.0 W"
+      }
+    },
+    {
+      "rank": "202",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "113 W"
+      }
+    },
+    {
+      "rank": "203",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "104 W"
+      }
+    },
+    {
+      "rank": "204",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "22",
+        "estimated_annual_electricity_use": "15.0 W"
+      }
+    },
+    {
+      "rank": "205",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "77",
+        "estimated_annual_electricity_use": "142 W"
+      }
+    },
+    {
+      "rank": "206",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "22",
+        "estimated_annual_electricity_use": "15.0 W"
+      }
+    },
+    {
+      "rank": "207",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "29.0 W"
+      }
+    },
+    {
+      "rank": "208",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "59.0 W"
+      }
+    },
+    {
+      "rank": "209",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "48",
+        "estimated_annual_electricity_use": "115 W"
+      }
+    },
+    {
+      "rank": "210",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "316 W"
+      }
+    },
+    {
+      "rank": "211",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "19",
+        "estimated_annual_electricity_use": "13.0 W"
+      }
+    },
+    {
+      "rank": "212",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "14",
+        "estimated_annual_electricity_use": "9.1 W"
+      }
+    },
+    {
+      "rank": "213",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "18.0 W"
+      }
+    },
+    {
+      "rank": "214",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "48",
+        "estimated_annual_electricity_use": "63.0 W"
+      }
+    },
+    {
+      "rank": "215",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "216",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "5355 W"
+      }
+    },
+    {
+      "rank": "217",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "124 W"
+      }
+    },
+    {
+      "rank": "218",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "60.0 W"
+      }
+    },
+    {
+      "rank": "219",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "77.0 W"
+      }
+    },
+    {
+      "rank": "220",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "160 W"
+      }
+    },
+    {
+      "rank": "221",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "51.0 W"
+      }
+    },
+    {
+      "rank": "222",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "17.0 W"
+      }
+    },
+    {
+      "rank": "223",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "42.0 W"
+      }
+    },
+    {
+      "rank": "224",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "95 W"
+      }
+    },
+    {
+      "rank": "225",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "95.0 W"
+      }
+    },
+    {
+      "rank": "226",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "104 W"
+      }
+    },
+    {
+      "rank": "227",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "110 W"
+      }
+    },
+    {
+      "rank": "228",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "83",
+        "estimated_annual_electricity_use": "345 W"
+      }
+    },
+    {
+      "rank": "229",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "73.0 W"
+      }
+    },
+    {
+      "rank": "230",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "98",
+        "estimated_annual_electricity_use": "138 W"
+      }
+    },
+    {
+      "rank": "231",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "212 W"
+      }
+    },
+    {
+      "rank": "232",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "300.0 W"
+      }
+    },
+    {
+      "rank": "233",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "170 W"
+      }
+    },
+    {
+      "rank": "234",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "95 W"
+      }
+    },
+    {
+      "rank": "235",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "40.0 W"
+      }
+    },
+    {
+      "rank": "236",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "100 W"
+      }
+    },
+    {
+      "rank": "237",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "84 W"
+      }
+    },
+    {
+      "rank": "238",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "180 W"
+      }
+    },
+    {
+      "rank": "239",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "67.0 W"
+      }
+    },
+    {
+      "rank": "240",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "157 W"
+      }
+    },
+    {
+      "rank": "241",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "160 W"
+      }
+    },
+    {
+      "rank": "242",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "92.0 W"
+      }
+    },
+    {
+      "rank": "243",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "90.0 W"
+      }
+    },
+    {
+      "rank": "244",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "97.0 W"
+      }
+    },
+    {
+      "rank": "245",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "50.0 W"
+      }
+    },
+    {
+      "rank": "246",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "279.0 W"
+      }
+    },
+    {
+      "rank": "247",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "116 W"
+      }
+    },
+    {
+      "rank": "248",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "40.0 W"
+      }
+    },
+    {
+      "rank": "249",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "104 W"
+      }
+    },
+    {
+      "rank": "250",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "78.0 W"
+      }
+    },
+    {
+      "rank": "251",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "145 W"
+      }
+    },
+    {
+      "rank": "252",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "95.0 W"
+      }
+    },
+    {
+      "rank": "253",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "254",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "255",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "19",
+        "estimated_annual_electricity_use": "15 W"
+      }
+    },
+    {
+      "rank": "256",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "22",
+        "estimated_annual_electricity_use": "15.0 W"
+      }
+    },
+    {
+      "rank": "257",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "84.6 W"
+      }
+    },
+    {
+      "rank": "258",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "135 W"
+      }
+    },
+    {
+      "rank": "259",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "232 W"
+      }
+    },
+    {
+      "rank": "260",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "36.0 W"
+      }
+    },
+    {
+      "rank": "261",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "160 W"
+      }
+    },
+    {
+      "rank": "262",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "98",
+        "estimated_annual_electricity_use": "470 W"
+      }
+    },
+    {
+      "rank": "263",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "100",
+        "estimated_annual_electricity_use": "350 W"
+      }
+    },
+    {
+      "rank": "264",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "98",
+        "estimated_annual_electricity_use": "290 W"
+      }
+    },
+    {
+      "rank": "265",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "17.7 W"
+      }
+    },
+    {
+      "rank": "266",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "340.0 W"
+      }
+    },
+    {
+      "rank": "267",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "180 W"
+      }
+    },
+    {
+      "rank": "268",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "160 W"
+      }
+    },
+    {
+      "rank": "269",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "114.0 W"
+      }
+    },
+    {
+      "rank": "270",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "45.0 W"
+      }
+    },
+    {
+      "rank": "271",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "179 W"
+      }
+    },
+    {
+      "rank": "272",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "144 W"
+      }
+    },
+    {
+      "rank": "273",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "274",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "161 W"
+      }
+    },
+    {
+      "rank": "275",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "276",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "85",
+        "estimated_annual_electricity_use": "270 W"
+      }
+    },
+    {
+      "rank": "277",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "278",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "37.0 W"
+      }
+    },
+    {
+      "rank": "279",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "114 W"
+      }
+    },
+    {
+      "rank": "280",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "17.5 W"
+      }
+    },
+    {
+      "rank": "281",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "75",
+        "estimated_annual_electricity_use": "180 W"
+      }
+    },
+    {
+      "rank": "282",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "130 W"
+      }
+    },
+    {
+      "rank": "283",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "50.0 W"
+      }
+    },
+    {
+      "rank": "284",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "40",
+        "estimated_annual_electricity_use": "67.0 W"
+      }
+    },
+    {
+      "rank": "285",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "218.0 W"
+      }
+    },
+    {
+      "rank": "286",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "99.0 W"
+      }
+    },
+    {
+      "rank": "287",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "35.0 W"
+      }
+    },
+    {
+      "rank": "288",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "22",
+        "estimated_annual_electricity_use": "15.0 W"
+      }
+    },
+    {
+      "rank": "289",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "32",
+        "estimated_annual_electricity_use": "26.0 W"
+      }
+    },
+    {
+      "rank": "290",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "290 W"
+      }
+    },
+    {
+      "rank": "291",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": "123.0 W"
+      }
+    },
+    {
+      "rank": "292",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "143 W"
+      }
+    },
+    {
+      "rank": "293",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "50",
+        "estimated_annual_electricity_use": null
+      }
+    },
+    {
+      "rank": "294",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "22",
+        "estimated_annual_electricity_use": "15.0 W"
+      }
+    },
+    {
+      "rank": "295",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "93.0 W"
+      }
+    },
+    {
+      "rank": "296",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "51.0 W"
+      }
+    },
+    {
+      "rank": "297",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "65",
+        "estimated_annual_electricity_use": "150 W"
+      }
+    },
+    {
+      "rank": "298",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "43",
+        "estimated_annual_electricity_use": "51.0 W"
+      }
+    },
+    {
+      "rank": "299",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "24",
+        "estimated_annual_electricity_use": "5455 W"
+      }
+    },
+    {
+      "rank": "300",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "screen_size": "55",
+        "estimated_annual_electricity_use": "112 W"
+      }
+    }
+  ]
+}
