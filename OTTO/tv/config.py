@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from common import datasheet
+from common import datasheet, model_sku
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, top_info, transliterate
 
 PRODUCT = "TV"
@@ -80,6 +80,15 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     # HDR on-mode power; non-HDR TVs fall back to SDR on-mode power
     electricity = _watt(datasheet.power_by_label(ds, hdr=True)) or _watt(datasheet.power_by_label(ds, hdr=False))
     return {"screen_size": screen, "estimated_annual_electricity_use": electricity}
+
+
+def prepare_context(targets=None) -> dict[str, Any]:
+    # /vergleich/ Modellbezeichnung as a sku fallback for space-separated models
+    return model_sku.model_context(targets)
+
+
+def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:
+    return model_sku.model_sku(target, ctx)
 
 
 def extract_pdp_spec(soup) -> dict[str, Any]:

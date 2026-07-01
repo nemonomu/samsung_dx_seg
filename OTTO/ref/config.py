@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from common import datasheet, parsers
+from common import datasheet, model_sku, parsers
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, transliterate
 
 PRODUCT = "REF"
@@ -79,6 +79,15 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     # Kasada-free default from the listing name; PDP supplement overrides if enabled.
     ref_type = translate_ref_type(target.get("retailer_sku_name"))
     return {"ref_refrigerator_type": ref_type, "ref_capacity": capacity}
+
+
+def prepare_context(targets=None) -> dict[str, Any]:
+    # /vergleich/ Modellbezeichnung as a sku fallback for space-separated models
+    return model_sku.model_context(targets)
+
+
+def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:
+    return model_sku.model_sku(target, ctx)
 
 
 def extract_pdp_spec(soup) -> dict[str, Any]:

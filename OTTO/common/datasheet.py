@@ -132,17 +132,25 @@ def power_by_label(parsed: dict[str, Any], *, hdr: bool):
         n = _num(joined)
         if n:
             return f"{n} W"
-    # text fallback
+    # text fallback: tables can be mangled (e.g. Samsung U8079/Q7F) so the value lands in
+    # extract_text as a bare decimal near the label, not a "<n> W" cell. Item numbers are
+    # integers; the on-mode power is a decimal (69,0 / 112,0), so a decimal near the anchor
+    # is the value even when "W" is absent.
     flat = re.sub(r"\s+", " ", parsed.get("text", "").replace("­", ""))
-    anchors = ("hohem", "high dynamic range") if hdr else ("standard-dynamikumfang", "standard dynamic range", "bei sdr")
+    anchors = ("bei hohem", "high dynamic range") if hdr else ("bei standard", "standard dynamic range")
     for anchor in anchors:
         for m in re.finditer(re.escape(anchor), flat, re.I):
             window = flat[max(0, m.start() - 60): m.end() + 90]
             if _NA_RE.search(window):
                 return "NA"
-            w = re.search(r"(\d+(?:[.,]\d+)?)\s*W\b", window)
+            w = re.search(r"(\d+(?:[.,]\d+)?)\s*W\b", window) or re.search(r"(\d+[.,]\d+)", window)
             if w:
                 return f"{w.group(1).replace(',', '.')} W"
+    # last resort: non-EU spec sheets (e.g. Sharp) list a single on-mode figure with no
+    # HDR/SDR split, as "Stromverbrauch (W) 53" (standby is "Stand-by-Stromverbrauch").
+    m = re.search(r"(?<!by-)Stromverbrauch\s*\(W\)\s*(\d+(?:[.,]\d+)?)", flat, re.I)
+    if m:
+        return f"{m.group(1).replace(',', '.')} W"
     return None
 
 
