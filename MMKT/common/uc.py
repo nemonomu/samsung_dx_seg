@@ -47,31 +47,93 @@ fetch(url, {credentials: 'include', headers})
 """
 
 
+CHROME_EXE_CANDIDATES = (
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+)
+
+
+def _version_from_registry() -> int | None:
+    try:
+        import winreg
+    except Exception:
+        return None
+    for hive, path in (
+        (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Google\Chrome\BLBeacon"),
+    ):
+        try:
+            key = winreg.OpenKey(hive, path)
+            value, _ = winreg.QueryValueEx(key, "version")
+            return int(str(value).split(".")[0])
+        except OSError:
+            continue
+        except Exception:
+            continue
+    return None
+
+
+def _version_from_executable() -> int | None:
+    """Read the Chrome major version straight off the installed chrome.exe —
+    the registry-independent fallback. Two ways: the versioned subfolder Chrome
+    keeps next to chrome.exe (e.g. Application\\150.0.7632.5\\), else the exe's
+    ProductVersion via PowerShell."""
+    import glob
+    import subprocess
+
+    exes = [os.getenv("MMKT_CHROME_EXE", "").strip(), *CHROME_EXE_CANDIDATES]
+    for exe in exes:
+        if not exe or not os.path.exists(exe):
+            continue
+        app_dir = os.path.dirname(exe)
+        # Chrome drops a folder named after the exact version beside chrome.exe.
+        majors = []
+        for d in glob.glob(os.path.join(app_dir, "*.*.*.*")):
+            base = os.path.basename(d).split(".")[0]
+            if os.path.isdir(d) and base.isdigit():
+                majors.append(int(base))
+        if majors:
+            return max(majors)
+        try:
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-Item '{exe}').VersionInfo.ProductVersion"],
+                capture_output=True, text=True, timeout=15)
+            ver = (out.stdout or "").strip().split(".")[0]
+            if ver.isdigit():
+                return int(ver)
+        except Exception:
+            continue
+    return None
+
+
 def chrome_version_main() -> int | None:
-    """Installed Chrome major version (env override > registry). Avoids the
-    version_main mismatch that silently breaks UC's stealth."""
+    """Installed Chrome major version (env override > newest on disk). Runs on
+    every session, so it auto-tracks Chrome auto-updates: bump Chrome and the
+    next run downloads the matching driver.
+
+    Right after an auto-update BLBeacon (registry) still names the last-RUN
+    version while a newer one already sits on disk. UC launches a FRESH
+    chrome.exe, which runs the NEWEST installed version — so we take the max of
+    what the registry and the on-disk version folders report. Trusting the
+    stale registry value here is exactly what causes the driver/Chrome mismatch
+    that silently breaks UC's stealth."""
     raw = os.getenv("MMKT_UC_VERSION_MAIN", "").strip()
     if raw:
         try:
             return int(float(raw))
         except ValueError:
             pass
-    try:
-        import winreg
-
-        for hive, path in (
-            (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon"),
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Google\Chrome\BLBeacon"),
-        ):
-            try:
-                key = winreg.OpenKey(hive, path)
-                value, _ = winreg.QueryValueEx(key, "version")
-                return int(str(value).split(".")[0])
-            except OSError:
-                continue
-    except Exception:
-        pass
-    return None
+    reg = _version_from_registry()
+    exe = _version_from_executable()
+    candidates = [v for v in (reg, exe) if v]
+    if not candidates:
+        return None
+    if reg and exe and reg != exe:
+        print(f"[uc] Chrome version: registry={reg}, on-disk={exe} — a fresh launch "
+              f"runs the newest ({max(candidates)}), using that for the driver.", flush=True)
+    return max(candidates)
 
 
 def _gql_headers(operation: str) -> dict[str, str]:
@@ -125,6 +187,11 @@ class UcSession:
         kwargs: dict[str, Any] = {"options": options, "headless": self.headless, "use_subprocess": True}
         if self.version_main:
             kwargs["version_main"] = self.version_main
+            print(f"[uc] Chrome major {self.version_main} detected — matching driver auto-selected", flush=True)
+        else:
+            print("[uc] WARNING: could not detect installed Chrome version — UC will guess a "
+                  "driver, which may mismatch and trigger a Cloudflare block. Set MMKT_UC_VERSION_MAIN "
+                  "to the installed Chrome major version if collection fails.", flush=True)
         exe = os.getenv("MMKT_CHROME_EXE", "").strip()
         if exe:
             kwargs["browser_executable_path"] = exe
@@ -164,6 +231,12 @@ class UcSession:
         except Exception as exc:
             status["error"] = type(exc).__name__ + ": " + str(exc)
         self.warmup_status = status
+        if status.get("home_blocked"):
+            print(f"[uc] WARNING: home page BLOCKED by Cloudflare after warmup "
+                  f"(Chrome major={self.version_main}). Most likely a driver/Chrome "
+                  f"version mismatch or a flagged IP. Collection will churn until fixed.", flush=True)
+        elif status.get("error"):
+            print(f"[uc] WARNING: warmup error: {status['error']}", flush=True)
 
     def navigate(self, url: str, *, settle_s: float | None = None) -> dict[str, Any]:
         """Load a page; return {html, blocked, error}."""
