@@ -49,10 +49,20 @@ REF_TYPE_TRANSLATIONS = {
 
 def _ref_capacity(features: dict[str, str]) -> str | None:
     """Fridge (cooling) compartment volume — PDP feature 'Rauminhalt der
-    Kühlfächer' (per user). Falls back to Gesamtrauminhalt if absent."""
-    raw = text_clean(features.get("Rauminhalt der Kühlfächer")) \
-        or text_clean(features.get("Gesamtrauminhalt"))
-    return f"{raw}L" if raw else None
+    Kühlfächer' (per user). Falls back to Gesamtrauminhalt; skips zero/blank
+    values (some marketplace listings report 0.0)."""
+    for key in ("Rauminhalt der Kühlfächer", "Gesamtrauminhalt"):
+        raw = text_clean(features.get(key))
+        if not raw:
+            continue
+        try:
+            val = float(raw.replace(",", "."))
+        except ValueError:
+            return f"{raw}L"
+        if val <= 0:
+            continue
+        return f"{int(val)}L" if val == int(val) else f"{val}L"
+    return None
 
 
 def extract_pdp_spec(features: dict[str, str]) -> dict[str, Any]:
