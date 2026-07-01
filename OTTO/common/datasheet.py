@@ -91,6 +91,10 @@ def parse(pdf_bytes: bytes) -> dict[str, Any]:
         result["rows"] = all_rows
         result["text"] = text
         result["sku"] = _sku(items, text)
+    except ImportError:
+        # missing dependency (pdfplumber) -> fail loudly rather than silently nulling
+        # every datasheet field (electricity, ref_capacity, ...).
+        raise
     except Exception as exc:  # noqa: BLE001
         result["error"] = type(exc).__name__ + ": " + str(exc)
     return result
