@@ -49,7 +49,23 @@ REF_TYPE_TRANSLATIONS = {
 
 def _ref_capacity(features: dict[str, str]) -> str | None:
     raw = text_clean(features.get("Gesamtrauminhalt"))
-    return f"{raw}L" if raw else None
+    if raw:
+        return f"{raw}L"
+    # Marketplace products (reduced feature set) lack Gesamtrauminhalt — sum the
+    # fridge + freezer compartment volumes instead.
+    total = 0.0
+    found = False
+    for key in ("Rauminhalt der Kühlfächer", "Rauminhalt der Tiefkühlfächer"):
+        v = text_clean(features.get(key))
+        if v:
+            try:
+                total += float(v.replace(",", "."))
+                found = True
+            except ValueError:
+                pass
+    if not found:
+        return None
+    return f"{int(total)}L" if abs(total - int(total)) < 0.05 else f"{total}L"
 
 
 def extract_pdp_spec(features: dict[str, str]) -> dict[str, Any]:
