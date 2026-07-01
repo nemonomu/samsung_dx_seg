@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from common import datasheet, model_sku
+from common import datasheet, eprel, model_sku
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, top_info, transliterate
 
 PRODUCT = "TV"
@@ -75,10 +75,14 @@ def _screen_from_topinfo(target: dict[str, Any]) -> str | None:
     return m.group(1).replace(",", ".") if m else None
 
 
-def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
+                 sku: str | None = None) -> dict[str, Any]:
     screen = datasheet.screen_inches(ds) or _screen_from_topinfo(target)
     # HDR on-mode power; non-HDR TVs fall back to SDR on-mode power
     electricity = _watt(datasheet.power_by_label(ds, hdr=True)) or _watt(datasheet.power_by_label(ds, hdr=False))
+    if not electricity:
+        # datasheet PDF was image-only / unparseable -> EU EPREL registry by model (sku)
+        electricity = eprel.display_on_mode_power(sku)
     return {"screen_size": screen, "estimated_annual_electricity_use": electricity}
 
 

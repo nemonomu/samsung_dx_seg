@@ -206,11 +206,12 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "none", ti
             if cfg.USE_DATASHEET and (target.get("energy_datasheet_uri") or "").strip():
                 body, ds_status, _ = datasheet.fetch_datasheet_bytes(target["energy_datasheet_uri"], timeout)
                 ds = datasheet.parse(body)
-            spec = cfg.extract_spec(target, ds, ctx)
-            # sku: datasheet Modellkennung, then a category hook (e.g. LDY /vergleich/
-            # Modellbezeichnung), then the name-token heuristic.
+            # sku first: datasheet Modellkennung, then a category hook (e.g. /vergleich/
+            # Modellbezeichnung), then the name-token heuristic. Passed to extract_spec so
+            # spec extractors can reuse it (e.g. TV EPREL power lookup by model).
             ctx_sku = cfg.extract_sku(target, ds, ctx) if hasattr(cfg, "extract_sku") else None
             sku = first(ds.get("sku") if ds else None, ctx_sku, sku_from_name(target.get("retailer_sku_name")))
+            spec = cfg.extract_spec(target, ds, ctx, sku=sku)
 
             reco = fetch_similar_product_names(target.get("variation_id"), timeout=timeout)
             pid = (target.get("product_id") or "").strip() or product_id_from_url(target.get("product_url")) or str(target.get("main_rank"))

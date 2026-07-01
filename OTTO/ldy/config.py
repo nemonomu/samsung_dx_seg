@@ -236,7 +236,8 @@ def _vergleich_capacity(vid_chars: dict[str, str | None]) -> str | None:
     return None
 
 
-def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
+                 sku: str | None = None) -> dict[str, Any]:
     ctx = ctx or {}
     vid = str(target.get("variation_id") or "")
     vid_chars = ctx.get("chars", {}).get(vid, {})

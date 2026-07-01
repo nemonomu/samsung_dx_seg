@@ -74,7 +74,8 @@ def classify(name: str | None) -> tuple[bool, str]:
     return False, "missing_ref_keyword"
 
 
-def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
+                 sku: str | None = None) -> dict[str, Any]:
     capacity = datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l")
     # Kasada-free default from the listing name; PDP supplement overrides if enabled.
     ref_type = translate_ref_type(target.get("retailer_sku_name"))
