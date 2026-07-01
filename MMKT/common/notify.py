@@ -49,6 +49,14 @@ def _read_json(path: Path) -> dict[str, Any]:
         return {}
 
 
+# A row "got its PDP detail" if any GraphQL-only field came back — these are all
+# NULL when the detail step is Cloudflare/CAPTCHA-blocked even though listing
+# (main_rank) still looks full. Catches the "No issues but everything blocked" trap.
+def _detail_present(r: dict, spec_fields: list[str]) -> bool:
+    keys = ["sku", "delivery_availability", "star_rating", "count_of_star_ratings", *spec_fields]
+    return any((r.get(k) or "").strip() for k in keys)
+
+
 def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     out = cfg.OUTPUT_ROOT
     db = _read_json(out / "step14_db_save_manifest.json")
@@ -58,7 +66,13 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     main_present = sum(1 for r in rows if (r.get("main_rank") or "").strip())
     bsr_present = sum(1 for r in rows if (r.get("bsr_rank") or "").strip())
 
-    null_fields_check = NULL_BASE + list(cfg.SPEC_FIELDS) + NULL_TAIL
+    spec_fields = list(cfg.SPEC_FIELDS)
+    detail_present = sum(1 for r in rows if _detail_present(r, spec_fields))
+    detail_ratio = (detail_present / total) if total else 0.0
+    # Below this, the detail step was largely blocked (default 0.90; env-tunable).
+    min_ratio = float(env_value("SEG_DETAIL_MIN_RATIO", "0.90") or "0.90")
+
+    null_fields_check = NULL_BASE + spec_fields + NULL_TAIL
     null_fields = [f for f in null_fields_check if not any((r.get(f) or "").strip() for r in rows)]
 
     issues = []
@@ -66,18 +80,24 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         issues.append(f"main_rank {main_present}/{main_expected}")
     if bsr_present != bsr_expected:
         issues.append(f"bsr_rank {bsr_present}/{bsr_expected}")
+    if total and detail_ratio < min_ratio:
+        issues.append(f"detail 수집 저조 {detail_present}/{total} ({detail_ratio:.0%}) — "
+                      f"차단 의심(Chrome 버전 미스매치/IP/GraphQL 변경)")
     if db.get("dry_run") is False and db.get("inserted", 0) != total:
         issues.append(f"DB 적재 {db.get('inserted', 0)}/{total}")
     elif db.get("dry_run"):
         issues.append("DB 미적재(dry-run/테이블 없음)")
 
-    subject = f"[SEG] MediaMarkt {cfg.PRODUCT} crawled"
+    # ⚠ marker in the subject so a blocked run is visible without opening the mail.
+    base_subject = f"[SEG] MediaMarkt {cfg.PRODUCT} crawled"
+    subject = base_subject if not issues else f"[⚠ 확인필요] {base_subject}"
     lines = [
         subject, "",
         f"총 수집 {total} sku", "",
         "랭크 수집 현황",
         f"  main_rank - {main_present}/{main_expected}",
-        f"  bsr_rank - {bsr_present}/{bsr_expected}", "",
+        f"  bsr_rank - {bsr_present}/{bsr_expected}",
+        f"  detail(PDP) - {detail_present}/{total} ({detail_ratio:.0%})", "",
         "전체 null 현황",
         *([f"  {f}" for f in null_fields] if null_fields else ["  없음"]), "",
         ("특이사항 없음" if not issues else "특이사항\n" + "\n".join(f"  - {i}" for i in issues)),
