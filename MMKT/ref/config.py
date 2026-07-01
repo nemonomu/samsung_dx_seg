@@ -2,7 +2,7 @@
 
 REF replaces TV's screen_size/model_year/electricity with:
   ref_refrigerator_type  <- PDP feature "Produkttyp" (translated)
-  ref_capacity           <- PDP feature "Gesamtrauminhalt" (liters)
+  ref_capacity           <- PDP feature "Rauminhalt der Kühlfächer" (liters)
 """
 from __future__ import annotations
 
@@ -48,24 +48,11 @@ REF_TYPE_TRANSLATIONS = {
 
 
 def _ref_capacity(features: dict[str, str]) -> str | None:
-    raw = text_clean(features.get("Gesamtrauminhalt"))
-    if raw:
-        return f"{raw}L"
-    # Marketplace products (reduced feature set) lack Gesamtrauminhalt — sum the
-    # fridge + freezer compartment volumes instead.
-    total = 0.0
-    found = False
-    for key in ("Rauminhalt der Kühlfächer", "Rauminhalt der Tiefkühlfächer"):
-        v = text_clean(features.get(key))
-        if v:
-            try:
-                total += float(v.replace(",", "."))
-                found = True
-            except ValueError:
-                pass
-    if not found:
-        return None
-    return f"{int(total)}L" if abs(total - int(total)) < 0.05 else f"{total}L"
+    """Fridge (cooling) compartment volume — PDP feature 'Rauminhalt der
+    Kühlfächer' (per user). Falls back to Gesamtrauminhalt if absent."""
+    raw = text_clean(features.get("Rauminhalt der Kühlfächer")) \
+        or text_clean(features.get("Gesamtrauminhalt"))
+    return f"{raw}L" if raw else None
 
 
 def extract_pdp_spec(features: dict[str, str]) -> dict[str, Any]:
