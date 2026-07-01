@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from common import datasheet, model_sku, parsers
+from common import datasheet, eprel, model_sku, parsers
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, transliterate
 
 PRODUCT = "REF"
@@ -76,7 +76,8 @@ def classify(name: str | None) -> tuple[bool, str]:
 
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
-    capacity = datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l")
+    # datasheet Gesamtrauminhalt; EPREL totalVolume when the datasheet PDF is image-only
+    capacity = datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l") or eprel.fridge_total_volume(sku)
     # Kasada-free default from the listing name; PDP supplement overrides if enabled.
     ref_type = translate_ref_type(target.get("retailer_sku_name"))
     return {"ref_refrigerator_type": ref_type, "ref_capacity": capacity}

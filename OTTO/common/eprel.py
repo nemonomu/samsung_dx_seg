@@ -60,3 +60,14 @@ def display_on_mode_power(model: str | None, *, timeout: int = 30) -> str | None
     if not hit:
         return None
     return _fmt(hit.get("powerOnModeHDR")) or _fmt(hit.get("powerOnModeSDR"))
+
+
+def fridge_total_volume(model: str | None, *, timeout: int = 30) -> str | None:
+    """Total volume (Gesamtrauminhalt) for a refrigerating appliance as '<n> l'."""
+    if not model or not model.strip():
+        return None
+    hit = _best_hit(_search("refrigeratingappliances2019", model.strip(), timeout), model.strip())
+    if not hit:
+        return None
+    v = hit.get("totalVolume")
+    return f"{v} l" if v not in (None, "", "NA", 0, "0") else None
