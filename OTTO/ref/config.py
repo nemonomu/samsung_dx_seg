@@ -65,11 +65,12 @@ def classify(name: str | None) -> tuple[bool, str]:
     key = _norm(name)
     if not key:
         return False, "missing_retailer_sku_name"
+    # hard excludes win, even when a positive keyword is also present
+    # (e.g. "Xavax Montagezubehör Kühlschrank" -> excluded via "zubehör")
     hits = [t for t in EXCLUDE_KEYWORDS if t in key]
-    has_type = any(t in key for t in POSITIVE_KEYWORDS)
-    if hits and not has_type:
+    if hits:
         return False, "exclude_keyword:" + ",".join(hits)
-    if has_type:
+    if any(t in key for t in POSITIVE_KEYWORDS):
         return True, "ref_type_keyword"
     return False, "missing_ref_keyword"
 
