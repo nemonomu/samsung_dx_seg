@@ -16,7 +16,7 @@ import urllib.request
 from typing import Any
 from urllib.parse import urlencode
 
-from common import compare
+from common import compare, eprel
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, top_info, transliterate
 
 EVERGLADES_URL = "https://www.otto.de/everglades/products"
@@ -193,7 +193,8 @@ def prepare_context(targets: list[dict[str, Any]] | None = None) -> dict[str, An
         vid = str(t.get("variation_id") or "").strip()
         if vid and vid not in vids:
             vids.append(vid)
-    chars = compare.characteristics_map(vids, VERGLEICH_LABELS) if vids else {}
+    # Bauart is the key loading-type signal; require it so batch-dropped cells are re-fetched
+    chars = compare.characteristics_map(vids, VERGLEICH_LABELS, required=["Bauart"]) if vids else {}
     bauart = {v: chars.get(v, {}).get("Bauart") for v in vids}
     # full product name (with subtitle) comes from the same /vergleich/ page; it is the
     # Bauart fallback and the capacity ("N kg") fallback.
@@ -256,7 +257,8 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
                 or _capacity_from_name(name)
                 or _capacity_from_name(target.get("retailer_sku_name"))
                 or _vergleich_capacity(vid_chars)
-                or ctx.get("ds_capacity", {}).get(vid))
+                or ctx.get("ds_capacity", {}).get(vid)
+                or eprel.washer_rated_capacity(sku))
     return {"ldy_loading_type": loading, "ldy_capacity": capacity}
 
 

@@ -178,17 +178,23 @@ def _multi_pass(ids: list[str], labels: list[str], timeout: int, sleep: float,
 
 def characteristics_map(variation_ids: list[str], labels: list[str], *, timeout: int = 45,
                         sleep: float = 0.6, retry_rounds: int = 2, retry_sleep: float = 1.5,
-                        final_individual: bool = True) -> dict[str, dict[str, str | None]]:
+                        final_individual: bool = True, required: list[str] | None = None) -> dict[str, dict[str, str | None]]:
     """{variation_id: {label: value, _name: full product name}} for several characteristics
-    in one set of /vergleich/ requests. A vid whose comparison column did not render at all
-    (no name and no labels) is re-queried in batched rounds, then per-id (batch=1). Genuinely
-    absent single labels are left missing (not every product lists every characteristic)."""
+    in one set of /vergleich/ requests. A vid is re-queried (batched rounds, then per-id
+    batch=1) if its column did not render at all (no name/labels) OR a `required` label is
+    missing — batched comparison pages intermittently drop a cell, and the per-id pass is
+    reliable. Genuinely absent labels stay missing after the retries."""
     ids = [str(v) for v in variation_ids if v]
     result = _multi_pass(ids, labels, timeout, sleep)
 
-    def _rendered(vid: str) -> bool:
+    def _incomplete(vid: str) -> bool:
         d = result.get(vid, {})
-        return bool(d.get(NAME_KEY)) or any(v for k, v in d.items() if k != NAME_KEY)
+        rendered = bool(d.get(NAME_KEY)) or any(v for k, v in d.items() if k != NAME_KEY)
+        if not rendered:
+            return True
+        if required and not all(d.get(lbl) for lbl in required):
+            return True
+        return False
 
     def _merge(passed: dict[str, dict[str, str | None]]) -> None:
         for vid, vals in passed.items():
@@ -197,11 +203,11 @@ def characteristics_map(variation_ids: list[str], labels: list[str], *, timeout:
                     result[vid][key] = val
 
     for _ in range(retry_rounds):
-        missing = [v for v in ids if not _rendered(v)]
+        missing = [v for v in ids if _incomplete(v)]
         if not missing:
             break
         _merge(_multi_pass(missing, labels, timeout, retry_sleep))
     if final_individual:
-        missing = [v for v in ids if not _rendered(v)]
+        missing = [v for v in ids if _incomplete(v)]
         _merge(_multi_pass(missing, labels, timeout, retry_sleep, batch_size=1))
     return result

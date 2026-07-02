@@ -62,6 +62,17 @@ def display_on_mode_power(model: str | None, *, timeout: int = 30) -> str | None
     return _fmt(hit.get("powerOnModeHDR"))
 
 
+def washer_rated_capacity(model: str | None, *, timeout: int = 30) -> str | None:
+    """Rated wash capacity for a washing machine as '<n> kg'."""
+    if not model or not model.strip():
+        return None
+    hit = _best_hit(_search("washingmachines2019", model.strip(), timeout), model.strip())
+    if not hit:
+        return None
+    v = hit.get("ratedCapacity")
+    return f"{v} kg" if v not in (None, "", "NA", 0, "0") else None
+
+
 def fridge_total_volume(model: str | None, *, timeout: int = 30) -> str | None:
     """Total volume (Gesamtrauminhalt) for a refrigerating appliance as '<n> l'."""
     if not model or not model.strip():
