@@ -78,11 +78,15 @@ def _screen_from_topinfo(target: dict[str, Any]) -> str | None:
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
     screen = datasheet.screen_inches(ds) or _screen_from_topinfo(target)
-    # HDR on-mode power only (SDR is not a collection target)
-    electricity = _watt(datasheet.power_by_label(ds, hdr=True))
-    if not electricity:
-        # datasheet PDF was image-only / unparseable -> EU EPREL registry by model (sku)
-        electricity = eprel.display_on_mode_power(sku)
+    # HDR on-mode power only (SDR is not a collection target). When the datasheet marks
+    # HDR power explicitly "Nicht zutreffend" (a non-HDR TV), store that as-is — it is a
+    # real "not applicable", not a missed value. Only a genuine miss (parse failed /
+    # image-only) falls through to the EU EPREL registry, then NULL.
+    raw_hdr = datasheet.power_by_label(ds, hdr=True)
+    if raw_hdr == "NA":
+        electricity = "Nicht zutreffend"
+    else:
+        electricity = _watt(raw_hdr) or eprel.display_on_mode_power(sku)
     return {"screen_size": screen, "estimated_annual_electricity_use": electricity}
 
 
