@@ -78,8 +78,8 @@ def _screen_from_topinfo(target: dict[str, Any]) -> str | None:
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
     screen = datasheet.screen_inches(ds) or _screen_from_topinfo(target)
-    # HDR on-mode power; non-HDR TVs fall back to SDR on-mode power
-    electricity = _watt(datasheet.power_by_label(ds, hdr=True)) or _watt(datasheet.power_by_label(ds, hdr=False))
+    # HDR on-mode power only (SDR is not a collection target)
+    electricity = _watt(datasheet.power_by_label(ds, hdr=True))
     if not electricity:
         # datasheet PDF was image-only / unparseable -> EU EPREL registry by model (sku)
         electricity = eprel.display_on_mode_power(sku)

@@ -53,13 +53,13 @@ def _fmt(value: Any) -> str | None:
 
 
 def display_on_mode_power(model: str | None, *, timeout: int = 30) -> str | None:
-    """On-mode power for an electronic display as '<n> W' (HDR preferred, SDR fallback)."""
+    """HDR on-mode power for an electronic display as '<n> W' (SDR is not a collection target)."""
     if not model or not model.strip():
         return None
     hit = _best_hit(_search("electronicdisplays", model.strip(), timeout), model.strip())
     if not hit:
         return None
-    return _fmt(hit.get("powerOnModeHDR")) or _fmt(hit.get("powerOnModeSDR"))
+    return _fmt(hit.get("powerOnModeHDR"))
 
 
 def fridge_total_volume(model: str | None, *, timeout: int = 30) -> str | None:
