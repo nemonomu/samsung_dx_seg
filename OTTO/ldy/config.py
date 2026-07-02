@@ -184,35 +184,86 @@ def _category_vids(cat: str, hard_cap: int = 4000) -> set[str]:
     return vids
 
 
+def _pid_vid_map(hard_cap: int = 4000) -> dict[str, str]:
+    """{product_id: current bestVariationId} from the everglades waschmaschinen listing.
+    Target variation_ids captured earlier go stale (OTTO switches bestVariationId), and
+    /vergleich/ + category membership only resolve with the CURRENT id."""
+    out: dict[str, str] = {}
+    offset = 0
+    total = None
+    fails = 0
+    rule = "(und.(suchbegriff.waschmaschinen).(~.(v.1)))"
+    while offset < hard_cap:
+        data = _ever_fetch(rule, offset)
+        if data is None:
+            fails += 1
+            if fails >= 3:
+                break
+            continue
+        fails = 0
+        intent = next((it for it in data.get("intents", []) if it.get("intent") == "ranked"), {})
+        products = intent.get("products", []) or []
+        if total is None:
+            total = intent.get("count")
+        if not products:
+            break
+        for p in products:
+            pid = str(p.get("id") or "")
+            vid = p.get("bestVariationId") or p.get("id")
+            if pid and vid:
+                out.setdefault(pid, str(vid))
+        offset += len(products)
+        if total and offset >= total:
+            break
+    return out
+
+
 def prepare_context(targets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Per-SKU {Bauart, Modellbezeichnung, capacity} from the Kasada-free /vergleich/ page,
-    plus listing subtitles, plus everglades frontlader/toplader category sets — the
-    loading_type fallback for washers OTTO ships with no Bauart."""
-    vids = []
-    for t in (targets or []):
-        vid = str(t.get("variation_id") or "").strip()
-        if vid and vid not in vids:
-            vids.append(vid)
+    plus listing subtitles + everglades frontlader/toplader category membership. Everything
+    is keyed by product_id and queried with the CURRENT bestVariationId (stored target vids
+    drift and then /vergleich/ returns an empty column)."""
+    targets = targets or []
+    pid_vid = _pid_vid_map()
+    # (product_id, current bestVariationId) — fresh preferred, stored as fallback
+    q: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for t in targets:
+        pid = str(t.get("product_id") or "").strip()
+        vid = pid_vid.get(pid) or str(t.get("variation_id") or "").strip()
+        if pid and vid and pid not in seen:
+            seen.add(pid)
+            q.append((pid, vid))
+    query_vids = [vid for _, vid in q]
     # Bauart is the key loading-type signal; require it so batch-dropped cells are re-fetched
-    chars = compare.characteristics_map(vids, VERGLEICH_LABELS, required=["Bauart"]) if vids else {}
-    bauart = {v: chars.get(v, {}).get("Bauart") for v in vids}
-    # full product name (with subtitle) comes from the same /vergleich/ page; it is the
-    # Bauart fallback and the capacity ("N kg") fallback.
-    names = {v: chars.get(v, {}).get(compare.NAME_KEY) for v in vids}
+    chars_by_vid = compare.characteristics_map(query_vids, VERGLEICH_LABELS, required=["Bauart"]) if query_vids else {}
     frontlader = _category_vids("frontlader")
     toplader = _category_vids("toplader")
-    # capacity gap recovery: for the few washers with no listing/name/comparison capacity,
-    # read the EU energy datasheet (Nennkapazität). Fetched only for the gaps.
+
+    chars: dict[str, dict[str, str | None]] = {}
+    bauart: dict[str, str | None] = {}
+    names: dict[str, str | None] = {}
+    is_front: dict[str, bool] = {}
+    is_top: dict[str, bool] = {}
+    for pid, vid in q:
+        c = chars_by_vid.get(vid, {})
+        chars[pid] = c
+        bauart[pid] = c.get("Bauart")
+        names[pid] = c.get(compare.NAME_KEY)
+        is_top[pid] = vid in toplader
+        is_front[pid] = vid in frontlader
+
+    # capacity gap recovery via the EU energy datasheet (Nennkapazität), only for gaps
     ds_capacity: dict[str, str] = {}
-    for t in (targets or []):
-        vid = str(t.get("variation_id") or "").strip()
-        if not vid:
+    for t in targets:
+        pid = str(t.get("product_id") or "").strip()
+        if not pid or pid in ds_capacity:
             continue
         if _has_value(top_info(t, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")):
             continue
-        if _capacity_from_name(names.get(vid)) or _capacity_from_name(t.get("retailer_sku_name")):
+        if _capacity_from_name(names.get(pid)) or _capacity_from_name(t.get("retailer_sku_name")):
             continue
-        if _vergleich_capacity(chars.get(vid, {})):
+        if _vergleich_capacity(chars.get(pid, {})):
             continue
         uri = (t.get("energy_datasheet_uri") or "").strip()
         if not uri:
@@ -221,13 +272,14 @@ def prepare_context(targets: list[dict[str, Any]] | None = None) -> dict[str, An
         body, _st, _ = datasheet.fetch_datasheet_bytes(uri, 45)
         cap = _capacity_from_datasheet(datasheet.parse(body))
         if cap:
-            ds_capacity[vid] = cap
+            ds_capacity[pid] = cap
+
     labeled = sum(1 for v in bauart.values() if _has_value(v))
-    rendered = sum(1 for v in vids if chars.get(v))
-    print(f"[ldy] /vergleich/: {rendered}/{len(vids)} columns; Bauart {labeled} structured; "
-          f"category sets front={len(frontlader)} top={len(toplader)}; datasheet capacity {len(ds_capacity)}", flush=True)
+    refreshed = sum(1 for pid, vid in q if pid_vid.get(pid))
+    print(f"[ldy] /vergleich/: {sum(1 for c in chars.values() if c)}/{len(q)} columns; Bauart {labeled}; "
+          f"vids refreshed {refreshed}/{len(q)}; category front={len(frontlader)} top={len(toplader)}; ds-cap {len(ds_capacity)}", flush=True)
     return {"chars": chars, "bauart": bauart, "name": names,
-            "frontlader": frontlader, "toplader": toplader, "ds_capacity": ds_capacity}
+            "is_front": is_front, "is_top": is_top, "ds_capacity": ds_capacity}
 
 
 def _vergleich_capacity(vid_chars: dict[str, str | None]) -> str | None:
@@ -240,24 +292,24 @@ def _vergleich_capacity(vid_chars: dict[str, str | None]) -> str | None:
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
     ctx = ctx or {}
-    vid = str(target.get("variation_id") or "")
-    vid_chars = ctx.get("chars", {}).get(vid, {})
-    name = ctx.get("name", {}).get(vid)
-    loading = resolve_loading(ctx.get("bauart", {}).get(vid), name)
+    pid = str(target.get("product_id") or "")
+    vid_chars = ctx.get("chars", {}).get(pid, {})
+    name = ctx.get("name", {}).get(pid)
+    loading = resolve_loading(ctx.get("bauart", {}).get(pid), name)
     if loading is None:
         # OTTO ships some frontloaders with no Bauart/name hint; fall back to its own
         # frontlader/toplader subcategory membership (real data, not a guess).
-        if vid in ctx.get("toplader", set()):
+        if ctx.get("is_top", {}).get(pid):
             loading = LOADING_MAP["toplader"]
-        elif vid in ctx.get("frontlader", set()):
+        elif ctx.get("is_front", {}).get(pid):
             loading = LOADING_MAP["frontlader"]
     # capacity: listing top_info, then the product name's "N kg" (reliable, same page),
-    # then the /vergleich/ capacity labels as a last resort (batched labels are flaky).
+    # then the /vergleich/ capacity labels, datasheet, and EPREL rated capacity.
     capacity = (top_info(target, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
                 or _capacity_from_name(name)
                 or _capacity_from_name(target.get("retailer_sku_name"))
                 or _vergleich_capacity(vid_chars)
-                or ctx.get("ds_capacity", {}).get(vid)
+                or ctx.get("ds_capacity", {}).get(pid)
                 or eprel.washer_rated_capacity(sku))
     return {"ldy_loading_type": loading, "ldy_capacity": capacity}
 
@@ -266,8 +318,8 @@ def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] 
     """LDY has no datasheet; use the /vergleich/ Modellbezeichnung (handles space-separated
     models like 'BPW 814 A' that the name-token heuristic misses)."""
     ctx = ctx or {}
-    vid = str(target.get("variation_id") or "")
-    model = ctx.get("chars", {}).get(vid, {}).get("Modellbezeichnung")
+    pid = str(target.get("product_id") or "")
+    model = ctx.get("chars", {}).get(pid, {}).get("Modellbezeichnung")
     if not _has_value(model):
         return None
     return _COLOR_SUFFIX.sub("", model.strip()).strip() or None
