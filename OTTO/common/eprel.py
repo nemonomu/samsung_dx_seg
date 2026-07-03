@@ -74,11 +74,15 @@ def washer_rated_capacity(model: str | None, *, timeout: int = 30) -> str | None
 
 
 def fridge_total_volume(model: str | None, *, timeout: int = 30) -> str | None:
-    """Total volume (Gesamtrauminhalt) for a refrigerating appliance as '<n> l'."""
+    """Total volume for a refrigerating appliance as '<n> l' — household registry
+    (totalVolume), then the commercial direct-sales-function registry for beverage/display
+    coolers (grossVolumeChilledTotal)."""
     if not model or not model.strip():
         return None
-    hit = _best_hit(_search("refrigeratingappliances2019", model.strip(), timeout), model.strip())
-    if not hit:
-        return None
-    v = hit.get("totalVolume")
+    model = model.strip()
+    hit = _best_hit(_search("refrigeratingappliances2019", model, timeout), model)
+    v = hit.get("totalVolume") if hit else None
+    if v in (None, "", "NA", 0, "0"):
+        hit = _best_hit(_search("refrigeratingappliancesdirectsalesfunction", model, timeout), model)
+        v = hit.get("grossVolumeChilledTotal") if hit else None
     return f"{v} l" if v not in (None, "", "NA", 0, "0") else None

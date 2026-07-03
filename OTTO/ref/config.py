@@ -77,16 +77,20 @@ def classify(name: str | None) -> tuple[bool, str]:
 
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
-    # datasheet Gesamtrauminhalt; EPREL totalVolume when the datasheet PDF is image-only
-    capacity = datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l") or eprel.fridge_total_volume(sku)
+    # datasheet Gesamtrauminhalt; then /vergleich/ (beverage coolers), then EPREL registry
+    capacity = (datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l")
+                or model_sku.characteristic(target, ctx, "Gesamtrauminhalt", "Nutzinhalt", "Fassungsvermögen")
+                or eprel.fridge_total_volume(sku))
     # Kasada-free default from the listing name; PDP supplement overrides if enabled.
     ref_type = translate_ref_type(target.get("retailer_sku_name"))
     return {"ref_refrigerator_type": ref_type, "ref_capacity": capacity}
 
 
 def prepare_context(targets=None) -> dict[str, Any]:
-    # /vergleich/ Modellbezeichnung as a sku fallback for space-separated models
-    return model_sku.model_context(targets)
+    # /vergleich/ Modellbezeichnung (sku fallback) + Gesamtrauminhalt (capacity for beverage
+    # coolers the datasheet/EPREL household registry miss), on current bestVariationIds
+    return model_sku.model_context(targets, SUCHBEGRIFF,
+                                   labels=("Modellbezeichnung", "Gesamtrauminhalt", "Nutzinhalt", "Fassungsvermögen"))
 
 
 def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:

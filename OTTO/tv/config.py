@@ -92,7 +92,7 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
 
 def prepare_context(targets=None) -> dict[str, Any]:
     # /vergleich/ Modellbezeichnung as a sku fallback for space-separated models
-    return model_sku.model_context(targets)
+    return model_sku.model_context(targets, SUCHBEGRIFF)
 
 
 def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:
