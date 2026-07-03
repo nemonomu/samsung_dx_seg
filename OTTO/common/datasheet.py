@@ -132,30 +132,25 @@ def power_by_label(parsed: dict[str, Any], *, hdr: bool):
         n = _num(joined)
         if n:
             return f"{n} W"
-    # text fallback with per-field BOUNDED segments: each on-mode label runs only to the
-    # next "Leistungsaufnahme" label, so a neighbouring field's value or N/A cannot leak in
-    # (fixes datasheets where the value is inline "bei hohem 43.0 W", split "bei 29.0 W
-    # Standard-...", or a bare decimal on the next line "bei hohem 112,0"). Item numbers are
-    # integers; on-mode power is a decimal or "<n> W".
+    # text fallback: anchor on the HDR/SDR on-mode phrase and read the value in a TIGHT
+    # forward window (~45 chars). Both German and English anchors are tried because some
+    # sheets are bilingual and mangled, with the value only next to the English label
+    # (Samsung "The Frame": value follows "High Dynamic Range 49.0 W"). The tight window
+    # avoids swallowing the next field's N/A. A dash ("- W") or "Nicht zutreffend" is a real
+    # "not applicable" (non-HDR TV) -> "NA". Values may be "<n> W" or a bare decimal.
     flat = re.sub(r"\s+", " ", parsed.get("text", "").replace("­", ""))
-    marks = [m.start() for m in re.finditer(r"leistungsaufnahme|on mode power|power demand", flat, re.I)]
-    marks.append(len(flat))
-    for i in range(len(marks) - 1):
-        seg = flat[marks[i]:marks[i + 1]]
-        low = seg.lower()
-        if not any(t in low for t in _ON_MODE) or any(t in low for t in _OFF_STATE):
-            continue
-        is_hdr = ("hohem" in low) or ("high dynamic" in low)
-        is_sdr = ("standard" in low) and not is_hdr
-        if hdr and not is_hdr:
-            continue
-        if not hdr and not is_sdr:
-            continue
-        if _NA_RE.search(seg):
-            return "NA"
-        w = re.search(r"(\d+(?:[.,]\d+)?)\s*W\b", seg) or re.search(r"(\d+[.,]\d+)", seg)
-        if w:
-            return f"{w.group(1).replace(',', '.')} W"
+    anchors = ("bei hohem", "high dynamic range") if hdr else ("bei standard", "standard dynamic range")
+    na_seen = False
+    for anchor in anchors:
+        for m in re.finditer(re.escape(anchor), flat, re.I):
+            win = flat[m.end(): m.end() + 45]
+            w = re.search(r"(\d+(?:[.,]\d+)?)\s*W\b", win) or re.search(r"(\d+[.,]\d+)", win)
+            if w:
+                return f"{w.group(1).replace(',', '.')} W"
+            if _NA_RE.search(win) or re.search(r"[-–—]\s*W\b", win):
+                na_seen = True
+    if na_seen:
+        return "NA"
     # last resort: non-EU spec sheets (e.g. Sharp) list a single on-mode figure with no
     # HDR/SDR split, as "Stromverbrauch (W) 53" (standby is "Stand-by-Stromverbrauch").
     m = re.search(r"(?<!by-)Stromverbrauch\s*\(W\)\s*(\d+(?:[.,]\d+)?)", flat, re.I)
