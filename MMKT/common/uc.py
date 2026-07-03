@@ -156,7 +156,7 @@ class UcSession:
         script_timeout_s: int = 40,
         settle_s: float = 1.2,
         warmup_s: float = 3.0,
-        review_pages: int = 2,
+        review_pages: int = 4,
     ) -> None:
         self.headless = headless
         self.nav_timeout_s = nav_timeout_s

@@ -69,7 +69,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--limit", type=int, default=0, help="max targets (0 = all)")
     p.add_argument("--sleep", type=float, default=0.5,
                    help="throttle between SKUs to stay under Cloudflare's GraphQL rate limit")
-    p.add_argument("--review-pages", type=int, default=2)
+    p.add_argument("--review-pages", type=int, default=4,
+                   help="review API pages to fetch (10/page); 4 → up to 40 fetched so the "
+                        "written-only top-20 fills even when some pages have few written reviews")
     p.add_argument("--transport", choices=["uc", "zenrows"], default="uc",
                    help="uc = local undetected-chromedriver (no ZenRows); zenrows = legacy")
     p.add_argument("--concurrency", type=int, default=2,

@@ -137,7 +137,7 @@ class PdpBrowserSession:
         nav_timeout_ms: int = 90000,
         settle_ms: int = 1200,
         warmup_wait_ms: int = 3000,
-        review_pages: int = 2,
+        review_pages: int = 4,
         block_resources: bool = True,
     ) -> None:
         self.proxy_country = proxy_country
