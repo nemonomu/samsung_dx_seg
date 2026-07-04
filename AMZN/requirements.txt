@@ -1,0 +1,4 @@
+beautifulsoup4>=4.12,<5
+selenium>=4.20,<5
+undetected-chromedriver>=3.5,<4
+psycopg2-binary>=2.9,<3
