@@ -33,3 +33,4 @@ AMZN/references/
 AMZN/**/data/output/
 AMZN/erd.xlsx
 AMZN/logs/
+AMZN/config.py

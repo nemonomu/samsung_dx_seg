@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import time
 from datetime import datetime
 from typing import Any
@@ -22,6 +23,17 @@ def _crawl_datetime() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_float(name: str, default: float = 0.0) -> float:
+    try:
+        return float(os.getenv(name, str(default)) or default)
+    except ValueError:
+        return default
+
+
 def _apply_record_meta(cfg, row: dict[str, Any], *, sort: str, page: int, source_url: str,
                        batch_id: str | None) -> dict[str, Any]:
     row.update({
@@ -39,7 +51,8 @@ def _apply_record_meta(cfg, row: dict[str, Any], *, sort: str, page: int, source
 def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 30,
         timeout: int = DEFAULT_TIMEOUT, sleep: float = DEFAULT_SLEEP, input_html: str = "",
         batch_id: str | None = None, emit=None, headless: bool | None = None,
-        page_load_strategy: str | None = None) -> dict[str, Any]:
+        page_load_strategy: str | None = None, session: Any | None = None,
+        save_html: bool | None = None) -> dict[str, Any]:
     del timeout  # Selenium session owns page timeouts.
     ensure_dirs(cfg.PRODUCT)
     out = category_output_root(cfg.PRODUCT)
@@ -52,8 +65,14 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
         logger.info("batch_id=%s", batch_id)
     rows: list[dict[str, Any]] = []
     pages = []
+    save_html = _truthy(os.getenv("AMZN_SAVE_HTML")) if save_html is None else save_html
+    inter_page_sleep = _env_float("AMZN_INTER_PAGE_SLEEP", 0.0)
+    own_session = False
+    logger.info(
+        "save_html=%s shared_session=%s inter_page_sleep=%s",
+        save_html, session is not None, inter_page_sleep,
+    )
 
-    session = None
     try:
         if input_html:
             html = open(input_html, encoding="utf-8", errors="replace").read()
@@ -62,18 +81,26 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
             pages.append({"page": 1, "url": input_html, "status": "file", "parsed_rows": len(rows)})
             logger.info("page=%d file=%s records=%d", 1, input_html, len(rows))
         else:
-            from common.browser import AmazonBrowserSession
-            session = AmazonBrowserSession(
-                postal_code=getattr(cfg, "POSTAL_CODE", "10117"),
-                sleep=sleep,
-                headless=headless,
-                page_load_strategy=page_load_strategy,
-            )
+            if session is None:
+                from common.browser import AmazonBrowserSession
+                session = AmazonBrowserSession(
+                    postal_code=getattr(cfg, "POSTAL_CODE", "10117"),
+                    sleep=sleep,
+                    headless=headless,
+                    page_load_strategy=page_load_strategy,
+                )
+                own_session = True
             for page in range(1, max_pages + 1):
                 url = page_url(cfg, sort, page)
                 logger.info("page=%d url=%s", page, url)
-                resp = session.fetch(url, scroll_ratio=0.85 if sort == "bsr" else 1.0)
-                save_text(ref / f"page_{page:02d}.html", resp["text"])
+                resp = session.fetch(
+                    url,
+                    scroll_ratio=0.85 if sort == "bsr" else 1.0,
+                    scroll_max_scrolls=10 if sort == "bsr" else 8,
+                    post_load_sleep=max(sleep, 3.0),
+                )
+                if save_html:
+                    save_text(ref / f"page_{page:02d}.html", resp["text"])
                 start_rank = len(rows) + 1
                 parsed = []
                 fallback_parsed = parsers.parse_bsr_html(resp["text"], start_rank=start_rank) if sort == "bsr" else parsers.parse_listing_html(resp["text"], page=page, sort=sort, start_rank=start_rank)
@@ -100,9 +127,10 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                 print(f"[listing/{cfg.PRODUCT}/{sort}] page={page} status={resp['status']} parsed={len(parsed)} total={len(rows)}", flush=True)
                 if len(rows) >= target or not parsed:
                     break
-                time.sleep(sleep)
+                if inter_page_sleep > 0:
+                    time.sleep(inter_page_sleep)
     finally:
-        if session is not None:
+        if own_session and session is not None:
             session.close()
 
     rows = rows[:target]
@@ -119,7 +147,8 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
         "target": target,
         "rows": len(rows),
         "output": str(path),
-        "raw_dir": str(ref),
+        "raw_dir": str(ref) if save_html else "",
+        "raw_saved": save_html,
         "pages": pages,
         "selector_source": "db_or_default_xpath",
     }

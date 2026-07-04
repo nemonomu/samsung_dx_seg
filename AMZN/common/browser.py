@@ -56,11 +56,13 @@ def _chrome_major() -> int | None:
 
 class AmazonBrowserSession:
     def __init__(self, *, postal_code: str = "10117", sleep: float = 1.5,
-                 headless: bool | None = None, page_load_strategy: str | None = None):
+                 headless: bool | None = None, page_load_strategy: str | None = None,
+                 set_postal: bool | None = None):
         self.postal_code = postal_code
         self.sleep = sleep
         self.headless = _truthy(os.getenv("AMZN_HEADLESS")) if headless is None else headless
         self.page_load_strategy = page_load_strategy or os.getenv("AMZN_PAGE_LOAD_STRATEGY")
+        self.set_postal = _truthy(os.getenv("AMZN_SET_POSTAL_CODE")) if set_postal is None else set_postal
         self.driver: uc.Chrome | None = None
 
     def open(self) -> None:
@@ -88,7 +90,8 @@ class AmazonBrowserSession:
         self.driver = uc.Chrome(**kwargs)
         siel_log.run_log(
             f"new driver started headless={self.headless} "
-            f"page_load_strategy={self.page_load_strategy or 'normal'} chrome_major={major}"
+            f"page_load_strategy={self.page_load_strategy or 'normal'} "
+            f"set_postal={self.set_postal} chrome_major={major}"
         )
         try:
             self.driver.set_page_load_timeout(int(os.getenv("AMZN_PAGE_LOAD_TIMEOUT", "75")))
@@ -100,7 +103,8 @@ class AmazonBrowserSession:
             self.driver.execute_cdp_cmd("Emulation.setFocusEmulationEnabled", {"enabled": True})
         except WebDriverException:
             pass
-        self.set_postal_code()
+        if self.set_postal and self.postal_code:
+            self.set_postal_code()
 
     def close(self) -> None:
         if self.driver is None:
@@ -231,16 +235,23 @@ class AmazonBrowserSession:
             print(msg, file=sys.stderr)
             siel_log.run_log(msg, "WARNING")
 
-    def fetch(self, url: str, *, scroll_ratio: float = 1.0) -> dict[str, Any]:
+    def fetch(self, url: str, *, scroll_ratio: float = 1.0,
+              scroll_pause: float | None = None, scroll_max_scrolls: int | None = None,
+              post_load_sleep: float | None = None) -> dict[str, Any]:
         self.open()
         assert self.driver is not None
         started = time.perf_counter()
         siel_log.run_log(f"fetch start url={url}")
         try:
             self.driver.get(url)
-            time.sleep(max(self.sleep, random.uniform(2.0, 3.5)))
-            recovered = self.recover(url)
-            self.scroll(ratio=scroll_ratio)
+            sleep_seconds = post_load_sleep if post_load_sleep is not None else max(self.sleep, 3.0)
+            time.sleep(sleep_seconds)
+            recovered = self.recover(url, cycles=1)
+            self.scroll(
+                ratio=scroll_ratio,
+                pause=0.45 if scroll_pause is None else scroll_pause,
+                max_scrolls=8 if scroll_max_scrolls is None else scroll_max_scrolls,
+            )
             self.recover(url, cycles=1)
             html = self.driver.page_source or ""
             result = {

@@ -184,13 +184,40 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
 
     status = 0
     fatal_error: Exception | None = None
+    shared_session = None
+
+    def close_shared_session(reason: str) -> None:
+        nonlocal shared_session
+        if shared_session is None:
+            return
+        siel_log.run_log(f"shared driver close reason={reason}")
+        shared_session.close()
+        shared_session = None
+
     try:
         try:
             if "listing" in steps:
+                from common.browser import AmazonBrowserSession
+                if shared_session is None:
+                    shared_session = AmazonBrowserSession(
+                        postal_code=getattr(cfg, "POSTAL_CODE", "10117"),
+                        sleep=DEFAULT_SLEEP,
+                        headless=args.headless,
+                    )
                 siel_log.run_log(f"stage=main product={cfg.PRODUCT} start")
-                listing.run(cfg, sort="main", target=args.max_rank, max_pages=args.max_pages, batch_id=batch_id, emit=emit, headless=args.headless)
+                listing.run(
+                    cfg,
+                    sort="main",
+                    target=args.max_rank,
+                    max_pages=args.max_pages,
+                    batch_id=batch_id,
+                    emit=emit,
+                    headless=args.headless,
+                    session=shared_session,
+                )
                 siel_log.run_log(f"stage=main product={cfg.PRODUCT} done")
             if "bsr" in steps:
+                close_shared_session("before_isolated_bsr")
                 siel_log.run_log(f"stage=bsr product={cfg.PRODUCT} start")
                 _run_bsr_with_retries(cfg, args, batch_id=batch_id, emit=emit)
                 siel_log.run_log(f"stage=bsr product={cfg.PRODUCT} done")
@@ -199,11 +226,27 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
                 targets_manifest = targets.run(cfg)
                 siel_log.run_log(f"stage=targets product={cfg.PRODUCT} done unique={targets_manifest.get('unique_targets')}")
             if "detail" in steps:
+                from common.browser import AmazonBrowserSession
+                if shared_session is None:
+                    shared_session = AmazonBrowserSession(
+                        postal_code=getattr(cfg, "POSTAL_CODE", "10117"),
+                        sleep=args.detail_sleep,
+                        headless=args.headless,
+                    )
                 detail_limit = args.limit
                 if getattr(args, "max_detail", None) is not None:
                     detail_limit = args.max_detail or 0
                 siel_log.run_log(f"stage=detail product={cfg.PRODUCT} start")
-                detail_manifest = detail.run(cfg, limit=detail_limit, start=args.start, batch_id=batch_id, emit=emit, headless=args.headless, sleep=args.detail_sleep)
+                detail_manifest = detail.run(
+                    cfg,
+                    limit=detail_limit,
+                    start=args.start,
+                    batch_id=batch_id,
+                    emit=emit,
+                    headless=args.headless,
+                    sleep=args.detail_sleep,
+                    session=shared_session,
+                )
                 siel_log.run_log(f"stage=detail product={cfg.PRODUCT} done records={detail_manifest.get('rows')}")
             if "full" in steps:
                 siel_log.run_log(f"stage=full product={cfg.PRODUCT} start")
@@ -213,11 +256,13 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
                 siel_log.run_log(f"stage=db product={cfg.PRODUCT} start")
                 if streamer is not None:
                     summary = streamer.summary()
+                    summary["run_log_path"] = str(run_log_path)
                     emit(summary)
                     write_json(out / "step14_streaming_db_save_manifest.json", summary)
                 else:
                     manifest = merge_insert.insert_jsonl(cfg, jsonl_path, dry_run=args.db_dry_run)
                     manifest["stage"] = "db_insert_summary"
+                    manifest["run_log_path"] = str(run_log_path)
                     emit(manifest)
                 siel_log.run_log(f"stage=db product={cfg.PRODUCT} done")
         except Exception as exc:  # noqa: BLE001
@@ -234,6 +279,7 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
                 f"sent={notify_manifest.get('sent')} error={notify_manifest.get('error')}"
             )
     finally:
+        close_shared_session("pipeline_done")
         if streamer is not None:
             streamer.close()
     if fatal_error:

@@ -1,6 +1,7 @@
 """Step08: collect Amazon PDP/review detail fields for JSONL merge."""
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime
 from typing import Any
@@ -26,6 +27,17 @@ def _crawl_datetime() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_float(name: str, default: float = 0.0) -> float:
+    try:
+        return float(os.getenv(name, str(default)) or default)
+    except ValueError:
+        return default
+
+
 def _base_detail_record(cfg, target: dict[str, Any], *, asin: str, product_url: str | None,
                         batch_id: str | None) -> dict[str, Any]:
     return {
@@ -44,7 +56,8 @@ def _base_detail_record(cfg, target: dict[str, Any], *, asin: str, product_url: 
 
 def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
         sleep: float = DEFAULT_SLEEP, batch_id: str | None = None, emit=None,
-        headless: bool | None = None) -> dict[str, Any]:
+        headless: bool | None = None, session: Any | None = None,
+        save_html: bool | None = None, review_page_fallback: bool | None = None) -> dict[str, Any]:
     del timeout
     out = category_output_root(cfg.PRODUCT)
     ref = category_reference_root(cfg.PRODUCT) / "detail" / datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -56,18 +69,29 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
     siel_log.log_selectors(logger, selector_map)
     if batch_id:
         logger.info("batch_id=%s", batch_id)
-    logger.info("detail targets=%d start=%d limit=%d", len(selected), start, limit)
     progress = siel_log.DetailProgress(len(selected))
     rows: list[dict[str, Any]] = []
     attempts = []
-    session = None
+    save_html = _truthy(os.getenv("AMZN_SAVE_HTML")) if save_html is None else save_html
+    review_page_fallback = (
+        _truthy(os.getenv("AMZN_REVIEW_PAGE_FALLBACK"))
+        if review_page_fallback is None else review_page_fallback
+    )
+    inter_detail_sleep = _env_float("AMZN_INTER_DETAIL_SLEEP", 0.0)
+    own_session = False
+    logger.info(
+        "detail targets=%d start=%d limit=%d save_html=%s review_page_fallback=%s shared_session=%s inter_detail_sleep=%s",
+        len(selected), start, limit, save_html, review_page_fallback, session is not None, inter_detail_sleep,
+    )
     try:
-        from common.browser import AmazonBrowserSession
-        session = AmazonBrowserSession(
-            postal_code=getattr(cfg, "POSTAL_CODE", "10117"),
-            sleep=sleep,
-            headless=headless,
-        )
+        if session is None:
+            from common.browser import AmazonBrowserSession
+            session = AmazonBrowserSession(
+                postal_code=getattr(cfg, "POSTAL_CODE", "10117"),
+                sleep=sleep,
+                headless=headless,
+            )
+            own_session = True
         for idx, target in enumerate(selected, start=start_i + 1):
             asin = (target.get("asin") or target.get("item") or "").strip()
             logger.info("rank=%d asin=%s url=%s", idx, asin, target.get("product_url"))
@@ -79,7 +103,8 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 pdp = session.fetch(product_url, scroll_ratio=1.0)
             else:
                 pdp = {"status": None, "text": "", "error": "missing_url", "bytes": 0, "url": product_url}
-            save_text(ref / f"{idx:04d}_{asin}_pdp.html", pdp["text"])
+            if save_html:
+                save_text(ref / f"{idx:04d}_{asin}_pdp.html", pdp["text"])
 
             parsed_detail = selector_api.extract_detail(session.driver, selector_map, product=cfg.PRODUCT) if session.driver is not None and pdp.get("text") else {}
             landing_url = pdp.get("url") or product_url
@@ -115,10 +140,16 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 if not detail.get("detailed_review_content"):
                     detail.update({k: v for k, v in pdp_review.items() if v not in (None, "")})
                 r_url = review_url(landing_url if use_detail else product_url, landing_asin if use_detail else asin)
-                if not detail.get("detailed_review_content") and r_url:
-                    review = session.fetch(r_url, scroll_ratio=1.0)
+                if not detail.get("detailed_review_content") and r_url and review_page_fallback:
+                    review = session.fetch(
+                        r_url,
+                        scroll_ratio=1.0,
+                        scroll_max_scrolls=8,
+                        post_load_sleep=max(sleep, 3.0),
+                    )
                     detail.update({k: v for k, v in parsers.parse_review_html(review["text"]).items() if v not in (None, "")})
-            save_text(ref / f"{idx:04d}_{asin}_reviews.html", review["text"])
+            if save_html:
+                save_text(ref / f"{idx:04d}_{asin}_reviews.html", review["text"])
             detail["loaded_url"] = landing_url
             detail["redirect_decision"] = redirect_decision
             rows.append(detail)
@@ -142,14 +173,15 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
             })
             logger.info("rank=%d asin=%s pdp=%s review=%s redirect=%s detail_skip=%s", idx, asin, pdp.get("status"), review.get("status"), redirect_decision or detail.get("redirect"), detail.get("_detail_skip"))
             print(f"[detail/{cfg.PRODUCT}] rank={idx} asin={asin} pdp={pdp.get('status')} review={review.get('status')} redirect={redirect_decision or detail.get('redirect')}", flush=True)
-            time.sleep(sleep)
+            if inter_detail_sleep > 0:
+                time.sleep(inter_detail_sleep)
     finally:
-        if session is not None:
+        if own_session and session is not None:
             session.close()
 
     path = out / "amzn_detail.csv"
     write_csv(path, rows)
-    manifest = {"run_type": "detail", "product": cfg.PRODUCT, "rows": len(rows), "output": str(path), "raw_dir": str(ref), "attempts": attempts, "selector_source": "db_or_default_xpath"}
+    manifest = {"run_type": "detail", "product": cfg.PRODUCT, "rows": len(rows), "output": str(path), "raw_dir": str(ref) if save_html else "", "raw_saved": save_html, "review_page_fallback": review_page_fallback, "attempts": attempts, "selector_source": "db_or_default_xpath"}
     write_json(out / "step08_detail_review_compare_manifest.json", manifest)
     logger.info("=== done: records=%d batch_id=%s ===", len(rows), batch_id)
     manifest["rows_data"] = rows
