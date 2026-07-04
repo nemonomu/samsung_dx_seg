@@ -34,6 +34,25 @@ def _env_float(name: str, default: float = 0.0) -> float:
         return default
 
 
+_LISTING_NORMALIZE_FIELDS = {
+    "final_sku_price",
+    "original_sku_price",
+    "discount_type",
+    "sku_popularity",
+    "sku_status",
+    "star_rating",
+    "count_of_star_ratings",
+    "number_of_units_purchased_past_month",
+}
+
+
+def _normalize_listing_row(row: dict[str, Any]) -> dict[str, Any]:
+    for key in list(row.keys()):
+        if key in _LISTING_NORMALIZE_FIELDS:
+            row[key] = selector_api.normalize_field(key, row.get(key))
+    return row
+
+
 def _apply_record_meta(cfg, row: dict[str, Any], *, sort: str, page: int, source_url: str,
                        batch_id: str | None) -> dict[str, Any]:
     row.update({
@@ -77,7 +96,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
         if input_html:
             html = open(input_html, encoding="utf-8", errors="replace").read()
             rows = parsers.parse_bsr_html(html) if sort == "bsr" else parsers.parse_listing_html(html, page=1, sort=sort)
-            rows = [_apply_record_meta(cfg, r, sort=sort, page=1, source_url=input_html, batch_id=batch_id) for r in rows]
+            rows = [_apply_record_meta(cfg, _normalize_listing_row(r), sort=sort, page=1, source_url=input_html, batch_id=batch_id) for r in rows]
             pages.append({"page": 1, "url": input_html, "status": "file", "parsed_rows": len(rows)})
             logger.info("page=%d file=%s records=%d", 1, input_html, len(rows))
         else:
@@ -97,7 +116,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                     url,
                     scroll_ratio=0.85 if sort == "bsr" else 1.0,
                     scroll_max_scrolls=10 if sort == "bsr" else 8,
-                    post_load_sleep=max(sleep, 3.0),
+                    post_load_sleep=_env_float("AMZN_BSR_POST_GET_WAIT", 8.0) if sort == "bsr" else max(sleep, 3.0),
                 )
                 if save_html:
                     save_text(ref / f"page_{page:02d}.html", resp["text"])
@@ -105,7 +124,16 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                 parsed = []
                 fallback_parsed = parsers.parse_bsr_html(resp["text"], start_rank=start_rank) if sort == "bsr" else parsers.parse_listing_html(resp["text"], page=page, sort=sort, start_rank=start_rank)
                 if session.driver is not None:
-                    parsed = selector_api.extract_cards(session.driver, selector_map, sort=sort, start_rank=start_rank)
+                    if sort == "bsr":
+                        expected_count = min(50, max(target - start_rank + 1, 1))
+                        parsed = selector_api.extract_bsr_cards_siel(
+                            session.driver,
+                            selector_map,
+                            start_rank=start_rank,
+                            expected_count=expected_count,
+                        )
+                    else:
+                        parsed = selector_api.extract_cards(session.driver, selector_map, sort=sort, start_rank=start_rank)
                 if parsed:
                     fallback_by_asin = {(r.get("asin") or r.get("item") or ""): r for r in fallback_parsed}
                     for row in parsed:
@@ -118,7 +146,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                 else:
                     parsed = fallback_parsed
                 parsed = [
-                    _apply_record_meta(cfg, r, sort=sort, page=page, source_url=resp["url"], batch_id=batch_id)
+                    _apply_record_meta(cfg, _normalize_listing_row(r), sort=sort, page=page, source_url=resp["url"], batch_id=batch_id)
                     for r in parsed
                 ]
                 rows.extend(parsed)

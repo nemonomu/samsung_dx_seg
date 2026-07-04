@@ -8,7 +8,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
-from common import merge_insert
+from common import merge_insert, siel_logging as siel_log
 from common.jsonl import read_jsonl
 
 _METADATA_KEYS = {
@@ -25,12 +25,17 @@ _VALID_NULL_BY_PRODUCT = {
 _NOTICE_NULL_BY_PRODUCT = {
     "TV": {"fastest_delivery"},
 }
+_EURO = "\u20ac"
 _FIELD_PATTERNS = {
     "star_rating": re.compile(r"^\d+(?:\.\d+)?$"),
-    "count_of_star_ratings": re.compile(r"^\d[\d,\.]*$"),
-    "count_of_reviews": re.compile(r"^\d[\d,\.]*$"),
-    "final_sku_price": re.compile(r"^(?:€?\d[\d.]*,\d{2}€?|€?\d[\d.]*€?)$"),
-    "original_sku_price": re.compile(r"^(?:€?\d[\d.]*,\d{2}€?|€?\d[\d.]*€?)$"),
+    "count_of_star_ratings": re.compile(r"^\d[\d,]*$"),
+    "count_of_reviews": re.compile(r"^\d[\d,]*$"),
+    "final_sku_price": re.compile(
+        rf"^(?:\d[\d.]*(?:,\d{{2}})?{re.escape(_EURO)}|{re.escape(_EURO)}\d[\d.]*(?:,\d{{2}})?)$"
+    ),
+    "original_sku_price": re.compile(
+        rf"^(?:\d[\d.]*(?:,\d{{2}})?{re.escape(_EURO)}|{re.escape(_EURO)}\d[\d.]*(?:,\d{{2}})?)$"
+    ),
 }
 _PRICE_SENTINELS = (
     "Currently unavailable",
@@ -38,6 +43,10 @@ _PRICE_SENTINELS = (
     "See price in cart",
     "Temporarily out of stock",
     "Price higher than typical",
+    "Derzeit nicht verf\u00fcgbar",
+    "Derzeit nicht verfuegbar",
+    "Keine hervorgehobenen Angebote verf\u00fcgbar",
+    "Keine hervorgehobenen Angebote verfuegbar",
 )
 _STAR_SENTINELS = ("No customer reviews",)
 
@@ -58,33 +67,11 @@ def _cfg_for_merge(cfg_or_product: Any) -> Any:
 
 
 def parse_price(value: Any) -> float | None:
-    if value in (None, ""):
-        return None
-    text = str(value)
-    match = re.search(r"\d[\d.,]*", text)
-    if not match:
-        return None
-    raw = match.group(0)
-    if "," in raw and "." in raw:
-        raw = raw.replace(".", "").replace(",", ".")
-    elif "," in raw:
-        raw = raw.replace(",", ".")
-    try:
-        return float(raw)
-    except ValueError:
-        return None
+    return siel_log.parse_price(value)
 
 
 def parse_int(value: Any) -> int | None:
-    if value in (None, ""):
-        return None
-    match = re.search(r"\d[\d.,]*", str(value))
-    if not match:
-        return None
-    try:
-        return int(re.sub(r"\D", "", match.group(0)))
-    except ValueError:
-        return None
+    return siel_log.parse_int_field(value)
 
 
 def _key(rec: dict[str, Any] | None) -> str:
@@ -96,9 +83,9 @@ def _check_field_pattern(field: str, value: Any) -> bool:
     if pattern is None or value in (None, ""):
         return True
     text = str(value).strip()
-    if field in {"final_sku_price", "original_sku_price"} and any(token in text for token in _PRICE_SENTINELS):
+    if field in {"final_sku_price", "original_sku_price"} and any(token.casefold() in text.casefold() for token in _PRICE_SENTINELS):
         return True
-    if field == "star_rating" and any(token in text for token in _STAR_SENTINELS):
+    if field == "star_rating" and any(token.casefold() in text.casefold() for token in _STAR_SENTINELS):
         return True
     return bool(pattern.match(text))
 

@@ -100,7 +100,12 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
             review = {"status": None, "text": "", "error": "review_not_requested", "bytes": 0}
             pdp_review: dict[str, Any] = {}
             if product_url:
-                pdp = session.fetch(product_url, scroll_ratio=1.0)
+                pdp = session.fetch(
+                    product_url,
+                    scroll_ratio=1.0,
+                    scroll_max_scrolls=15,
+                    post_load_sleep=max(sleep, 3.0),
+                )
             else:
                 pdp = {"status": None, "text": "", "error": "missing_url", "bytes": 0, "url": product_url}
             if save_html:

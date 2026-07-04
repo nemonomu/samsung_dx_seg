@@ -6,7 +6,9 @@ import time
 from typing import Any
 
 from selenium.common.exceptions import StaleElementReferenceException, WebDriverException
+from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 
 from common import parsers, siel_logging
 from common.translations import translate_field
@@ -168,24 +170,22 @@ def normalize_field(field: str, value: str | None) -> str | None:
             return "Sponsored"
         return None
     if field == "star_rating":
-        text = clean(value)
-        if not text:
-            return None
-        low = text.casefold()
-        if "von 5" in low or "out of 5" in low:
-            return text
-        match = re.search(r"\d+(?:[,.]\d+)?", text)
-        if match:
-            try:
-                numeric = float(match.group(0).replace(",", "."))
-            except ValueError:
-                numeric = None
-            if numeric is not None and 0 <= numeric <= 5:
-                return text
-        return None
+        return siel_logging.parse_star_rating(value)
+    if field == "count_of_star_ratings":
+        return siel_logging.parse_count_of_ratings(value)
+    if field == "count_of_reviews":
+        return siel_logging.parse_count_of_reviews(value)
     if field in {"final_sku_price", "original_sku_price"}:
         return siel_logging.parse_amzn_apex_price(value)
-    if field in {"count_of_star_ratings", "bsr_rank"}:
+    if field == "model_year":
+        return siel_logging.parse_model_year(value)
+    if field == "delivery_availability":
+        return translate_field(field, siel_logging.parse_delivery_availability(value))
+    if field == "fastest_delivery":
+        return translate_field(field, siel_logging.parse_fastest_delivery(value))
+    if field == "sku_assurance":
+        return siel_logging.parse_sku_assurance(value)
+    if field == "bsr_rank":
         return clean(value)
     return translate_field(field, clean(value))
 
@@ -223,6 +223,212 @@ def extract_card(card, selectors: dict[str, dict[str, str | None]], *, sort: str
     else:
         row["main_rank"] = rank
     return row
+
+
+def _dispatch_wheel(driver, delta_y: int) -> None:
+    try:
+        driver.execute_script(
+            """
+            const dy = arguments[0];
+            const ev = new WheelEvent('wheel', {
+              deltaY: dy,
+              deltaMode: 0,
+              bubbles: true,
+              cancelable: true,
+              view: window
+            });
+            (document.scrollingElement || document.documentElement).dispatchEvent(ev);
+            window.dispatchEvent(ev);
+            window.scrollBy(0, dy);
+            """,
+            delta_y,
+        )
+    except WebDriverException:
+        pass
+
+
+def _selenium_wheel(driver, amount: int) -> None:
+    try:
+        ActionChains(driver).scroll_by_amount(0, amount).perform()
+    except Exception:
+        _dispatch_wheel(driver, amount)
+
+
+def _key_scroll(driver, key: str, times: int = 1, pause: float = 0.25) -> None:
+    try:
+        body = driver.find_element(By.TAG_NAME, "body")
+        for _ in range(times):
+            body.send_keys(key)
+            time.sleep(pause)
+    except Exception:
+        pass
+
+
+def _js_bsr_records(driver) -> list[dict[str, Any]]:
+    try:
+        rows = driver.execute_script(
+            r"""
+            const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
+            const text = (root, selectors) => {
+              for (const sel of selectors) {
+                const el = root.querySelector(sel);
+                if (!el) continue;
+                const val = clean(el.textContent || el.getAttribute('aria-label'));
+                if (val) return val;
+              }
+              return null;
+            };
+            const attr = (root, selectors, name) => {
+              for (const sel of selectors) {
+                const el = root.querySelector(sel);
+                if (!el) continue;
+                const val = clean(el.getAttribute(name));
+                if (val) return val;
+              }
+              return null;
+            };
+            const gridRoot = document.querySelector('#zg, #zg-right-col, #zg-center-div, .p13n-gridRow') || document;
+            const cards = Array.from(gridRoot.querySelectorAll('#gridItemRoot, .zg-grid-general-faceout, [data-asin]:not([data-asin=""])'));
+            const asinFromHref = (href) => {
+              const match = (href || '').match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+              return match ? match[1].toUpperCase() : null;
+            };
+            const seen = new Set();
+            const rows = [];
+            for (const card of cards) {
+              const href = attr(card, ['a[href*="/dp/"]', 'a[href*="/gp/product/"]'], 'href');
+              const dataAsin = clean(card.getAttribute('data-asin') || attr(card, ['[data-asin]:not([data-asin=""])'], 'data-asin') || '');
+              const asin = asinFromHref(href) || (dataAsin.match(/[A-Z0-9]{10}/) || [null])[0];
+              if (!href && !asin) continue;
+              const key = asin || href.split('?')[0];
+              if (!key || seen.has(key)) continue;
+              seen.add(key);
+              const imgAlt = attr(card, ['img[alt]'], 'alt');
+              rows.push({
+                asin,
+                product_url: href || (asin ? `https://www.amazon.de/dp/${asin}` : null),
+                retailer_sku_name: text(card, [
+                  '.p13n-sc-css-line-clamp',
+                  '.p13n-sc-truncate',
+                  'a[href*="/dp/"] span',
+                  'a[href*="/gp/product/"] span',
+                  'a[href*="/dp/"] div',
+                  'a[href*="/gp/product/"] div'
+                ]) || imgAlt,
+                final_sku_price: text(card, ['.p13n-sc-price', '.a-price .a-offscreen', '.a-color-price']),
+                star_rating: attr(card, [
+                  '[aria-label*="von 5"]',
+                  '[aria-label*="out of 5"]',
+                  'i.a-icon-star span'
+                ], 'aria-label') || text(card, ['i.a-icon-star span', '[aria-label*="von 5"]', '[aria-label*="out of 5"]']),
+                count_of_star_ratings: text(card, [
+                  'a[href*="customerReviews"] span',
+                  'a[href*="product-reviews"] span',
+                  '.a-size-small'
+                ])
+              });
+            }
+            return rows;
+            """
+        )
+        return rows if isinstance(rows, list) else []
+    except WebDriverException:
+        return []
+
+
+def _normalize_bsr_record(raw: dict[str, Any]) -> dict[str, Any] | None:
+    rec = dict(raw or {})
+    asin = clean(rec.get("asin")) or parsers.asin_from_url(rec.get("product_url"))
+    if not asin:
+        return None
+    product_url = parsers.product_url_for_asin(rec.get("product_url"), asin)
+    row: dict[str, Any] = {
+        "source": "bsr",
+        "stage": "bsr",
+        "asin": asin,
+        "item": asin,
+        "product_url": product_url,
+    }
+    name = clean(rec.get("retailer_sku_name"))
+    if name:
+        row["retailer_sku_name"] = name
+    price = normalize_field("final_sku_price", rec.get("final_sku_price"))
+    if price:
+        row["final_sku_price"] = price
+    rating_label = clean(rec.get("star_rating"))
+    count_label = clean(rec.get("count_of_star_ratings"))
+    star = normalize_field("star_rating", rating_label)
+    count = normalize_field("count_of_star_ratings", count_label) or normalize_field("count_of_star_ratings", rating_label)
+    if star:
+        row["star_rating"] = star
+    if count:
+        row["count_of_star_ratings"] = count
+    return row
+
+
+def _rank_bsr_records(records: list[dict[str, Any]], start_rank: int) -> list[dict[str, Any]]:
+    ranked: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    rank = start_rank
+    for raw in records:
+        row = _normalize_bsr_record(raw)
+        if not row:
+            continue
+        asin = str(row.get("asin") or "")
+        if asin in seen:
+            continue
+        seen.add(asin)
+        row["bsr_rank"] = rank
+        ranked.append(row)
+        rank += 1
+    return ranked
+
+
+def extract_bsr_cards_siel(driver, selectors: dict[str, dict[str, str | None]], *, start_rank: int = 1,
+                           expected_count: int = 50) -> list[dict[str, Any]]:
+    best_records: list[dict[str, Any]] = []
+
+    def remember_records() -> list[dict[str, Any]]:
+        nonlocal best_records
+        records = _rank_bsr_records(_js_bsr_records(driver), start_rank)
+        if len(records) > len(best_records):
+            best_records = records
+        return records
+
+    records = remember_records()
+    if len(records) >= expected_count:
+        return records
+    pause = 2.0
+    try:
+        for pct in (20, 40, 60, 80, 100):
+            driver.execute_script('window.scrollTo(0, document.body.scrollHeight * arguments[0]);', pct / 100)
+            time.sleep(pause)
+            records = remember_records()
+            if len(records) >= expected_count:
+                return records
+        for amount in (700, 900, 1100, 1300, 1500, 1800, 2200, 2600):
+            _dispatch_wheel(driver, amount)
+            time.sleep(0.45)
+            records = remember_records()
+            if len(records) >= expected_count:
+                return records
+        driver.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+        time.sleep(pause)
+        records = remember_records()
+        if len(records) >= expected_count:
+            return records
+        _key_scroll(driver, Keys.PAGE_DOWN, 8, pause=0.35)
+        records = remember_records()
+        if len(records) >= expected_count:
+            return records
+        _key_scroll(driver, Keys.END, 1, pause=0.5)
+        time.sleep(1.0)
+        records = remember_records()
+    except WebDriverException:
+        pass
+    if best_records:
+        return best_records
+    return extract_cards(driver, selectors, sort="bsr", start_rank=start_rank)
 
 
 def extract_cards(driver, selectors: dict[str, dict[str, str | None]], *, sort: str, start_rank: int = 1) -> list[dict[str, Any]]:
@@ -268,8 +474,9 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
                     if not values:
                         time.sleep(3)
                         values = extract_multi(driver, selector, limit=20)
-                data[field] = " ||| ".join(f"review{i} - {v}" for i, v in enumerate(values, start=1)) if values else None
-                data["count_of_reviews"] = len(values) if values else None
+                formatted = siel_logging.format_review_content(values)
+                data[field] = formatted
+                data["count_of_reviews"] = siel_logging.count_review_cards(formatted) if formatted else None
             elif field == "retailer_sku_name_similar":
                 if not values:
                     try:
@@ -284,9 +491,13 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
                     if not values:
                         scroll_to_bottom(driver, pause=0.7, max_scrolls=5)
                         values = extract_multi(driver, selector, limit=20)
-                data[field] = " ||| ".join(values) if values else None
+                if str(product).lower() == "ref":
+                    values = siel_logging.filter_similar_noise_ref(values)
+                else:
+                    values = siel_logging.filter_similar_noise(values)
+                data[field] = siel_logging.format_similar_names(values)
             else:
-                data[field] = " ||| ".join(values) if values else None
+                data[field] = siel_logging.SIMILAR_SEP.join(values) if values else None
             continue
         value = extract_single(driver, selector, attr=ATTR_FIELDS.get(field))
         if value:
@@ -302,8 +513,19 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
     for key, value in fallback.items():
         if key == "facts_json" or key not in selector_fields:
             continue
-        if data.get(key) in (None, "") and value not in (None, ""):
-            data[key] = value
+        if data.get(key) not in (None, "") or value in (None, ""):
+            continue
+        if key == "retailer_sku_name_similar":
+            parts = [part.strip() for part in str(value).split("|||") if part.strip()] if "|||" in str(value) else [value]
+            if str(product).lower() == "ref":
+                parts = siel_logging.filter_similar_noise_ref(parts)
+            else:
+                parts = siel_logging.filter_similar_noise(parts)
+            data[key] = siel_logging.format_similar_names(parts)
+        elif key == "detailed_review_content":
+            data[key] = clean(value)
+        else:
+            data[key] = normalize_field(key, value)
     if not data.get("detailed_review_content") and html:
         review = parsers.parse_review_html(html)
         for key, value in review.items():
@@ -311,6 +533,27 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
                 key == "count_of_reviews" and "detailed_review_content" in selector_fields
             ):
                 continue
-            if data.get(key) in (None, "") and value not in (None, ""):
-                data[key] = value
+            if data.get(key) not in (None, "") or value in (None, ""):
+                continue
+            data[key] = normalize_field(key, value) if key != "detailed_review_content" else clean(value)
+    if data.get("detailed_review_content") and data.get("count_of_reviews") in (None, ""):
+        data["count_of_reviews"] = siel_logging.count_review_cards(data.get("detailed_review_content"))
+    if (
+        "star_rating" in selector_fields
+        and "count_of_star_ratings" in selector_fields
+        and not data.get("star_rating")
+        and not data.get("count_of_star_ratings")
+        and html
+    ):
+        lower_html = html.casefold()
+        no_review_hints = (
+            "no customer reviews",
+            "there are 0 customer reviews",
+            "keine kundenrezensionen",
+            "0 kundenrezensionen",
+            "noch keine kundenrezensionen",
+        )
+        if any(hint in lower_html for hint in no_review_hints):
+            data["star_rating"] = "No customer reviews"
+            data["count_of_star_ratings"] = "0"
     return data

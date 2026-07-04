@@ -19,7 +19,7 @@ for _stream in (sys.stdout, sys.stderr):
             pass
 
 REVIEW_SEP = " ||| "
-SIMILAR_SEP = " ||| "
+SIMILAR_SEP = ", "
 _RUN_LOG_PATH: Path | None = None
 _RUN_JSONL_PATH: Path | None = None
 
@@ -126,15 +126,20 @@ def _normal_number(token: str) -> str:
     return token
 
 
-_AMZN_EURO_PRICE_RE = re.compile(r"(?:€\s*\d[\d.\s]*(?:,\d{2})?|\d[\d.\s]*(?:,\d{2})?\s*€)")
+_EURO = "\u20ac"
+_AMZN_EURO_PRICE_RE = re.compile(
+    rf"(?:{re.escape(_EURO)}\s*\d[\d.\s]*(?:,\d{{2}})?|\d[\d.\s]*(?:,\d{{2}})?\s*{re.escape(_EURO)})"
+)
 _AMZN_PRICE_SENTINELS = (
     "Currently unavailable",
     "No featured offers",
     "See price in cart",
     "Temporarily out of stock",
     "Price higher than typical",
-    "Derzeit nicht verfügbar",
-    "Keine hervorgehobenen Angebote verfügbar",
+    "Derzeit nicht verf\u00fcgbar",
+    "Derzeit nicht verfuegbar",
+    "Keine hervorgehobenen Angebote verf\u00fcgbar",
+    "Keine hervorgehobenen Angebote verfuegbar",
 )
 
 
@@ -147,8 +152,8 @@ def parse_amzn_apex_price(value: Any) -> str | None:
     match = _AMZN_EURO_PRICE_RE.search(text)
     if match:
         price = re.sub(r"\s+", "", match.group(0))
-        if price.startswith("€"):
-            price = price[1:] + "€"
+        if price.startswith(_EURO):
+            price = price[1:] + _EURO
         return price
     if any(sentinel.casefold() in text.casefold() for sentinel in _AMZN_PRICE_SENTINELS):
         return text
@@ -170,8 +175,174 @@ def parse_price(value: Any) -> float | None:
 def parse_int_field(value: Any) -> int | None:
     if value in (None, ""):
         return None
-    match = _INT_RE.search(str(value).replace(",", ""))
+    match = _INT_RE.search(str(value).replace(",", "").replace(".", ""))
     return int(match.group(0)) if match else None
+
+
+_STAR_RE = re.compile(r"\b(\d+(?:[,.]\d+)?)\b")
+_NUM_CHUNK_RE = re.compile(r"\d[\d,.]*")
+_MODEL_YEAR_4DIGIT_RE = re.compile(r"\b(\d{4})\b")
+_RATINGS_RE = re.compile(
+    r"(\d[\d,.]*)\s*(?:global\s+)?(?:ratings?|bewertungen|sternebewertungen|kundenbewertungen)\b",
+    re.I,
+)
+_REVIEWS_RE = re.compile(r"(\d[\d,.]*)\s*(?:reviews?|rezension(?:en)?)\b", re.I)
+_DETAILS_TAIL_RE = re.compile(r"\s*(?:Details|Einzelheiten)\.?\s*$", re.I)
+_NUM_ONLY_RE = re.compile(r"\s*\d[\d,.]*\s*")
+_REF_PRICE_NOISE_RE = re.compile(
+    rf"^\s*{re.escape(_EURO)}|^\d+\s*(?:offers?|angebote?)\s+(?:from|ab)\s+{re.escape(_EURO)}",
+    re.I,
+)
+_REF_REQUIRED_KEYWORD_RE = re.compile(
+    r"refrigerator|freezer|kuehl|k\u00fchl|gefrier|kombi|side\s*by\s*side|\b\d+\s*l\b|\blitre|\bliter",
+    re.I,
+)
+
+
+def _count_token(value: str) -> str | None:
+    digits = re.sub(r"\D", "", value or "")
+    if not digits:
+        return None
+    return f"{int(digits):,}"
+
+
+def westernize_commas(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+
+    def repl(match: re.Match[str]) -> str:
+        return _count_token(match.group(0)) or match.group(0)
+
+    return _NUM_CHUNK_RE.sub(repl, str(value))
+
+
+def parse_star_rating(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if text.casefold() == "no customer reviews":
+        return "No customer reviews"
+    for match in _STAR_RE.finditer(text):
+        token = match.group(1).replace(",", ".")
+        try:
+            numeric = float(token)
+        except ValueError:
+            continue
+        if 0 <= numeric <= 5:
+            return token
+    return None
+
+
+def parse_model_year(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if "/" in text:
+        years = [int(part.strip()) for part in text.split("/") if part.strip().isdigit() and len(part.strip()) == 4]
+        if years:
+            return str(max(years))
+    match = _MODEL_YEAR_4DIGIT_RE.search(text)
+    return match.group(1) if match else None
+
+
+def parse_count_of_ratings(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = re.sub(r"^[\(\[\|]+|[\)\]\|]+$", "", str(value).strip()).strip()
+    match = _RATINGS_RE.search(text)
+    if match:
+        return _count_token(match.group(1))
+    if re.search(r"\b(?:out of 5|von 5)\b", text, flags=re.I):
+        chunks = _NUM_CHUNK_RE.findall(text)
+        if len(chunks) >= 3:
+            return _count_token(chunks[-1])
+        return None
+    match = _NUM_CHUNK_RE.search(text)
+    return _count_token(match.group(0)) if match else None
+
+
+def parse_count_of_reviews(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    match = _REVIEWS_RE.search(text)
+    if match:
+        return _count_token(match.group(1))
+    if _NUM_ONLY_RE.fullmatch(text):
+        return _count_token(text)
+    return None
+
+
+def parse_delivery(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    return text or None
+
+
+def parse_delivery_availability(value: Any) -> str | None:
+    text = parse_delivery(value)
+    if not text:
+        return None
+    text = _DETAILS_TAIL_RE.sub("", text).strip()
+    return text or None
+
+
+def parse_fastest_delivery(value: Any) -> str | None:
+    text = parse_delivery(value)
+    if not text:
+        return None
+    text = _DETAILS_TAIL_RE.sub("", text).strip()
+    return text or None
+
+
+def parse_sku_assurance(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text:
+        return None
+    if text.casefold().startswith("amazon"):
+        return text
+    return f"Amazon {text}"
+
+
+def _clean_review_text(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    return text or None
+
+
+def format_review_content(parts: list[Any]) -> str | None:
+    cleaned = [_clean_review_text(value) for value in (parts or [])]
+    cleaned = [value for value in cleaned if value]
+    if not cleaned:
+        return None
+    return REVIEW_SEP.join(f"review{idx} - {text}" for idx, text in enumerate(cleaned, start=1))
+
+
+def format_similar_names(parts: list[Any]) -> str | None:
+    cleaned = [_clean_review_text(value) for value in (parts or [])]
+    cleaned = [value for value in cleaned if value]
+    return SIMILAR_SEP.join(cleaned) if cleaned else None
+
+
+def filter_similar_noise(parts: list[Any]) -> list[str]:
+    if not parts:
+        return []
+    return [str(part).strip() for part in parts if part and not _NUM_ONLY_RE.fullmatch(str(part))]
+
+
+def filter_similar_noise_ref(parts: list[Any]) -> list[str]:
+    out: list[str] = []
+    for part in filter_similar_noise(parts):
+        if _REF_PRICE_NOISE_RE.search(part):
+            continue
+        if not _REF_REQUIRED_KEYWORD_RE.search(part):
+            continue
+        out.append(part)
+    return out
 
 
 def count_review_cards(value: Any) -> int:

@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from common import item_mst
+from common import item_mst, siel_logging as siel_log
 from common.config import run_meta
 from common.full_output import BASE_FIELDS
 from common.io_util import ACCOUNT_NAME, COUNTRY, category_output_root, db_config, split_table, write_csv, write_json
@@ -73,6 +73,43 @@ def _calendar_week(value: str | None = None) -> str:
     return run_meta("a")["calendar_week"]
 
 
+
+def _normalize_count(value: Any) -> str | None:
+    parsed = siel_log.parse_count_of_ratings(value)
+    return parsed
+
+
+def _normalize_review_count(value: Any) -> str | None:
+    parsed = siel_log.parse_count_of_reviews(value)
+    if parsed is not None:
+        return parsed
+    if value in (None, ""):
+        return None
+    try:
+        return f"{int(str(value).replace(',', '').replace('.', '')):,}"
+    except ValueError:
+        return None
+
+
+def _normalize_merged_row(row: dict[str, Any]) -> dict[str, Any]:
+    for field in ("final_sku_price", "original_sku_price"):
+        if row.get(field) not in (None, ""):
+            row[field] = siel_log.parse_amzn_apex_price(row.get(field))
+    if row.get("star_rating") not in (None, ""):
+        row["star_rating"] = siel_log.parse_star_rating(row.get("star_rating"))
+    if row.get("count_of_star_ratings") not in (None, ""):
+        row["count_of_star_ratings"] = _normalize_count(row.get("count_of_star_ratings"))
+    if row.get("count_of_reviews") not in (None, ""):
+        row["count_of_reviews"] = _normalize_review_count(row.get("count_of_reviews"))
+    elif row.get("detailed_review_content") not in (None, ""):
+        count = siel_log.count_review_cards(row.get("detailed_review_content"))
+        row["count_of_reviews"] = str(count) if count else None
+    if row.get("model_year") not in (None, ""):
+        row["model_year"] = siel_log.parse_model_year(row.get("model_year"))
+    if row.get("sku_assurance") not in (None, ""):
+        row["sku_assurance"] = siel_log.parse_sku_assurance(row.get("sku_assurance"))
+    return row
+
 def split_records(records: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], list[dict[str, Any]]]:
     main: dict[str, dict[str, Any]] = {}
     bsr: dict[str, dict[str, Any]] = {}
@@ -120,9 +157,9 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
         "product_url": _first(primary.get("product_url"), detail_rec.get("product_url")),
         "redirect": detail_rec.get("redirect") if detail_rec.get("redirect") is not None else False,
         "retailer_sku_name": _first(
-            detail_rec.get("retailer_sku_name") if detail_first else None,
-            primary.get("retailer_sku_name"),
+            primary.get("retailer_sku_name") if detail_first else None,
             detail_rec.get("retailer_sku_name"),
+            primary.get("retailer_sku_name"),
         ),
         "final_sku_price": _first(
             detail_rec.get("final_sku_price") if detail_first else None,
@@ -146,7 +183,7 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
     detail_fields = [
         "available_quantity_for_purchase", "delivery_availability", "fastest_delivery",
         "inventory_status", "screen_size", "model_year", "sku",
-        "estimated_annual_electricity_use", "retailer_sku_name_similar",
+        "sku_assurance", "estimated_annual_electricity_use", "retailer_sku_name_similar",
         "star_rating", "count_of_star_ratings", "count_of_reviews",
         "summarized_review_content", "detailed_review_content",
         "ref_refrigerator_type", "ref_capacity",
@@ -155,6 +192,7 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
         row[field] = _first(detail_rec.get(field), primary.get(field))
     if redirect_listing_only:
         row["_redirect_listing_only"] = True
+    _normalize_merged_row(row)
     translate_record_fields(row)
     return row
 

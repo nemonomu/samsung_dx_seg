@@ -187,6 +187,8 @@ class AmazonBrowserSession:
                 or "bm-verify" in source
                 or "_sec/verify" in source
                 or "request was throttled" in source
+                or "continue shopping" in source
+                or "click the button below to continue shopping" in source
             )
             if not blocked:
                 return True
