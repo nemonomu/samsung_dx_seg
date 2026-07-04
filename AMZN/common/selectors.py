@@ -8,7 +8,7 @@ from typing import Any
 from selenium.common.exceptions import StaleElementReferenceException, WebDriverException
 from selenium.webdriver.common.by import By
 
-from common import parsers
+from common import parsers, siel_logging
 from common.translations import translate_field
 from common.io_util import db_config, split_table
 
@@ -183,6 +183,8 @@ def normalize_field(field: str, value: str | None) -> str | None:
             if numeric is not None and 0 <= numeric <= 5:
                 return text
         return None
+    if field in {"final_sku_price", "original_sku_price"}:
+        return siel_logging.parse_amzn_apex_price(value)
     if field in {"count_of_star_ratings", "bsr_rank"}:
         return clean(value)
     return translate_field(field, clean(value))

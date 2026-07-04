@@ -29,8 +29,8 @@ _FIELD_PATTERNS = {
     "star_rating": re.compile(r"^\d+(?:\.\d+)?$"),
     "count_of_star_ratings": re.compile(r"^\d[\d,\.]*$"),
     "count_of_reviews": re.compile(r"^\d[\d,\.]*$"),
-    "final_sku_price": re.compile(r"^[^\d-]*\d[\d,\.]*.*$"),
-    "original_sku_price": re.compile(r"^[^\d-]*\d[\d,\.]*.*$"),
+    "final_sku_price": re.compile(r"^(?:€?\d[\d.]*,\d{2}€?|€?\d[\d.]*€?)$"),
+    "original_sku_price": re.compile(r"^(?:€?\d[\d.]*,\d{2}€?|€?\d[\d.]*€?)$"),
 }
 _PRICE_SENTINELS = (
     "Currently unavailable",

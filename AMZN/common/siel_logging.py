@@ -126,6 +126,35 @@ def _normal_number(token: str) -> str:
     return token
 
 
+_AMZN_EURO_PRICE_RE = re.compile(r"(?:€\s*\d[\d.\s]*(?:,\d{2})?|\d[\d.\s]*(?:,\d{2})?\s*€)")
+_AMZN_PRICE_SENTINELS = (
+    "Currently unavailable",
+    "No featured offers",
+    "See price in cart",
+    "Temporarily out of stock",
+    "Price higher than typical",
+    "Derzeit nicht verfügbar",
+    "Keine hervorgehobenen Angebote verfügbar",
+)
+
+
+def parse_amzn_apex_price(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text:
+        return None
+    match = _AMZN_EURO_PRICE_RE.search(text)
+    if match:
+        price = re.sub(r"\s+", "", match.group(0))
+        if price.startswith("€"):
+            price = price[1:] + "€"
+        return price
+    if any(sentinel.casefold() in text.casefold() for sentinel in _AMZN_PRICE_SENTINELS):
+        return text
+    return None
+
+
 def parse_price(value: Any) -> float | None:
     if value in (None, ""):
         return None
