@@ -289,10 +289,10 @@ def characteristic_by_label(soup: BeautifulSoup, *label_options: str) -> str | N
 
 
 def extract_recommendation_intent(soup: BeautifulSoup) -> str | None:
-    """'<N>% würden diesen Artikel weiterempfehlen' -> '<N>% would recommend this product'."""
+    """'<N>% würden diesen Artikel weiterempfehlen' -> '<N>% would recommend this article'."""
     text = text_clean(soup.get_text(" ", strip=True)) or ""
     match = re.search(r"(\d{1,3})\s*%\s+würden diesen Artikel\s+weiterempfehlen", text)
-    return f"{match.group(1)}% would recommend this product" if match else None
+    return f"{match.group(1)}% would recommend this article" if match else None
 
 
 def extract_similar_product_names(soup: BeautifulSoup) -> str | None:

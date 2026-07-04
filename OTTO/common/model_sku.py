@@ -67,11 +67,17 @@ def _pid_vid_map(suchbegriff: str, hard_cap: int = 4000) -> dict[str, str]:
     return out
 
 
-def model_context(targets: list[dict[str, Any]] | None, suchbegriff: str,
+def model_context(targets: list[dict[str, Any]] | None, suchbegriff,
                   labels: tuple[str, ...] = ("Modellbezeichnung",)) -> dict[str, Any]:
-    """{"model": {product_id: {label: value, _name: ...}}} via /vergleich/ on current vids."""
+    """{"model": {product_id: {label: value, _name: ...}}} via /vergleich/ on current vids.
+    `suchbegriff` may be a single term or several (e.g. REF also lists beverage coolers
+    under 'getraenkekuehlschrank')."""
     targets = targets or []
-    pid_vid = _pid_vid_map(suchbegriff)
+    terms = [suchbegriff] if isinstance(suchbegriff, str) else list(suchbegriff)
+    pid_vid: dict[str, str] = {}
+    for term in terms:
+        for pid, vid in _pid_vid_map(term).items():
+            pid_vid.setdefault(pid, vid)
     q: list[tuple[str, str]] = []
     seen: set[str] = set()
     for t in targets:

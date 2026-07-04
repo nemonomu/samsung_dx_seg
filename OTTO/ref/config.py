@@ -89,7 +89,7 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
 def prepare_context(targets=None) -> dict[str, Any]:
     # /vergleich/ Modellbezeichnung (sku fallback) + Gesamtrauminhalt (capacity for beverage
     # coolers the datasheet/EPREL household registry miss), on current bestVariationIds
-    return model_sku.model_context(targets, SUCHBEGRIFF,
+    return model_sku.model_context(targets, (SUCHBEGRIFF, "getraenkekuehlschrank"),
                                    labels=("Modellbezeichnung", "Gesamtrauminhalt", "Nutzinhalt", "Fassungsvermögen"))
 
 
