@@ -1,7 +1,6 @@
 """Shared paths, env, and CSV/JSON helpers for Amazon SEG pipelines."""
 from __future__ import annotations
 
-import ast
 import csv
 import json
 import os
@@ -83,10 +82,13 @@ def env_value(name: str, default: str | None = None) -> str | None:
 
 
 def db_config() -> dict[str, Any]:
-    match = re.search(r"DB_CONFIG\s*=\s*(\{.*?\})", _env_text(), re.S)
-    if not match:
-        return {}
-    config = ast.literal_eval(match.group(1))
+    try:
+        import config as runtime_config  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError("config.py with DB_CONFIG is required") from exc
+    config = dict(getattr(runtime_config, "DB_CONFIG", {}) or {})
+    if not config:
+        raise RuntimeError("config.DB_CONFIG missing")
     config.setdefault("database", "postgres")
     return config
 

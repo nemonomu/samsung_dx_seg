@@ -61,7 +61,7 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
 
     config = db_config()
     if not config:
-        raise RuntimeError("DB_CONFIG missing from .env")
+        raise RuntimeError("config.DB_CONFIG missing")
     import psycopg2
 
     conn = psycopg2.connect(

@@ -58,7 +58,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
     out = category_output_root(cfg.PRODUCT)
     ref = category_reference_root(cfg.PRODUCT) / "listing" / f"{sort}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     target = target or (BSR_TARGET if sort == "bsr" else LISTING_TARGET)
-    selector_map = selector_api.load_selectors(sort, domain="listing")
+    selector_map = selector_api.load_selectors(sort, domain=cfg.PRODUCT.lower())
     logger, _html_path = siel_log.setup(getattr(cfg, "ACCOUNT_NAME", "Amazon.de"), cfg.PRODUCT.lower(), sort)
     siel_log.log_selectors(logger, selector_map)
     if batch_id:
@@ -150,7 +150,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
         "raw_dir": str(ref) if save_html else "",
         "raw_saved": save_html,
         "pages": pages,
-        "selector_source": "db_or_default_xpath",
+        "selector_source": "db_xpath",
     }
     write_json(out / f"step01_listing_{sort}_manifest.json", manifest)
     logger.info("=== done: records=%d batch_id=%s ===", len(rows), batch_id)

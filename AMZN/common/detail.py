@@ -64,7 +64,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
     targets = read_csv(out / "amzn_final_targets.csv")
     start_i = max(start, 1) - 1
     selected = targets[start_i:] if limit <= 0 else targets[start_i:start_i + limit]
-    selector_map = selector_api.load_selectors("detail", domain="product")
+    selector_map = selector_api.load_selectors("detail", domain=cfg.PRODUCT.lower())
     logger, _html_path = siel_log.setup(getattr(cfg, "ACCOUNT_NAME", "Amazon.de"), cfg.PRODUCT.lower(), "detail")
     siel_log.log_selectors(logger, selector_map)
     if batch_id:
@@ -181,7 +181,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
 
     path = out / "amzn_detail.csv"
     write_csv(path, rows)
-    manifest = {"run_type": "detail", "product": cfg.PRODUCT, "rows": len(rows), "output": str(path), "raw_dir": str(ref) if save_html else "", "raw_saved": save_html, "review_page_fallback": review_page_fallback, "attempts": attempts, "selector_source": "db_or_default_xpath"}
+    manifest = {"run_type": "detail", "product": cfg.PRODUCT, "rows": len(rows), "output": str(path), "raw_dir": str(ref) if save_html else "", "raw_saved": save_html, "review_page_fallback": review_page_fallback, "attempts": attempts, "selector_source": "db_xpath"}
     write_json(out / "step08_detail_review_compare_manifest.json", manifest)
     logger.info("=== done: records=%d batch_id=%s ===", len(rows), batch_id)
     manifest["rows_data"] = rows

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from selenium.common.exceptions import StaleElementReferenceException, WebDriverException
@@ -9,55 +10,12 @@ from selenium.webdriver.common.by import By
 
 from common import parsers
 from common.translations import translate_field
-from common.io_util import db_config, env_value, split_table
+from common.io_util import db_config, split_table
 
-
-DEFAULT_SELECTORS: dict[str, dict[str, dict[str, str | None]]] = {
-    "main": {
-        "base_container": {"xpath": "//div[@data-component-type='s-search-result' and @data-asin]", "fallback": None},
-        "product_url": {"xpath": ".//a[contains(@href,'/dp/') or contains(@href,'/gp/product/') or contains(@href,'/sspa/click')][1]", "fallback": None},
-        "retailer_sku_name": {"xpath": ".//h2//span | .//h2", "fallback": None},
-        "final_sku_price": {"xpath": ".//span[contains(@class,'a-price') and not(contains(@class,'a-text-price'))]//span[contains(@class,'a-offscreen')][1]", "fallback": None},
-        "original_sku_price": {"xpath": ".//span[contains(@class,'a-text-price')]//span[contains(@class,'a-offscreen')][1]", "fallback": None},
-        "discount_type": {"xpath": ".//*[contains(@class,'a-badge-text')][1]", "fallback": None},
-        "sku_popularity": {"xpath": ".//*[contains(@class,'a-badge-label')][1]", "fallback": None},
-        "number_of_units_purchased_past_month": {"xpath": ".//span[contains(normalize-space(text()),'gekauft') or contains(normalize-space(text()),'bought')][1]", "fallback": None},
-        "sku_status": {"xpath": ".//*[contains(@class,'puis-sponsored-label-text') or contains(.,'Gesponsert') or contains(.,'Sponsored')][1]", "fallback": None},
-        "star_rating": {"xpath": ".//i[contains(@class,'a-icon-star-small')]//span | .//*[contains(@aria-label,'von 5') or contains(@aria-label,'out of 5')][1]", "fallback": None},
-        "count_of_star_ratings": {"xpath": ".//a[contains(@href,'customerReviews')]//span[contains(@class,'a-size-base')][1]", "fallback": None},
-    },
-    "bsr": {
-        "base_container": {"xpath": "//div[starts-with(@id,'gridItemRoot')] | //li[contains(@class,'zg-item-immersion')]", "fallback": None},
-        "product_url": {"xpath": ".//a[contains(@href,'/dp/') or contains(@href,'/gp/product/')][1]", "fallback": None},
-        "retailer_sku_name": {"xpath": ".//img[@alt][1] | .//*[contains(@class,'p13n-sc-truncate')][1] | .//a[contains(@class,'a-link-normal')]//span[1]", "fallback": None},
-        "final_sku_price": {"xpath": ".//span[contains(@class,'a-price') and not(contains(@class,'a-text-price'))]//span[contains(@class,'a-offscreen')][1]", "fallback": None},
-        "original_sku_price": {"xpath": ".//span[contains(@class,'a-text-price')]//span[contains(@class,'a-offscreen')][1]", "fallback": None},
-        "star_rating": {"xpath": ".//*[contains(@aria-label,'von 5') or contains(@aria-label,'out of 5')][1]", "fallback": None},
-        "count_of_star_ratings": {"xpath": ".//a[contains(@href,'customerReviews')]//span[1]", "fallback": None},
-        "bsr_rank": {"xpath": ".//*[contains(@class,'zg-bdg-text')][1]", "fallback": None},
-    },
-    "detail": {
-        "retailer_sku_name": {"xpath": "//*[@id='productTitle']", "fallback": None},
-        "product_url": {"xpath": "//link[@rel='canonical'][1]", "fallback": None},
-        "final_sku_price": {"xpath": "//*[@id='corePriceDisplay_desktop_feature_div']//span[contains(@class,'a-price') and not(contains(@class,'a-text-price'))]//span[contains(@class,'a-offscreen')][1] | //span[contains(@class,'priceToPay')]//span[contains(@class,'a-offscreen')][1]", "fallback": None},
-        "original_sku_price": {"xpath": "//*[@id='corePriceDisplay_desktop_feature_div']//span[contains(@class,'a-text-price')]//span[contains(@class,'a-offscreen')][1]", "fallback": None},
-        "star_rating": {"xpath": "//*[@id='averageCustomerReviews']//*[contains(@class,'a-icon-alt')][1] | //*[@id='acrPopover'][1]", "fallback": None},
-        "count_of_star_ratings": {"xpath": "//*[@id='acrCustomerReviewText'][1]", "fallback": None},
-        "inventory_status": {"xpath": "//*[@id='availability'][1] | //*[@id='availabilityInsideBuyBox_feature_div'][1]", "fallback": None},
-        "delivery_availability": {"xpath": "//*[@id='mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE'][1] | //*[@id='deliveryBlockMessage'][1]", "fallback": None},
-        "fastest_delivery": {"xpath": "//*[@id='mir-layout-DELIVERY_BLOCK-slot-SECONDARY_DELIVERY_MESSAGE_LARGE'][1]", "fallback": None},
-        "available_quantity_for_purchase": {"xpath": "//*[contains(.,'Nur noch') and contains(.,'auf Lager')][1]", "fallback": None},
-        "screen_size": {"xpath": "//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'screen') or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'display')]/following-sibling::*[1]", "fallback": None},
-        "model_year": {"xpath": "//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'modelljahr') or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'model year')]/following-sibling::*[1]", "fallback": None},
-        "sku": {"xpath": "//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'modellnummer') or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'model number') or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'part number')]/following-sibling::*[1]", "fallback": None},
-        "estimated_annual_electricity_use": {"xpath": "//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'elektrische leistung') or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'wattage') or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'energy')]/following-sibling::*[1]", "fallback": None},
-        "retailer_sku_name_similar": {"xpath": "//*[@id='sp_detail']//a[contains(@href,'/dp/')] | //*[@id='similarities_feature_div']//a[contains(@href,'/dp/')] | //*[@id='anonCarousel1']//a[contains(@href,'/dp/')]", "fallback": None},
-        "detailed_review_content": {"xpath": "//div[@data-hook='review']//*[@data-hook='reviewRichContentContainer' or @data-hook='reviewText' or @data-hook='review-body']", "fallback": None},
-    },
-}
 
 ATTR_FIELDS = {"product_url": "href"}
 MULTI_FIELDS = {"retailer_sku_name_similar", "detailed_review_content"}
+EXPAND_FIELDS = {"expand_additional_details", "expand_item_details"}
 
 
 def _quote(ident: str) -> str:
@@ -69,54 +27,49 @@ def _table_sql(table_name: str) -> str:
     return f"{_quote(schema)}.{_quote(table)}"
 
 
-def load_selectors(stage: str, *, domain: str = "product") -> dict[str, dict[str, str | None]]:
-    """Load selectors from DB, falling back to built-in Amazon.de defaults."""
+def load_selectors(stage: str, *, domain: str) -> dict[str, dict[str, str | None]]:
+    """Load SEG selectors with the same exact-match contract as SIEL."""
     stage_key = "detail" if stage in {"detail", "product"} else stage
-    selectors = {k: dict(v) for k, v in DEFAULT_SELECTORS.get(stage_key, {}).items()}
+    table_name = "dx_seg.dx_seg_xpath_selectors"
     config = db_config()
-    if not config:
-        return selectors
-    table_name = (
-        env_value("AMZN_SELECTOR_TABLE")
-        or env_value("SEG_XPATH_SELECTOR_TABLE")
-        or "dx_seg.dx_seg_xpath_selectors"
+    import psycopg2
+    import psycopg2.extras
+
+    conn = psycopg2.connect(
+        host=config.get("host"),
+        port=int(config.get("port") or 5432),
+        user=config.get("user"),
+        password=config.get("password"),
+        dbname=config.get("database"),
+        connect_timeout=6,
     )
     try:
-        import psycopg2
-        import psycopg2.extras
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(
+                "SELECT data_field, xpath_primary, fallback_xpath "
+                f"FROM {_table_sql(table_name)} "
+                "WHERE site_account = %s "
+                "AND page_type = %s "
+                "AND domain = %s "
+                "AND is_active = TRUE",
+                ("Amazon", stage_key, domain),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
 
-        conn = psycopg2.connect(
-            host=config.get("host"),
-            port=int(config.get("port") or 5432),
-            user=config.get("user"),
-            password=config.get("password"),
-            dbname=config.get("database"),
-            connect_timeout=6,
+    selectors = {
+        str(row["data_field"]): {
+            "xpath": str(row["xpath_primary"]),
+            "fallback": row["fallback_xpath"],
+        }
+        for row in rows
+        if row["data_field"] and row["xpath_primary"]
+    }
+    if not selectors:
+        raise RuntimeError(
+            f"no selectors loaded for site=Amazon stage={stage_key} domain={domain} table={table_name}"
         )
-        try:
-            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute(
-                    "SELECT data_field, xpath_primary, fallback_xpath "
-                    f"FROM {_table_sql(table_name)} "
-                    "WHERE site_account IN ('Amazon', 'Amazon.de') "
-                    "AND page_type = %s "
-                    "AND domain IN (%s, 'product', 'listing') "
-                    "AND is_active = TRUE",
-                    (stage_key, domain),
-                )
-                for row in cur.fetchall():
-                    field = row["data_field"]
-                    xpath = row["xpath_primary"]
-                    if not field or not xpath:
-                        continue
-                    selectors[str(field)] = {
-                        "xpath": str(xpath),
-                        "fallback": row["fallback_xpath"],
-                    }
-        finally:
-            conn.close()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[selectors] DB selectors unavailable; using defaults: {type(exc).__name__}: {exc}")
     return selectors
 
 
@@ -172,6 +125,26 @@ def extract_multi(root, selector: dict[str, str | None] | None, *, limit: int = 
                 return values
     return values
 
+
+def click_expand(root, selector: dict[str, str | None] | None) -> bool:
+    selector = selector or {}
+    clicked = False
+    for xpath in (selector.get("xpath"), selector.get("fallback")):
+        for el in _find(root, xpath):
+            try:
+                if hasattr(root, "execute_script"):
+                    root.execute_script("arguments[0].click();", el)
+                else:
+                    el.click()
+                clicked = True
+                break
+            except (StaleElementReferenceException, WebDriverException):
+                continue
+        if clicked:
+            break
+    if clicked:
+        time.sleep(0.5)
+    return clicked
 
 def normalize_field(field: str, value: str | None) -> str | None:
     if not value:
@@ -256,8 +229,11 @@ def extract_cards(driver, selectors: dict[str, dict[str, str | None]], *, sort: 
 
 def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, product: str = "TV") -> dict[str, Any]:
     data: dict[str, Any] = {}
+    for field in EXPAND_FIELDS:
+        if field in selectors:
+            click_expand(driver, selectors.get(field))
     for field, selector in selectors.items():
-        if field == "base_container":
+        if field == "base_container" or field in EXPAND_FIELDS:
             continue
         if field in MULTI_FIELDS:
             values = extract_multi(driver, selector, limit=20)
@@ -277,14 +253,19 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
     except WebDriverException:
         pass
     fallback = parsers.parse_product_detail_html(html) if html else {}
+    selector_fields = set(selectors)
     for key, value in fallback.items():
-        if key == "facts_json":
+        if key == "facts_json" or key not in selector_fields:
             continue
         if data.get(key) in (None, "") and value not in (None, ""):
             data[key] = value
     if not data.get("detailed_review_content") and html:
         review = parsers.parse_review_html(html)
         for key, value in review.items():
+            if key not in selector_fields and not (
+                key == "count_of_reviews" and "detailed_review_content" in selector_fields
+            ):
+                continue
             if data.get(key) in (None, "") and value not in (None, ""):
                 data[key] = value
     return data

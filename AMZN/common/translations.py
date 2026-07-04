@@ -10,6 +10,7 @@ TRANSLATED_FIELDS = {
     "fastest_delivery",
     "inventory_status",
     "screen_size",
+    "ref_refrigerator_type",
 }
 
 _WEEKDAYS = {
@@ -120,9 +121,38 @@ def _translate_dates(text: str) -> str:
     return text
 
 
+_GERMAN_ASCII_MAP = {
+    0x00e4: "ae",
+    0x00c4: "Ae",
+    0x00f6: "oe",
+    0x00d6: "Oe",
+    0x00fc: "ue",
+    0x00dc: "Ue",
+    0x00df: "ss",
+}
+
+_REF_TYPE_PHRASES = [
+    (r"\bgefrierfach\s+unten\b", "freezer-on-bottom"),
+    (r"\bgefrierteil\s+unten\b", "freezer-on-bottom"),
+    (r"\bgefrierfach\s+oben\b", "freezer-on-top"),
+    (r"\bgefrierteil\s+oben\b", "freezer-on-top"),
+    (r"\bkuehl[-\s]*gefrier[-\s]*kombination\b", "refrigerator-freezer combination"),
+    (r"\bkuehlschrank\s+mit\s+gefrierfach\b", "refrigerator with freezer compartment"),
+    (r"\bside\s+by\s+side\b", "Side by Side"),
+    (r"\bfrench\s+door\b", "French Door"),
+]
+
+
 def _translate_common(text: str) -> str:
     out = _translate_dates(text)
     for pattern, repl in _PHRASES:
+        out = _replace_case_insensitive(out, pattern, repl)
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def _translate_ref_refrigerator_type(text: str) -> str:
+    out = text.translate(_GERMAN_ASCII_MAP)
+    for pattern, repl in _REF_TYPE_PHRASES:
         out = _replace_case_insensitive(out, pattern, repl)
     return re.sub(r"\s+", " ", out).strip()
 
@@ -136,6 +166,8 @@ def translate_field(field: str, value: Any) -> str | None:
     if field == "screen_size":
         text = _replace_case_insensitive(text, r"\bzoll\b", "inches")
         return re.sub(r"\s+", " ", text).strip()
+    if field == "ref_refrigerator_type":
+        return _translate_ref_refrigerator_type(text)
     return _translate_common(text)
 
 

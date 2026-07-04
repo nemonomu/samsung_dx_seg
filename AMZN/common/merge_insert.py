@@ -178,7 +178,7 @@ def merge_jsonl(cfg, jsonl_path: str | Path) -> list[dict[str, Any]]:
 def _connect():
     config = db_config()
     if not config:
-        raise RuntimeError("DB_CONFIG missing from .env")
+        raise RuntimeError("config.DB_CONFIG missing")
     import psycopg2
 
     return psycopg2.connect(

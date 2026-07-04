@@ -14,6 +14,7 @@ BASE_FIELDS = [
     "screen_size", "model_year", "sku", "estimated_annual_electricity_use",
     "retailer_sku_name_similar", "star_rating", "count_of_star_ratings", "count_of_reviews",
     "summarized_review_content", "detailed_review_content",
+    "ref_refrigerator_type", "ref_capacity",
 ]
 
 
@@ -67,6 +68,8 @@ def run(cfg) -> dict:
             "count_of_reviews": detail.get("count_of_reviews"),
             "summarized_review_content": detail.get("summarized_review_content"),
             "detailed_review_content": detail.get("detailed_review_content"),
+            "ref_refrigerator_type": detail.get("ref_refrigerator_type"),
+            "ref_capacity": detail.get("ref_capacity"),
         }
         translate_record_fields(row)
         rows.append(row)
