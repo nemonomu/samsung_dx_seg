@@ -31,3 +31,4 @@ OTTO/**/raw_html/
 # Amazon crawler runtime outputs
 AMZN/references/
 AMZN/**/data/output/
+AMZN/erd.xlsx
