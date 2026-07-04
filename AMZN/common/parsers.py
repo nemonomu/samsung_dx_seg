@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 from bs4 import BeautifulSoup
 
 from common.config import AMAZON_BASE
+from common.translations import translate_field
 
 
 def clean_text(value: Any) -> str | None:
@@ -99,7 +100,7 @@ def parse_listing_html(html: str, *, page: int, sort: str, start_rank: int = 1) 
             "retailer_sku_name": clean_text(name_node.get_text(" ")) if name_node else None,
             "final_sku_price": _price_text(item),
             "original_sku_price": _original_price(item),
-            "discount_type": clean_text(item.select_one(".a-badge-text").get_text(" ") if item.select_one(".a-badge-text") else None),
+            "discount_type": translate_field("discount_type", clean_text(item.select_one(".a-badge-text").get_text(" ") if item.select_one(".a-badge-text") else None)),
             "sku_popularity": clean_text(item.select_one(".a-badge-label .a-badge-text, .a-badge-label").get_text(" ") if item.select_one(".a-badge-label .a-badge-text, .a-badge-label") else None),
             "number_of_units_purchased_past_month": clean_text(item.select_one("span.a-size-base.a-color-secondary").get_text(" ") if item.select_one("span.a-size-base.a-color-secondary") else None),
             "sku_status": "Sponsored" if (item.select_one(".puis-sponsored-label-text") or "Gesponsert" in item.get_text(" ")) else None,
@@ -170,11 +171,11 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
     if rating_count:
         data["count_of_star_ratings"] = clean_text(rating_count.get_text(" "))
     availability = soup.select_one("#availability, #availabilityInsideBuyBox_feature_div")
-    data["inventory_status"] = clean_text(availability.get_text(" ")) if availability else None
+    data["inventory_status"] = translate_field("inventory_status", clean_text(availability.get_text(" ")) if availability else None)
     delivery = soup.select_one("#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE, #deliveryBlockMessage")
     fastest = soup.select_one("#mir-layout-DELIVERY_BLOCK-slot-SECONDARY_DELIVERY_MESSAGE_LARGE")
-    data["delivery_availability"] = clean_text(delivery.get_text(" ")) if delivery else None
-    data["fastest_delivery"] = clean_text(fastest.get_text(" ")) if fastest else None
+    data["delivery_availability"] = translate_field("delivery_availability", clean_text(delivery.get_text(" ")) if delivery else None)
+    data["fastest_delivery"] = translate_field("fastest_delivery", clean_text(fastest.get_text(" ")) if fastest else None)
     qty = soup.find(string=re.compile(r"Nur noch \d+ auf Lager", re.I))
     data["available_quantity_for_purchase"] = clean_text(qty)
 

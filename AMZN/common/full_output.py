@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from common.config import run_meta
 from common.io_util import ACCOUNT_NAME, COUNTRY, category_output_root, read_csv, write_csv, write_json
+from common.translations import translate_record_fields
 
 BASE_FIELDS = [
     "account_name", "product", "country", "page_type", "crawl_strdatetime", "calendar_week", "batch_id",
@@ -67,6 +68,7 @@ def run(cfg) -> dict:
             "summarized_review_content": detail.get("summarized_review_content"),
             "detailed_review_content": detail.get("detailed_review_content"),
         }
+        translate_record_fields(row)
         rows.append(row)
     path = out / "amzn_full_output.csv"
     write_csv(path, rows, BASE_FIELDS)

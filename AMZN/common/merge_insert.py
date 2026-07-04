@@ -10,6 +10,7 @@ from common.config import run_meta
 from common.full_output import BASE_FIELDS
 from common.io_util import ACCOUNT_NAME, COUNTRY, category_output_root, db_config, split_table, write_csv, write_json
 from common.jsonl import read_jsonl
+from common.translations import translate_record_fields
 
 INT_COLUMNS = {"main_rank", "bsr_rank"}
 BOOL_COLUMNS = {"redirect"}
@@ -154,6 +155,7 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
         row[field] = _first(detail_rec.get(field), primary.get(field))
     if redirect_listing_only:
         row["_redirect_listing_only"] = True
+    translate_record_fields(row)
     return row
 
 

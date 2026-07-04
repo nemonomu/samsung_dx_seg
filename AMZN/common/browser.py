@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import os
 import random
+import sys
 import time
 from typing import Any
 
 import undetected_chromedriver as uc
 from selenium.common.exceptions import NoSuchElementException, WebDriverException
 from selenium.webdriver.common.by import By
+
+from common import siel_logging as siel_log
 
 
 uc.Chrome.__del__ = lambda self: None
@@ -83,6 +86,10 @@ class AmazonBrowserSession:
         if major:
             kwargs["version_main"] = major
         self.driver = uc.Chrome(**kwargs)
+        siel_log.run_log(
+            f"new driver started headless={self.headless} "
+            f"page_load_strategy={self.page_load_strategy or 'normal'} chrome_major={major}"
+        )
         try:
             self.driver.set_page_load_timeout(int(os.getenv("AMZN_PAGE_LOAD_TIMEOUT", "75")))
             self.driver.set_script_timeout(30)
@@ -98,10 +105,12 @@ class AmazonBrowserSession:
     def close(self) -> None:
         if self.driver is None:
             return
+        siel_log.run_log("driver shutdown start")
         try:
             self.driver.quit()
-        except Exception:
-            pass
+            siel_log.run_log("driver shutdown done")
+        except Exception as exc:
+            siel_log.run_log(f"driver shutdown failed: {type(exc).__name__}: {exc}", "ERROR")
         finally:
             self.driver = None
 
@@ -153,7 +162,9 @@ class AmazonBrowserSession:
                     break
             return True
         except WebDriverException as exc:
-            print(f"[browser] postal_code setup skipped: {type(exc).__name__}: {str(exc)[:160]}")
+            msg = f"[browser] postal_code setup skipped: {type(exc).__name__}: {str(exc)[:160]}"
+            print(msg, file=sys.stderr)
+            siel_log.run_log(msg, "WARNING")
             return False
 
     def recover(self, url: str = "", cycles: int = 3) -> bool:
@@ -216,12 +227,15 @@ class AmazonBrowserSession:
                 self.driver.execute_script("window.scrollTo(0, arguments[0]);", min(y + step, target))
                 time.sleep(random.uniform(max(pause * 0.5, 0.25), pause + 0.35))
         except WebDriverException as exc:
-            print(f"[browser] scroll skipped: {type(exc).__name__}: {str(exc)[:160]}")
+            msg = f"[browser] scroll skipped: {type(exc).__name__}: {str(exc)[:160]}"
+            print(msg, file=sys.stderr)
+            siel_log.run_log(msg, "WARNING")
 
     def fetch(self, url: str, *, scroll_ratio: float = 1.0) -> dict[str, Any]:
         self.open()
         assert self.driver is not None
         started = time.perf_counter()
+        siel_log.run_log(f"fetch start url={url}")
         try:
             self.driver.get(url)
             time.sleep(max(self.sleep, random.uniform(2.0, 3.5)))
@@ -229,7 +243,7 @@ class AmazonBrowserSession:
             self.scroll(ratio=scroll_ratio)
             self.recover(url, cycles=1)
             html = self.driver.page_source or ""
-            return {
+            result = {
                 "url": self.driver.current_url,
                 "status": 200 if recovered else 429,
                 "text": html,
@@ -237,8 +251,13 @@ class AmazonBrowserSession:
                 "error": None if recovered else "amazon_interstitial",
                 "elapsed_seconds": round(time.perf_counter() - started, 2),
             }
+            siel_log.run_log(
+                f"fetch done status={result['status']} bytes={result['bytes']} "
+                f"elapsed={result['elapsed_seconds']} url={result['url']} error={result['error']}"
+            )
+            return result
         except WebDriverException as exc:
-            return {
+            result = {
                 "url": url,
                 "status": None,
                 "text": "",
@@ -246,3 +265,9 @@ class AmazonBrowserSession:
                 "error": f"{type(exc).__name__}: {str(exc)[:240]}",
                 "elapsed_seconds": round(time.perf_counter() - started, 2),
             }
+            siel_log.run_log(
+                f"fetch failed status=None elapsed={result['elapsed_seconds']} "
+                f"url={url} error={result['error']}",
+                "ERROR",
+            )
+            return result

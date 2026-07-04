@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from typing import Any
 
-from common import parsers, selectors as selector_api
+from common import parsers, selectors as selector_api, siel_logging as siel_log
 from common.config import DEFAULT_SLEEP, DEFAULT_TIMEOUT
 from common.http import save_text
 from common.io_util import category_output_root, category_reference_root, read_csv, write_csv, write_json
@@ -52,6 +52,12 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
     start_i = max(start, 1) - 1
     selected = targets[start_i:] if limit <= 0 else targets[start_i:start_i + limit]
     selector_map = selector_api.load_selectors("detail", domain="product")
+    logger, _html_path = siel_log.setup(getattr(cfg, "ACCOUNT_NAME", "Amazon.de"), cfg.PRODUCT.lower(), "detail")
+    siel_log.log_selectors(logger, selector_map)
+    if batch_id:
+        logger.info("batch_id=%s", batch_id)
+    logger.info("detail targets=%d start=%d limit=%d", len(selected), start, limit)
+    progress = siel_log.DetailProgress(len(selected))
     rows: list[dict[str, Any]] = []
     attempts = []
     session = None
@@ -64,6 +70,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
         )
         for idx, target in enumerate(selected, start=start_i + 1):
             asin = (target.get("asin") or target.get("item") or "").strip()
+            logger.info("rank=%d asin=%s url=%s", idx, asin, target.get("product_url"))
             product_url = target.get("product_url")
             detail = _base_detail_record(cfg, target, asin=asin, product_url=product_url, batch_id=batch_id)
             review = {"status": None, "text": "", "error": "review_not_requested", "bytes": 0}
@@ -115,6 +122,9 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
             detail["loaded_url"] = landing_url
             detail["redirect_decision"] = redirect_decision
             rows.append(detail)
+            siel_log.warn_price_logic(logger, detail)
+            siel_log.log_record_summary(logger, detail)
+            progress.update(logger, detail)
             if emit:
                 emit(detail)
             attempts.append({
@@ -130,6 +140,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 "review_error": review.get("error"),
                 "pdp_review_count": pdp_review.get("count_of_reviews"),
             })
+            logger.info("rank=%d asin=%s pdp=%s review=%s redirect=%s detail_skip=%s", idx, asin, pdp.get("status"), review.get("status"), redirect_decision or detail.get("redirect"), detail.get("_detail_skip"))
             print(f"[detail/{cfg.PRODUCT}] rank={idx} asin={asin} pdp={pdp.get('status')} review={review.get('status')} redirect={redirect_decision or detail.get('redirect')}", flush=True)
             time.sleep(sleep)
     finally:
@@ -140,5 +151,6 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
     write_csv(path, rows)
     manifest = {"run_type": "detail", "product": cfg.PRODUCT, "rows": len(rows), "output": str(path), "raw_dir": str(ref), "attempts": attempts, "selector_source": "db_or_default_xpath"}
     write_json(out / "step08_detail_review_compare_manifest.json", manifest)
+    logger.info("=== done: records=%d batch_id=%s ===", len(rows), batch_id)
     manifest["rows_data"] = rows
     return manifest

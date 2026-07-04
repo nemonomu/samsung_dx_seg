@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
+import traceback
 from datetime import datetime
 from typing import Any
 
-from common import detail, full_output, listing, merge_insert, notify, targets
+from common import detail, full_output, listing, merge_insert, notify, siel_logging as siel_log, targets
 from common.config import BSR_TARGET, DEFAULT_SLEEP, LISTING_TARGET, run_meta
 from common.io_util import category_output_root, write_csv, write_json
 from common.jsonl import append_jsonl
@@ -79,8 +81,14 @@ def _run_bsr_with_retries(cfg, args: argparse.Namespace, *, batch_id: str, emit)
     attempt_summaries = []
     for attempt in range(1, attempts + 1):
         strategy = strategies[(attempt - 1) % len(strategies)]
+        siel_log.run_log(
+            f"stage=bsr product={cfg.PRODUCT} isolated driver start "
+            f"attempt={attempt}/{attempts} required={required} expected={expected} "
+            f"page_load_strategy={strategy}"
+        )
         print(
             f"[bsr/{cfg.PRODUCT}] isolated attempt={attempt}/{attempts} required={required} expected={expected} pageLoadStrategy={strategy}",
+            file=sys.stderr,
             flush=True,
         )
         manifest = listing.run(
@@ -95,10 +103,19 @@ def _run_bsr_with_retries(cfg, args: argparse.Namespace, *, batch_id: str, emit)
         )
         rows = manifest.get("rows_data", [])
         attempt_summaries.append({"attempt": attempt, "strategy": strategy, "rows": len(rows)})
+        siel_log.run_log(
+            f"stage=bsr product={cfg.PRODUCT} isolated driver closed "
+            f"attempt={attempt}/{attempts} captured={len(rows)}"
+        )
         if len(rows) > len(best_rows):
             best_rows = rows
         if len(rows) >= required:
             break
+        siel_log.run_log(
+            f"stage=bsr product={cfg.PRODUCT} retry_needed "
+            f"attempt={attempt}/{attempts} captured={len(rows)} required={required} expected={expected}",
+            "WARNING",
+        )
         time.sleep(min(10, 2 * attempt))
 
     out = category_output_root(cfg.PRODUCT)
@@ -129,16 +146,25 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
     out = category_output_root(cfg.PRODUCT)
     out.mkdir(parents=True, exist_ok=True)
     if steps == {"notify"} and (out / "step00_run_manifest.json").exists():
-        notify.run(cfg)
+        siel_log.setup_run(cfg.PRODUCT)
+        siel_log.run_log(f"stage=notify product={cfg.PRODUCT} start")
+        notify_manifest = notify.run(cfg)
+        siel_log.run_log(
+            f"stage=notify product={cfg.PRODUCT} done severity={notify_manifest.get('severity')} "
+            f"sent={notify_manifest.get('sent')} error={notify_manifest.get('error')}"
+        )
         return 0
     meta = run_meta("a")
     batch_id = meta["batch_id"]
     jsonl_path = out / f"amzn_{cfg.PRODUCT.lower()}_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    run_log_path = siel_log.setup_run(cfg.PRODUCT, jsonl_path)
+    siel_log.run_log(f"product={cfg.PRODUCT.lower()} start stages={sorted(steps)}")
     run_manifest = {
         "run_type": "run",
         "product": cfg.PRODUCT,
         "batch_id": batch_id,
         "jsonl_path": str(jsonl_path),
+        "run_log_path": str(run_log_path),
         "steps": sorted(steps),
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
@@ -152,6 +178,7 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
         if record.get("batch_id") in (None, "") and record.get("stage") in {"main", "bsr", "detail"}:
             record["batch_id"] = batch_id
         append_jsonl(jsonl_path, record)
+        siel_log.log_record_event(record)
         if streamer is not None:
             streamer.handle(record)
 
@@ -160,19 +187,30 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
     try:
         try:
             if "listing" in steps:
+                siel_log.run_log(f"stage=main product={cfg.PRODUCT} start")
                 listing.run(cfg, sort="main", target=args.max_rank, max_pages=args.max_pages, batch_id=batch_id, emit=emit, headless=args.headless)
+                siel_log.run_log(f"stage=main product={cfg.PRODUCT} done")
             if "bsr" in steps:
+                siel_log.run_log(f"stage=bsr product={cfg.PRODUCT} start")
                 _run_bsr_with_retries(cfg, args, batch_id=batch_id, emit=emit)
+                siel_log.run_log(f"stage=bsr product={cfg.PRODUCT} done")
             if "targets" in steps:
-                targets.run(cfg)
+                siel_log.run_log(f"stage=targets product={cfg.PRODUCT} start")
+                targets_manifest = targets.run(cfg)
+                siel_log.run_log(f"stage=targets product={cfg.PRODUCT} done unique={targets_manifest.get('unique_targets')}")
             if "detail" in steps:
                 detail_limit = args.limit
                 if getattr(args, "max_detail", None) is not None:
                     detail_limit = args.max_detail or 0
-                detail.run(cfg, limit=detail_limit, start=args.start, batch_id=batch_id, emit=emit, headless=args.headless, sleep=args.detail_sleep)
+                siel_log.run_log(f"stage=detail product={cfg.PRODUCT} start")
+                detail_manifest = detail.run(cfg, limit=detail_limit, start=args.start, batch_id=batch_id, emit=emit, headless=args.headless, sleep=args.detail_sleep)
+                siel_log.run_log(f"stage=detail product={cfg.PRODUCT} done records={detail_manifest.get('rows')}")
             if "full" in steps:
-                full_output.run(cfg)
+                siel_log.run_log(f"stage=full product={cfg.PRODUCT} start")
+                full_manifest = full_output.run(cfg)
+                siel_log.run_log(f"stage=full product={cfg.PRODUCT} done rows={full_manifest.get('output_rows')}")
             if "db" in steps and not args.no_auto_insert:
+                siel_log.run_log(f"stage=db product={cfg.PRODUCT} start")
                 if streamer is not None:
                     summary = streamer.summary()
                     emit(summary)
@@ -181,15 +219,25 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
                     manifest = merge_insert.insert_jsonl(cfg, jsonl_path, dry_run=args.db_dry_run)
                     manifest["stage"] = "db_insert_summary"
                     emit(manifest)
+                siel_log.run_log(f"stage=db product={cfg.PRODUCT} done")
         except Exception as exc:  # noqa: BLE001
             status = 1
             fatal_error = exc
+            siel_log.run_log(f"product={cfg.PRODUCT} failed: {type(exc).__name__}: {exc}", "ERROR")
+            siel_log.run_log(traceback.format_exc(), "ERROR")
             _emit_error(emit, stage="run_error", product=cfg.PRODUCT, message=repr(exc), _error="product run failed")
         if "notify" in steps or args.email_report:
-            notify.run(cfg)
+            siel_log.run_log(f"stage=notify product={cfg.PRODUCT} start")
+            notify_manifest = notify.run(cfg)
+            siel_log.run_log(
+                f"stage=notify product={cfg.PRODUCT} done severity={notify_manifest.get('severity')} "
+                f"sent={notify_manifest.get('sent')} error={notify_manifest.get('error')}"
+            )
     finally:
         if streamer is not None:
             streamer.close()
     if fatal_error:
-        print(f"[run/{cfg.PRODUCT}] FAILED: {fatal_error!r}", flush=True)
+        print(f"[run/{cfg.PRODUCT}] FAILED: {fatal_error!r}", file=sys.stderr, flush=True)
+    else:
+        siel_log.run_log(f"product={cfg.PRODUCT.lower()} done status={status}")
     return status

@@ -8,6 +8,7 @@ from selenium.common.exceptions import StaleElementReferenceException, WebDriver
 from selenium.webdriver.common.by import By
 
 from common import parsers
+from common.translations import translate_field
 from common.io_util import db_config, env_value, split_table
 
 
@@ -197,7 +198,7 @@ def normalize_field(field: str, value: str | None) -> str | None:
         return None
     if field in {"count_of_star_ratings", "bsr_rank"}:
         return clean(value)
-    return value
+    return translate_field(field, clean(value))
 
 
 def extract_card(card, selectors: dict[str, dict[str, str | None]], *, sort: str, rank: int) -> dict[str, Any] | None:

@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import re
 import smtplib
+import sys
 import ssl
 from email.message import EmailMessage
 from typing import Any
 
-from common import email_report
+from common import email_report, siel_logging as siel_log
 from common.io_util import category_output_root, env_value, read_json, truthy, write_json
 
 
@@ -56,6 +57,19 @@ def run(cfg) -> dict[str, Any]:
     sent, count, error = (False, 0, None)
     if notify and not dry:
         sent, count, error = _send(subject, body)
+    siel_log.run_log(f"email_report severity={severity} subject={subject}")
+    if sent:
+        email_line = f"[email] sent: {subject} -> recipients={count}"
+        email_level = "INFO"
+    elif notify and not dry:
+        email_line = f"[email] failed: {error}"
+        email_level = "ERROR"
+    else:
+        reason = "dry_run" if dry else "SEG_EMAIL_NOTIFY=0"
+        email_line = f"[email] skipped: {reason}"
+        email_level = "INFO"
+    print(email_line, file=sys.stderr)
+    siel_log.run_log(email_line, email_level)
     manifest = {
         "run_type": "email_notify",
         "product": cfg.PRODUCT,
@@ -69,5 +83,5 @@ def run(cfg) -> dict[str, Any]:
         "jsonl_path": jsonl_path,
     }
     write_json(out / "step15_email_notify_manifest.json", manifest)
-    print(f"[notify/{cfg.PRODUCT}] severity={severity} sent={sent} dry_run={dry} error={error}")
+    print(f"[notify/{cfg.PRODUCT}] severity={severity} sent={sent} dry_run={dry} error={error}", file=sys.stderr)
     return manifest
