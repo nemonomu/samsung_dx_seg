@@ -152,6 +152,9 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 save_text(ref / f"{idx:04d}_{asin}_reviews.html", review["text"])
             detail["loaded_url"] = landing_url
             detail["redirect_decision"] = redirect_decision
+            review_text = bool(detail.get("detailed_review_content"))
+            review_count = detail.get("count_of_reviews") or pdp_review.get("count_of_reviews")
+            review_page_status = review.get("status")
             rows.append(detail)
             siel_log.warn_price_logic(logger, detail)
             siel_log.log_record_summary(logger, detail)
@@ -163,7 +166,9 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 "asin": asin,
                 "loaded_asin": landing_asin,
                 "pdp_status": pdp.get("status"),
-                "review_status": review.get("status"),
+                "review_page_status": review_page_status,
+                "review_text": review_text,
+                "review_count": review_count,
                 "redirect": detail.get("redirect"),
                 "redirect_decision": redirect_decision,
                 "detail_skip": detail.get("_detail_skip"),
@@ -171,8 +176,8 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 "review_error": review.get("error"),
                 "pdp_review_count": pdp_review.get("count_of_reviews"),
             })
-            logger.info("rank=%d asin=%s pdp=%s review=%s redirect=%s detail_skip=%s", idx, asin, pdp.get("status"), review.get("status"), redirect_decision or detail.get("redirect"), detail.get("_detail_skip"))
-            print(f"[detail/{cfg.PRODUCT}] rank={idx} asin={asin} pdp={pdp.get('status')} review={review.get('status')} redirect={redirect_decision or detail.get('redirect')}", flush=True)
+            logger.info("rank=%d asin=%s pdp=%s review_text=%s review_count=%s review_page=%s redirect=%s detail_skip=%s", idx, asin, pdp.get("status"), review_text, review_count, review_page_status, redirect_decision or detail.get("redirect"), detail.get("_detail_skip"))
+            print(f"[detail/{cfg.PRODUCT}] rank={idx} asin={asin} pdp={pdp.get('status')} review_text={review_text} review_count={review_count or '-'} review_page={review_page_status or '-'} redirect={redirect_decision or detail.get('redirect')}", flush=True)
             if inter_detail_sleep > 0:
                 time.sleep(inter_detail_sleep)
     finally:

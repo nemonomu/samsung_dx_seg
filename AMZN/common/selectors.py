@@ -146,6 +146,20 @@ def click_expand(root, selector: dict[str, str | None] | None) -> bool:
         time.sleep(0.5)
     return clicked
 
+
+def scroll_to_bottom(root, *, pause: float = 0.7, max_scrolls: int = 5) -> None:
+    try:
+        last_h = int(root.execute_script("return document.body.scrollHeight") or 0)
+        for _ in range(max_scrolls):
+            root.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(pause)
+            new_h = int(root.execute_script("return document.body.scrollHeight") or 0)
+            if new_h == last_h:
+                break
+            last_h = new_h
+    except WebDriverException:
+        return
+
 def normalize_field(field: str, value: str | None) -> str | None:
     if not value:
         return None
@@ -238,8 +252,37 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
         if field in MULTI_FIELDS:
             values = extract_multi(driver, selector, limit=20)
             if field == "detailed_review_content":
+                if not values:
+                    try:
+                        driver.execute_script(
+                            "var e = document.getElementById('reviewsMedley');"
+                            " if (e) e.scrollIntoView({block: 'center', behavior: 'instant'});"
+                        )
+                    except WebDriverException:
+                        pass
+                    time.sleep(3)
+                    scroll_to_bottom(driver, pause=0.7, max_scrolls=5)
+                    values = extract_multi(driver, selector, limit=20)
+                    if not values:
+                        time.sleep(3)
+                        values = extract_multi(driver, selector, limit=20)
                 data[field] = " ||| ".join(f"review{i} - {v}" for i, v in enumerate(values, start=1)) if values else None
                 data["count_of_reviews"] = len(values) if values else None
+            elif field == "retailer_sku_name_similar":
+                if not values:
+                    try:
+                        driver.execute_script(
+                            "var c = document.querySelector('div[aria-labelledby=\"Customers who viewed this item also viewed\"]');"
+                            " if (c) c.scrollIntoView({block: 'center', behavior: 'instant'});"
+                        )
+                    except WebDriverException:
+                        pass
+                    time.sleep(1.5)
+                    values = extract_multi(driver, selector, limit=20)
+                    if not values:
+                        scroll_to_bottom(driver, pause=0.7, max_scrolls=5)
+                        values = extract_multi(driver, selector, limit=20)
+                data[field] = " ||| ".join(values) if values else None
             else:
                 data[field] = " ||| ".join(values) if values else None
             continue
