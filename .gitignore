@@ -28,3 +28,6 @@ OTTO/references/har/listing_pages_*.zip
 
 # Opt-in raw-HTML audit dumps (OTTO_SAVE_HTML) are local-only
 OTTO/**/raw_html/
+# Amazon crawler runtime outputs
+AMZN/references/
+AMZN/**/data/output/
