@@ -89,7 +89,9 @@ def model_sku(target: dict[str, Any], ctx: dict[str, Any] | None) -> str | None:
     model = (ctx or {}).get("model", {}).get(pid, {}).get("Modellbezeichnung")
     if not model or not model.strip():
         return None
-    return _COLOR_SUFFIX.sub("", model.strip()).strip() or None
+    # a listing can bundle colour variants -> "SBS450NFDWDEIX, SBS450NFDWDEW"; keep the first
+    model = model.split(",")[0].strip()
+    return _COLOR_SUFFIX.sub("", model).strip() or None
 
 
 def characteristic(target: dict[str, Any], ctx: dict[str, Any] | None, *labels: str) -> str | None:

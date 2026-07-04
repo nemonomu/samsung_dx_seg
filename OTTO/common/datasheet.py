@@ -87,6 +87,14 @@ def parse(pdf_bytes: bytes) -> dict[str, Any]:
                                 items[int(num)] = rest
             for page in pdf.pages[:3]:
                 text += (page.extract_text() or "") + "\n"
+        # image-only datasheet (scanned PDF, no text layer) -> OCR fallback so the values
+        # (Nennkapazität, on-mode power, Modellkennung) are still recovered.
+        if len(re.sub(r"\s+", "", text)) < 10 and not items:
+            from common import ocr
+            ocr_text = ocr.pdf_text(pdf_bytes)
+            if ocr_text:
+                text = ocr_text
+                result["ocr"] = True
         result["items"] = items
         result["rows"] = all_rows
         result["text"] = text

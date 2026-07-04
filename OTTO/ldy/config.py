@@ -133,6 +133,17 @@ def _capacity_from_name(name: str | None) -> str | None:
     return f"{m.group(1)} kg" if m else None
 
 
+def _model_from_name(name: str | None) -> str | None:
+    """The model that follows the washer product-type noun in the OTTO name, e.g.
+    'Camry Mini-Waschmaschine CR 8052' -> 'CR 8052', 'BAUKNECHT Waschmaschine WAM 914 A'
+    -> 'WAM 914 A'. Used when /vergleich/ omits Modellbezeichnung for this product."""
+    m = re.search(r"wasch(?:maschine|vollautomat|trockner)\s+(.+?)\s*(?:,|$)", name or "", re.I)
+    if not m:
+        return None
+    model = _COLOR_SUFFIX.sub("", re.sub(r"\s+", " ", m.group(1)).strip()).strip()
+    return model or None
+
+
 def _capacity_from_datasheet(ds: dict[str, Any] | None) -> str | None:
     """EU energy datasheet 'Nennkapazität(a) 9,0 ... (kg)' — authoritative rated wash
     capacity, used when no listing/name/comparison source has it."""
@@ -320,9 +331,12 @@ def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] 
     ctx = ctx or {}
     pid = str(target.get("product_id") or "")
     model = ctx.get("chars", {}).get(pid, {}).get("Modellbezeichnung")
-    if not _has_value(model):
-        return None
-    return _COLOR_SUFFIX.sub("", model.strip()).strip() or None
+    if _has_value(model):
+        # colour-variant bundles come back comma-joined; keep the first model
+        return _COLOR_SUFFIX.sub("", model.split(",")[0].strip()).strip() or None
+    # /vergleich/ omitted Modellbezeichnung (reduced comparison, e.g. mini washers) — the
+    # model is still in the product name after "Waschmaschine".
+    return _model_from_name(target.get("retailer_sku_name"))
 
 
 def extract_pdp_spec(soup) -> dict[str, Any]:
