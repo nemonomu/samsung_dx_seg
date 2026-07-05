@@ -52,6 +52,9 @@ POSITIVE_KEYWORDS = tuple(k for k, _ in REF_TYPE_MAP)
 EXCLUDE_KEYWORDS = (
     "wasserfilter", "filter", "ersatzteil", "einlegeboden", "abdeckung", "zubehör",
     "schublade", "türgriff", "scharnier", "halterung", "untergestell",
+    # accessories/consumables that carry "kühlschrank" in the name but aren't fridges
+    "möbelfolie", "folie", "aufkleber", "organizer", "abtauhilfe", "flüssigreiniger",
+    "kühlbox", "dosenspender", "reiniger",
 )
 
 
@@ -77,10 +80,13 @@ def classify(name: str | None) -> tuple[bool, str]:
 
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
-    # datasheet Gesamtrauminhalt; then /vergleich/ (beverage coolers), then EPREL registry
-    capacity = (datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l")
-                or model_sku.characteristic(target, ctx, "Gesamtrauminhalt", "Nutzinhalt", "Fassungsvermögen")
-                or eprel.fridge_total_volume(sku))
+    # ref_capacity = TOTAL volume only (Gesamtrauminhalt/Gesamtnutzinhalt), never a partial
+    # like "Rauminhalt der Kühlfächer". datasheet -> /vergleich/ -> EPREL; skip placeholders.
+    capacity = next((v for v in (
+        datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l"),
+        model_sku.characteristic(target, ctx, "Gesamtrauminhalt", "Gesamtnutzinhalt"),
+        eprel.fridge_total_volume(sku),
+    ) if model_sku.has_value(v)), None)
     # Kasada-free default from the listing name; PDP supplement overrides if enabled.
     ref_type = translate_ref_type(target.get("retailer_sku_name"))
     return {"ref_refrigerator_type": ref_type, "ref_capacity": capacity}
@@ -90,7 +96,7 @@ def prepare_context(targets=None) -> dict[str, Any]:
     # /vergleich/ Modellbezeichnung (sku fallback) + Gesamtrauminhalt (capacity for beverage
     # coolers the datasheet/EPREL household registry miss), on current bestVariationIds
     return model_sku.model_context(targets, (SUCHBEGRIFF, "getraenkekuehlschrank"),
-                                   labels=("Modellbezeichnung", "Gesamtrauminhalt", "Nutzinhalt", "Fassungsvermögen"))
+                                   labels=("Modellbezeichnung", "Gesamtrauminhalt", "Gesamtnutzinhalt"))
 
 
 def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:

@@ -17,6 +17,22 @@ from urllib.parse import urlencode
 from common import compare
 
 _COLOR_SUFFIX = re.compile(r"\s+(weiss|weiß|schwarz|grau|silber|anthrazit|edelstahl|inox|titan)\s*$", re.I)
+_EAN_SUFFIX = re.compile(r"\s+\d{6,}$")  # trailing EAN/EPREL number OTTO appends to Modellbezeichnung
+_PLACEHOLDERS = {"", "-", "--", "—", "–", "k.a.", "n/a", "keine angabe", "nein", "ja"}
+
+
+def has_value(v) -> bool:
+    return bool(v) and str(v).strip().casefold() not in _PLACEHOLDERS
+
+
+def clean_model(model: str | None) -> str | None:
+    """Normalize a /vergleich/ Modellbezeichnung: keep the first colour variant, drop a
+    trailing colour word and a trailing EAN/EPREL number ('LR7EA410FL 914501653' -> ...)."""
+    if not has_value(model):
+        return None
+    m = model.split(",")[0].strip()
+    m = _EAN_SUFFIX.sub("", _COLOR_SUFFIX.sub("", m)).strip()
+    return m if has_value(m) else None
 _EVER_URL = "https://www.otto.de/everglades/products"
 _EVER_HDR = {
     "Accept": "application/json",
@@ -92,20 +108,16 @@ def model_context(targets: list[dict[str, Any]] | None, suchbegriff,
 
 def model_sku(target: dict[str, Any], ctx: dict[str, Any] | None) -> str | None:
     pid = str(target.get("product_id") or "")
-    model = (ctx or {}).get("model", {}).get(pid, {}).get("Modellbezeichnung")
-    if not model or not model.strip():
-        return None
-    # a listing can bundle colour variants -> "SBS450NFDWDEIX, SBS450NFDWDEW"; keep the first
-    model = model.split(",")[0].strip()
-    return _COLOR_SUFFIX.sub("", model).strip() or None
+    return clean_model((ctx or {}).get("model", {}).get(pid, {}).get("Modellbezeichnung"))
 
 
 def characteristic(target: dict[str, Any], ctx: dict[str, Any] | None, *labels: str) -> str | None:
-    """First present value among `labels` from the /vergleich/ context (by product_id)."""
+    """First present value among `labels` from the /vergleich/ context (by product_id).
+    Skips OTTO 'no data' placeholders ('-', etc.) so they are not stored as a value."""
     pid = str(target.get("product_id") or "")
     c = (ctx or {}).get("model", {}).get(pid, {})
     for lbl in labels:
         v = c.get(lbl)
-        if v and str(v).strip():
+        if has_value(v):
             return v
     return None

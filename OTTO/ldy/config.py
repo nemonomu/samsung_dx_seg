@@ -64,6 +64,8 @@ EXCLUDE_KEYWORDS = (
     "wäscheschleuder", "schleuderfunktion", "waschschüssel",
     "spielzeug", "spielküche", "lernspiel", "kinder-waschmaschine", "kinderwaschmaschine",
     "ballonmütze", "mütze",
+    # laundry balls / lint removers (not a washing machine)
+    "wäschekugel", "waschkugel", "fusselball", "fusselbälle", "tierhaarentferner",
     "griff", "türgriff", "zubehör", "ersatzteil", "ersatz",
 )
 
@@ -108,23 +110,30 @@ def _loading_from_text(text: str | None) -> str | None:
     return None
 
 
-def resolve_loading(bauart: str | None, name: str | None) -> str | None:
-    """Structured Bauart is authoritative:
-      - Frontlader/Toplader  -> Front loader / Top-loading
-      - any other value (e.g. freistehend, unterbaufähig) -> kept as-is
-    When Bauart is blank, fall back to the listing subtitle (name) for Frontlader/Toplader.
+def resolve_loading(beladung: str | None, bauart: str | None, name: str | None) -> str | None:
+    """loading_type priority (customer spec):
+      1) Beladung (Frontlader/Toplader) — the actual load position
+      2) a Frontlader/Toplader mention in the product name/subtitle
+      3) Bauart — Frontlader/Toplader translated; ANY other value (freistehend,
+         unterbaufähig, ...) kept as-is (customer collects the Bauart field verbatim)
+    None -> caller falls back to everglades frontlader/toplader category membership.
     """
-    raw = (bauart or "").strip()
-    if _has_value(raw):
-        return _loading_from_text(raw) or raw
-    return _loading_from_text(name)
+    v = _loading_from_text(beladung) or _loading_from_text(name)
+    if v:
+        return v
+    if _has_value(bauart):
+        return _loading_from_text(bauart) or bauart.strip()
+    return None
 
 
-# /vergleich/ characteristic labels we read per SKU (Kasada-free). Capacity is the wash
-# capacity; prefer the "(Waschen)" variant (washer-dryers also list a drying capacity).
-VERGLEICH_LABELS = ["Bauart", "Modellbezeichnung",
-                    "Nennkapazität (Waschen)", "Fassungsvermögen", "Nennkapazität"]
-_CAPACITY_LABELS = ["Nennkapazität (Waschen)", "Fassungsvermögen", "Nennkapazität"]
+# /vergleich/ characteristic labels we read per SKU (Kasada-free). Beladung (load position)
+# is preferred for loading_type; capacity is the WASH capacity — explicit "(Waschen)" labels
+# first so a washer-dryer's drying capacity is never used.
+VERGLEICH_LABELS = ["Beladung", "Bauart", "Modellbezeichnung",
+                    "Füllmenge Baumwolle (Waschen)", "Nennkapazität (Waschen)",
+                    "Fassungsvermögen", "Nennkapazität"]
+_CAPACITY_WASCHEN = ["Füllmenge Baumwolle (Waschen)", "Nennkapazität (Waschen)"]  # explicit wash
+_CAPACITY_GENERIC = ["Fassungsvermögen", "Nennkapazität"]  # single-capacity plain washers only
 _COLOR_SUFFIX = re.compile(r"\s+(weiss|weiß|schwarz|grau|silber|anthrazit|edelstahl|inox|titan)\s*$", re.I)
 
 
@@ -293,8 +302,13 @@ def prepare_context(targets: list[dict[str, Any]] | None = None) -> dict[str, An
             "is_front": is_front, "is_top": is_top, "ds_capacity": ds_capacity}
 
 
-def _vergleich_capacity(vid_chars: dict[str, str | None]) -> str | None:
-    for label in _CAPACITY_LABELS:
+def _is_waschtrockner(*texts: str | None) -> bool:
+    return any("waschtrockner" in (t or "").lower() for t in texts)
+
+
+def _vergleich_capacity(vid_chars: dict[str, str | None], *, allow_generic: bool = True) -> str | None:
+    labels = list(_CAPACITY_WASCHEN) + (list(_CAPACITY_GENERIC) if allow_generic else [])
+    for label in labels:
         if _has_value(vid_chars.get(label)):
             return vid_chars[label]
     return None
@@ -306,7 +320,8 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     pid = str(target.get("product_id") or "")
     vid_chars = ctx.get("chars", {}).get(pid, {})
     name = ctx.get("name", {}).get(pid)
-    loading = resolve_loading(ctx.get("bauart", {}).get(pid), name)
+    beladung = vid_chars.get("Beladung")
+    loading = resolve_loading(beladung, ctx.get("bauart", {}).get(pid), name)
     if loading is None:
         # OTTO ships some frontloaders with no Bauart/name hint; fall back to its own
         # frontlader/toplader subcategory membership (real data, not a guess).
@@ -314,12 +329,15 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
             loading = LOADING_MAP["toplader"]
         elif ctx.get("is_front", {}).get(pid):
             loading = LOADING_MAP["frontlader"]
-    # capacity: listing top_info, then the product name's "N kg" (reliable, same page),
-    # then the /vergleich/ capacity labels, datasheet, and EPREL rated capacity.
+    # capacity = WASH capacity. For a washer-dryer, use only "(Waschen)"-explicit sources so
+    # the drying capacity is never picked. top_info "Kapazität Waschen" and the name's first
+    # "N kg" (wash is listed first) are wash-safe; generic /vergleich/ labels only for plain
+    # washers.
+    wt = _is_waschtrockner(name, target.get("retailer_sku_name"), vid_chars.get("Produkttyp"))
     capacity = (top_info(target, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
                 or _capacity_from_name(name)
                 or _capacity_from_name(target.get("retailer_sku_name"))
-                or _vergleich_capacity(vid_chars)
+                or _vergleich_capacity(vid_chars, allow_generic=not wt)
                 or ctx.get("ds_capacity", {}).get(pid)
                 or eprel.washer_rated_capacity(sku))
     return {"ldy_loading_type": loading, "ldy_capacity": capacity}
@@ -327,13 +345,14 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
 
 def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:
     """LDY has no datasheet; use the /vergleich/ Modellbezeichnung (handles space-separated
-    models like 'BPW 814 A' that the name-token heuristic misses)."""
+    models like 'BPW 814 A' the name-token heuristic misses). clean_model drops a trailing
+    EAN/EPREL number and colour."""
     ctx = ctx or {}
     pid = str(target.get("product_id") or "")
-    model = ctx.get("chars", {}).get(pid, {}).get("Modellbezeichnung")
-    if _has_value(model):
-        # colour-variant bundles come back comma-joined; keep the first model
-        return _COLOR_SUFFIX.sub("", model.split(",")[0].strip()).strip() or None
+    from common import model_sku
+    model = model_sku.clean_model(ctx.get("chars", {}).get(pid, {}).get("Modellbezeichnung"))
+    if model:
+        return model
     # /vergleich/ omitted Modellbezeichnung (reduced comparison, e.g. mini washers) — the
     # model is still in the product name after "Waschmaschine".
     return _model_from_name(target.get("retailer_sku_name"))
