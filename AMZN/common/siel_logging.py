@@ -40,14 +40,14 @@ def _slug(value: Any) -> str:
 
 def make_basename(account_name: str, product: str, stage: str) -> str:
     ts = datetime.now().strftime("%y%m%d%H%M")
-    return f"siel_{_slug(account_name)}_{_slug(product)}_{_slug(stage)}_{ts}"
+    return f"seg_{_slug(account_name)}_{_slug(product)}_{_slug(stage)}_{ts}"
 
 
 def setup(account_name: str, product: str, stage: str):
     base = make_basename(account_name, product, stage)
     log_path = logs_dir() / f"{base}.log"
     html_path = logs_dir() / f"{base}.html"
-    logger = logging.getLogger(f"siel.{account_name}.{product}.{stage}")
+    logger = logging.getLogger(f"seg.{account_name}.{product}.{stage}")
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
     logger.propagate = False
@@ -61,7 +61,7 @@ def setup(account_name: str, product: str, stage: str):
     sh.setFormatter(formatter)
     logger.addHandler(sh)
 
-    logger.info("=== siel crawler start: account=%s product=%s stage=%s ===", account_name, product, stage)
+    logger.info("=== seg crawler start: account=%s product=%s stage=%s ===", account_name, product, stage)
     logger.info("log_file=%s", log_path)
     logger.info("html_file=%s", html_path)
     return logger, html_path
@@ -70,7 +70,7 @@ def setup(account_name: str, product: str, stage: str):
 def setup_run(product: str, jsonl_path: str | Path | None = None) -> Path:
     global _RUN_LOG_PATH, _RUN_JSONL_PATH
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    _RUN_LOG_PATH = logs_dir() / f"siel_amazon_{str(product).lower()}_run_{ts}.log"
+    _RUN_LOG_PATH = logs_dir() / f"seg_amazon_{str(product).lower()}_run_{ts}.log"
     _RUN_JSONL_PATH = Path(jsonl_path) if jsonl_path else None
     run_log(f"run log file={_RUN_LOG_PATH}")
     if _RUN_JSONL_PATH is not None:
@@ -412,6 +412,32 @@ def log_record_summary(logger, rec: dict[str, Any], exclude=None) -> None:
             parts.append(f"{key} : {_truncate(value)}")
     head = " ".join(rank_parts) + " | " if rank_parts else ""
     logger.info("record: %s%s", head, " | ".join(parts) if parts else "(no fields)")
+
+
+def log_detail_result(logger, rec: dict[str, Any], product: str | None = None) -> None:
+    def show(key: str) -> str:
+        value = rec.get(key)
+        return "-" if value in (None, "", []) else _truncate(value, 90)
+
+    fields = [
+        "item", "sku", "final_sku_price", "original_sku_price", "star_rating",
+        "count_of_star_ratings", "sku_popularity", "discount_type",
+        "delivery_availability", "fastest_delivery", "inventory_status",
+    ]
+    product_key = str(product or rec.get("product") or "").lower()
+    if product_key == "tv":
+        fields += ["screen_size", "model_year", "estimated_annual_electricity_use"]
+    elif product_key == "ref":
+        fields += ["ref_refrigerator_type", "ref_capacity"]
+    fields += ["count_of_reviews", "detailed_review_content"]
+    parts = []
+    for field in fields:
+        if field == "detailed_review_content":
+            value = rec.get(field)
+            parts.append(f"{field}_card={count_review_cards(value) if value not in (None, '') else 0}")
+        else:
+            parts.append(f"{field}={show(field)}")
+    logger.info("detail summary: %s", " | ".join(parts))
 
 
 class DetailProgress:

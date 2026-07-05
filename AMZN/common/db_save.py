@@ -5,9 +5,13 @@ import os
 from datetime import datetime
 from typing import Any
 
-from common.io_util import ACCOUNT_NAME, category_output_root, db_config, read_csv, split_table, write_json
+from common.io_util import ACCOUNT_NAME, RETAILER, category_output_root, db_config, read_csv, split_table, write_json
 
 INT_COLUMNS = {"main_rank", "bsr_rank"}
+
+
+def _account_delete_names() -> list[str]:
+    return list(dict.fromkeys([ACCOUNT_NAME, RETAILER]))
 
 
 def _quote(ident: str) -> str:
@@ -91,8 +95,8 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
                 deleted = 0
                 if batch_ids:
                     cur.execute(
-                        f"DELETE FROM {_quote(schema)}.{_quote(table)} WHERE batch_id = ANY(%s) AND account_name = %s",
-                        (batch_ids, ACCOUNT_NAME),
+                        f"DELETE FROM {_quote(schema)}.{_quote(table)} WHERE batch_id = ANY(%s) AND account_name = ANY(%s)",
+                        (batch_ids, _account_delete_names()),
                     )
                     deleted = cur.rowcount
                 col_sql = ", ".join(_quote(c) for c in insert_cols)

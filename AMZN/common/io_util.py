@@ -13,7 +13,7 @@ PROJECT_ROOT = AMZN_ROOT.parent
 REFERENCES_ROOT = AMZN_ROOT / "references"
 
 RETAILER = "Amazon.de"
-ACCOUNT_NAME = "Amazon.de"
+ACCOUNT_NAME = "Amazon"
 COUNTRY = "SEG"
 
 

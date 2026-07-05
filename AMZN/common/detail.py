@@ -98,7 +98,6 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
             product_url = target.get("product_url")
             detail = _base_detail_record(cfg, target, asin=asin, product_url=product_url, batch_id=batch_id)
             review = {"status": None, "text": "", "error": "review_not_requested", "bytes": 0}
-            pdp_review: dict[str, Any] = {}
             if product_url:
                 pdp = session.fetch(
                     product_url,
@@ -141,9 +140,6 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 detail.update({k: v for k, v in parsed_detail.items() if v not in (None, "")})
                 detail["item"] = landing_asin or asin
                 detail["product_url"] = product_url
-                pdp_review = parsers.parse_review_html(pdp["text"]) if pdp.get("text") else {}
-                if not detail.get("detailed_review_content"):
-                    detail.update({k: v for k, v in pdp_review.items() if v not in (None, "")})
                 r_url = review_url(landing_url if use_detail else product_url, landing_asin if use_detail else asin)
                 if not detail.get("detailed_review_content") and r_url and review_page_fallback:
                     review = session.fetch(
@@ -152,17 +148,20 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                         scroll_max_scrolls=8,
                         post_load_sleep=max(sleep, 3.0),
                     )
-                    detail.update({k: v for k, v in parsers.parse_review_html(review["text"]).items() if v not in (None, "")})
+                    if session.driver is not None and review.get("text"):
+                        review_detail = selector_api.extract_detail(session.driver, selector_map, product=cfg.PRODUCT)
+                        detail.update({k: v for k, v in review_detail.items() if v not in (None, "") and detail.get(k) in (None, "")})
             if save_html:
                 save_text(ref / f"{idx:04d}_{asin}_reviews.html", review["text"])
             detail["loaded_url"] = landing_url
             detail["redirect_decision"] = redirect_decision
             review_text = bool(detail.get("detailed_review_content"))
-            review_count = detail.get("count_of_reviews") or pdp_review.get("count_of_reviews")
+            review_count = detail.get("count_of_reviews")
             review_page_status = review.get("status")
             rows.append(detail)
             siel_log.warn_price_logic(logger, detail)
             siel_log.log_record_summary(logger, detail)
+            siel_log.log_detail_result(logger, detail, cfg.PRODUCT)
             progress.update(logger, detail)
             if emit:
                 emit(detail)
@@ -179,7 +178,6 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 "detail_skip": detail.get("_detail_skip"),
                 "pdp_error": pdp.get("error"),
                 "review_error": review.get("error"),
-                "pdp_review_count": pdp_review.get("count_of_reviews"),
             })
             logger.info("rank=%d asin=%s pdp=%s review_text=%s review_count=%s review_page=%s redirect=%s detail_skip=%s", idx, asin, pdp.get("status"), review_text, review_count, review_page_status, redirect_decision or detail.get("redirect"), detail.get("_detail_skip"))
             print(f"[detail/{cfg.PRODUCT}] rank={idx} asin={asin} pdp={pdp.get('status')} review_text={review_text} review_count={review_count or '-'} review_page={review_page_status or '-'} redirect={redirect_decision or detail.get('redirect')}", flush=True)

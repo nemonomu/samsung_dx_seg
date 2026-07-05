@@ -25,6 +25,16 @@ _VALID_NULL_BY_PRODUCT = {
 _NOTICE_NULL_BY_PRODUCT = {
     "TV": {"fastest_delivery"},
 }
+_EXPECTED_DETAIL_FIELDS_BY_PRODUCT = {
+    "TV": {
+        "sku",
+        "screen_size",
+        "model_year",
+        "estimated_annual_electricity_use",
+        "available_quantity_for_purchase",
+    },
+    "REF": {"sku", "ref_refrigerator_type", "ref_capacity"},
+}
 _EURO = "\u20ac"
 _FIELD_PATTERNS = {
     "star_rating": re.compile(r"^\d+(?:\.\d+)?$"),
@@ -182,17 +192,21 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
                 issues["type_mismatch"].append({"url": url, "field": field, "value": value})
 
     if len(valid_details) >= 2:
-        counts: dict[str, list[int]] = {}
+        expected_fields = _EXPECTED_DETAIL_FIELDS_BY_PRODUCT.get(product_key, set())
+        counts: dict[str, list[int]] = {field: [0, len(valid_details)] for field in expected_fields}
         for rec in valid_details:
             for field, value in rec.items():
                 if field in _METADATA_KEYS or field.startswith("_"):
                     continue
                 slot = counts.setdefault(field, [0, 0])
                 slot[0] += int(value not in (None, ""))
-                slot[1] += 1
+                if field not in expected_fields:
+                    slot[1] += 1
         valid_null = _VALID_NULL_BY_PRODUCT.get(product_key, set())
         notice_null = _NOTICE_NULL_BY_PRODUCT.get(product_key, set())
         for field, (non_null, total) in sorted(counts.items()):
+            if field == "sku":
+                continue
             if total >= 2 and non_null == 0:
                 if field in valid_null:
                     if field in notice_null:

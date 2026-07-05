@@ -1,4 +1,4 @@
-﻿"""Field-level English normalization for Amazon.de SEG outputs."""
+"""Field-level English normalization for Amazon.de SEG outputs."""
 from __future__ import annotations
 
 import re
@@ -6,6 +6,7 @@ from typing import Any
 
 TRANSLATED_FIELDS = {
     "discount_type",
+    "sku_popularity",
     "delivery_availability",
     "fastest_delivery",
     "inventory_status",
@@ -174,7 +175,19 @@ def translate_field(field: str, value: Any) -> str | None:
         return None
     if field not in TRANSLATED_FIELDS:
         return text
+    if field == "sku_popularity":
+        normalized = re.sub(r"\s+", " ", text).strip()
+        folded = normalized.casefold()
+        if "bestseller" in folded or "best seller" in folded:
+            return "Bestseller"
+        if "amazons tipp" in folded or "amazon's choice" in folded or "amazon\u2019s choice" in folded:
+            return "Amazon's Choice"
+        return None
     if field == "screen_size":
+        match = re.search(r"(\d+(?:[,.]\d+)?)\s*(?:zoll|inch(?:es)?|[\"\u201d])", text, flags=re.IGNORECASE)
+        if match:
+            size = match.group(1).replace(",", ".")
+            return f"{size} inches"
         text = _replace_case_insensitive(text, r"\bzoll\b", "inches")
         return re.sub(r"\s+", " ", text).strip()
     if field == "ref_refrigerator_type":

@@ -80,6 +80,108 @@ def _rating_count(root) -> str | None:
     return None
 
 
+_INVISIBLE_RE = re.compile(r"[\u200e\u200f\u200b\xa0]+")
+_KEY_TRANS = str.maketrans({
+    "\u00e4": "ae", "\u00c4": "ae", "\u00f6": "oe", "\u00d6": "oe",
+    "\u00fc": "ue", "\u00dc": "ue", "\u00df": "ss",
+})
+
+
+def _fact_clean(value: Any) -> str | None:
+    text = clean_text(value)
+    if not text:
+        return None
+    text = _INVISIBLE_RE.sub(" ", text)
+    text = re.sub(r"\s+", " ", text).strip(" :\uff1a-\u200e\u200f")
+    return text or None
+
+
+def _fact_key(value: Any) -> str:
+    text = _fact_clean(value) or ""
+    text = text.translate(_KEY_TRANS).casefold()
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _add_fact(facts: dict[str, str], key: Any, value: Any) -> None:
+    k = _fact_clean(key)
+    v = _fact_clean(value)
+    if not k or not v or _fact_key(k) == _fact_key(v):
+        return
+    facts.setdefault(k, v)
+
+
+def _collect_product_facts(soup: BeautifulSoup) -> dict[str, str]:
+    facts: dict[str, str] = {}
+    row_selectors = ", ".join([
+        "#productOverview_feature_div tr",
+        "#poExpander tr",
+        "#productFactsDesktopExpander tr",
+        "#productFactsDesktop_feature_div tr",
+        "#productDetails_expanderTables_depthLeftSections tr",
+        "#productDetails_expanderTables_depthRightSections tr",
+        "#productDetails_techSpec_section_1 tr",
+        "#productDetails_detailBullets_sections1 tr",
+        "#technicalSpecifications_feature_div tr",
+        "#prodDetails tr",
+        "#tech tr",
+        "table.a-keyvalue tr",
+        "table.prodDetTable tr",
+    ])
+    for row in soup.select(row_selectors):
+        cells = [_fact_clean(c.get_text(" ")) for c in row.select("th,td")]
+        cells = [c for c in cells if c]
+        if len(cells) >= 2:
+            _add_fact(facts, cells[0], cells[-1])
+
+    for li in soup.select("#detailBullets_feature_div li"):
+        key_node = li.select_one("span.a-text-bold")
+        text = _fact_clean(li.get_text(" "))
+        if key_node and text:
+            key = _fact_clean(key_node.get_text(" "))
+            value = text
+            if key and value.startswith(key):
+                value = value[len(key):]
+            _add_fact(facts, key, value)
+            continue
+        if text and re.search(r"[:\uff1a]", text):
+            key, value = re.split(r"\s*[:\uff1a]\s*", text, maxsplit=1)
+            _add_fact(facts, key, value)
+    return facts
+
+
+def _screen_size_from_text(*values: Any) -> str | None:
+    patterns = (
+        r"(\d{2,3}(?:[,.]\d+)?)\s*(?:zoll|inch(?:es)?|[\"\u201d])",
+        r"(?:zoll|inch(?:es)?)\s*(\d{2,3}(?:[,.]\d+)?)",
+    )
+    for value in values:
+        text = _fact_clean(value)
+        if not text:
+            continue
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                size = match.group(1).replace(",", ".")
+                try:
+                    numeric = float(size)
+                except ValueError:
+                    continue
+                if 10 <= numeric <= 150:
+                    return f"{size} inches"
+    return None
+
+
+def _model_year_from_text(*values: Any) -> str | None:
+    for value in values:
+        text = _fact_clean(value)
+        if not text:
+            continue
+        match = re.search(r"(?:modelljahr|model\s+year)[^0-9]{0,30}(20[0-3]\d)", text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
+
+
 def parse_listing_html(html: str, *, page: int, sort: str, start_rank: int = 1) -> list[dict[str, Any]]:
     soup = BeautifulSoup(html or "", "lxml")
     rows: list[dict[str, Any]] = []
@@ -101,7 +203,7 @@ def parse_listing_html(html: str, *, page: int, sort: str, start_rank: int = 1) 
             "final_sku_price": _price_text(item),
             "original_sku_price": _original_price(item),
             "discount_type": translate_field("discount_type", clean_text(item.select_one(".a-badge-text").get_text(" ") if item.select_one(".a-badge-text") else None)),
-            "sku_popularity": clean_text(item.select_one(".a-badge-label .a-badge-text, .a-badge-label").get_text(" ") if item.select_one(".a-badge-label .a-badge-text, .a-badge-label") else None),
+            "sku_popularity": translate_field("sku_popularity", clean_text(item.select_one(".a-badge-label .a-badge-text, .a-badge-label").get_text(" ") if item.select_one(".a-badge-label .a-badge-text, .a-badge-label") else None)),
             "number_of_units_purchased_past_month": clean_text(item.select_one("span.a-size-base.a-color-secondary").get_text(" ") if item.select_one("span.a-size-base.a-color-secondary") else None),
             "sku_status": "Sponsored" if (item.select_one(".puis-sponsored-label-text") or "Gesponsert" in item.get_text(" ")) else None,
             "star_rating": _rating_text(item),
@@ -179,21 +281,26 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
     qty = soup.find(string=re.compile(r"Nur noch \d+ auf Lager", re.I))
     data["available_quantity_for_purchase"] = clean_text(qty)
 
-    facts = {}
-    for row in soup.select("#productDetails_techSpec_section_1 tr, #productDetails_detailBullets_sections1 tr"):
-        cells = [clean_text(c.get_text(" ")) for c in row.select("th,td")]
-        if len(cells) >= 2:
-            facts[cells[0].rstrip(":")] = cells[1]
-    for li in soup.select("#detailBullets_feature_div li"):
-        text = clean_text(li.get_text(" "))
-        if text and ":" in text:
-            key, value = text.split(":", 1)
-            facts[clean_text(key).rstrip(":")] = clean_text(value)
+    facts = _collect_product_facts(soup)
+    fact_text = " | ".join([*facts.keys(), *facts.values()])
     data["facts_json"] = json.dumps(facts, ensure_ascii=False)
-    data["sku"] = first_by_key(facts, "Hersteller", "Modellnummer", "Manufacturer", "Model")
-    data["model_year"] = first_by_key(facts, "Modelljahr", "Model Year")
-    data["screen_size"] = first_by_key(facts, "Bildschirmgröße", "Displaygröße", "Standing screen display size")
-    data["estimated_annual_electricity_use"] = first_by_key(facts, "Elektrische Leistung", "Wattage", "Energy Consumption")
+    data["sku"] = first_by_key(
+        facts,
+        "Manufacturer Part Number", "Mfr Part Number", "Model Number", "Modellnummer",
+        "Part Number", "Artikelnummer", "Item Model Number", "Item model number",
+        "Item Part Number", "Model Name", "Manufacturer reference", "Herstellerreferenz",
+    )
+    data["model_year"] = first_by_key(facts, "Modelljahr", "Model Year") or _model_year_from_text(data.get("retailer_sku_name"), fact_text)
+    data["screen_size"] = first_by_key(
+        facts,
+        "Bildschirmgr\u00f6\u00dfe", "Bildschirmgroesse", "Bildschirmdiagonale", "Displaygr\u00f6\u00dfe", "Displaygroesse",
+        "Screen Size", "Display Size", "Standing screen display size",
+    ) or _screen_size_from_text(data.get("retailer_sku_name"), fact_text)
+    data["estimated_annual_electricity_use"] = first_by_key(
+        facts,
+        "J\u00e4hrlicher Energieverbrauch", "Jaehrlicher Energieverbrauch", "Energieverbrauch",
+        "Annual Energy Consumption", "Energy Consumption", "Elektrische Leistung", "Wattage", "Power Consumption",
+    )
 
     similar = []
     for node in soup.select("#sp_detail a[href*='/dp/'], #similarities_feature_div a[href*='/dp/'], #anonCarousel1 a[href*='/dp/']"):
@@ -207,12 +314,12 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
 
 
 def first_by_key(facts: dict[str, str | None], *keys: str) -> str | None:
-    for wanted in keys:
-        for key, value in facts.items():
-            if wanted.lower() in key.lower() and value:
-                return value
+    wanted_keys = [_fact_key(wanted) for wanted in keys]
+    for key, value in facts.items():
+        normalized = _fact_key(key)
+        if value and any(wanted and wanted in normalized for wanted in wanted_keys):
+            return value
     return None
-
 
 def parse_review_html(html: str, *, limit: int = 20) -> dict[str, Any]:
     soup = BeautifulSoup(html or "", "lxml")

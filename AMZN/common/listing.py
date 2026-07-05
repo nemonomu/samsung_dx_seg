@@ -122,7 +122,6 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                     save_text(ref / f"page_{page:02d}.html", resp["text"])
                 start_rank = len(rows) + 1
                 parsed = []
-                fallback_parsed = parsers.parse_bsr_html(resp["text"], start_rank=start_rank) if sort == "bsr" else parsers.parse_listing_html(resp["text"], page=page, sort=sort, start_rank=start_rank)
                 if session.driver is not None:
                     if sort == "bsr":
                         expected_count = min(50, max(target - start_rank + 1, 1))
@@ -134,17 +133,6 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                         )
                     else:
                         parsed = selector_api.extract_cards(session.driver, selector_map, sort=sort, start_rank=start_rank)
-                if parsed:
-                    fallback_by_asin = {(r.get("asin") or r.get("item") or ""): r for r in fallback_parsed}
-                    for row in parsed:
-                        fallback = fallback_by_asin.get(row.get("asin") or row.get("item") or "") or {}
-                        for key, value in fallback.items():
-                            if row.get(key) in (None, "") and value not in (None, ""):
-                                normalized = selector_api.normalize_field(key, value)
-                                if normalized not in (None, ""):
-                                    row[key] = normalized
-                else:
-                    parsed = fallback_parsed
                 parsed = [
                     _apply_record_meta(cfg, _normalize_listing_row(r), sort=sort, page=page, source_url=resp["url"], batch_id=batch_id)
                     for r in parsed

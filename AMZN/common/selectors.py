@@ -508,34 +508,7 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
         html = driver.page_source or ""
     except WebDriverException:
         pass
-    fallback = parsers.parse_product_detail_html(html) if html else {}
     selector_fields = set(selectors)
-    for key, value in fallback.items():
-        if key == "facts_json" or key not in selector_fields:
-            continue
-        if data.get(key) not in (None, "") or value in (None, ""):
-            continue
-        if key == "retailer_sku_name_similar":
-            parts = [part.strip() for part in str(value).split("|||") if part.strip()] if "|||" in str(value) else [value]
-            if str(product).lower() == "ref":
-                parts = siel_logging.filter_similar_noise_ref(parts)
-            else:
-                parts = siel_logging.filter_similar_noise(parts)
-            data[key] = siel_logging.format_similar_names(parts)
-        elif key == "detailed_review_content":
-            data[key] = clean(value)
-        else:
-            data[key] = normalize_field(key, value)
-    if not data.get("detailed_review_content") and html:
-        review = parsers.parse_review_html(html)
-        for key, value in review.items():
-            if key not in selector_fields and not (
-                key == "count_of_reviews" and "detailed_review_content" in selector_fields
-            ):
-                continue
-            if data.get(key) not in (None, "") or value in (None, ""):
-                continue
-            data[key] = normalize_field(key, value) if key != "detailed_review_content" else clean(value)
     if data.get("detailed_review_content") and data.get("count_of_reviews") in (None, ""):
         data["count_of_reviews"] = siel_logging.count_review_cards(data.get("detailed_review_content"))
     if (

@@ -8,12 +8,16 @@ from typing import Any
 from common import item_mst, siel_logging as siel_log
 from common.config import run_meta
 from common.full_output import BASE_FIELDS
-from common.io_util import ACCOUNT_NAME, COUNTRY, category_output_root, db_config, split_table, write_csv, write_json
+from common.io_util import ACCOUNT_NAME, COUNTRY, RETAILER, category_output_root, db_config, split_table, write_csv, write_json
 from common.jsonl import read_jsonl
 from common.translations import translate_record_fields
 
 INT_COLUMNS = {"main_rank", "bsr_rank"}
 BOOL_COLUMNS = {"redirect"}
+
+
+def _account_delete_names() -> list[str]:
+    return list(dict.fromkeys([ACCOUNT_NAME, RETAILER]))
 
 
 def _quote(ident: str) -> str:
@@ -309,8 +313,8 @@ def insert_rows(cfg, rows: list[dict[str, Any]], *, dry_run: bool = False,
             with conn.cursor() as cur:
                 if batch_ids:
                     cur.execute(
-                        f"DELETE FROM {_quote(schema)}.{_quote(table)} WHERE batch_id = ANY(%s) AND account_name = %s",
-                        (batch_ids, ACCOUNT_NAME),
+                        f"DELETE FROM {_quote(schema)}.{_quote(table)} WHERE batch_id = ANY(%s) AND account_name = ANY(%s)",
+                        (batch_ids, _account_delete_names()),
                     )
                     deleted = cur.rowcount
                 col_sql = ", ".join(_quote(c) for c in insert_cols)
@@ -367,8 +371,8 @@ class StreamingRetailInserter:
                 with self.conn:
                     with self.conn.cursor() as cur:
                         cur.execute(
-                            f"DELETE FROM {_quote(self.schema)}.{_quote(self.table)} WHERE batch_id = %s AND account_name = %s",
-                            (batch_id, ACCOUNT_NAME),
+                            f"DELETE FROM {_quote(self.schema)}.{_quote(self.table)} WHERE batch_id = %s AND account_name = ANY(%s)",
+                            (batch_id, _account_delete_names()),
                         )
                         self.deleted = cur.rowcount
 
