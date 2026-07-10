@@ -143,6 +143,29 @@ _AMZN_PRICE_SENTINELS = (
 )
 
 
+def _format_euro_amount(integer_part: str, cents: str) -> str:
+    integer = int(integer_part or "0")
+    grouped = f"{integer:,}".replace(",", ".")
+    return f"{grouped},{cents}€"
+
+
+def _repair_missing_euro_decimal(price: str) -> str:
+    if not price.endswith(_EURO):
+        return price
+    amount = price[:-1]
+    if "," in amount:
+        return price
+    compact = amount.replace(".", "")
+    if not compact.isdigit():
+        return price
+    if "." in amount and len(amount.rsplit(".", 1)[-1]) <= 3:
+        return price
+    if "." not in amount and len(compact) < 4:
+        return price
+    if len(compact) < 3:
+        return price
+    return _format_euro_amount(compact[:-2], compact[-2:])
+
 def parse_amzn_apex_price(value: Any) -> str | None:
     if value in (None, ""):
         return None
@@ -157,7 +180,7 @@ def parse_amzn_apex_price(value: Any) -> str | None:
         price = re.sub(r"\s+", "", match.group(0))
         if price.startswith(_EURO):
             price = price[1:] + _EURO
-        return price
+        return _repair_missing_euro_decimal(price)
     if any(sentinel.casefold() in text.casefold() for sentinel in _AMZN_PRICE_SENTINELS):
         return text
     return None

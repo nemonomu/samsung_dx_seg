@@ -312,12 +312,32 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
     ) or first_by_key(facts, "Elektrische Leistung")
 
     similar = []
-    for node in soup.select("#sp_detail a[href*='/dp/'], #similarities_feature_div a[href*='/dp/'], #anonCarousel1 a[href*='/dp/']"):
-        text = clean_text(node.get_text(" "))
+
+    def add_similar(value: Any) -> bool:
+        text = clean_text(value)
         if text and text not in similar:
             similar.append(text)
-        if len(similar) >= 20:
+        return len(similar) >= 20
+
+    for node in soup.select("#sp_detail2 a[id*='_title']"):
+        if add_similar(node.get("title") or node.get("aria-label") or node.get_text(" ")):
             break
+    if len(similar) < 20:
+        for node in soup.select("#sp_detail2 [data-adfeedbackdetails]"):
+            raw = node.get("data-adfeedbackdetails")
+            title = None
+            if raw:
+                try:
+                    payload = json.loads(raw)
+                    title = payload.get("title") if isinstance(payload, dict) else None
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    title = None
+            if add_similar(title):
+                break
+    if len(similar) < 20:
+        for node in soup.select("#sp_detail a[href*='/dp/'], #similarities_feature_div a[href*='/dp/'], #anonCarousel1 a[href*='/dp/']"):
+            if add_similar(node.get("title") or node.get("aria-label") or node.get_text(" ")):
+                break
     data["retailer_sku_name_similar"] = " ||| ".join(similar) if similar else None
     return data
 
