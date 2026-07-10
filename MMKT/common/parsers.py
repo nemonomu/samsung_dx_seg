@@ -302,7 +302,11 @@ SPEC_SCREEN_SIZE_ALT = "Bildschirmdiagonale (cm/Zoll)"
 SPEC_MODEL_YEAR = "Modelljahr"
 SPEC_POWER_HDR = "Leistungsaufnahme in Ein-Zustand (HDR)"
 SPEC_POWER_SDR = "Leistungsaufnahme in Ein-Zustand (SDR)"
-SPEC_SKU = "Hersteller Artikelnummer"
+# SKU target per the dev spec = "Modelkennung" (model identifier, e.g. "32HV02V",
+# "MF110W90B-14A10"). NOT "Hersteller Artikelnummer" (a manufacturer/internal id
+# like 10002386) and NOT the EAN barcode — both are wrong sources. If Modelkennung
+# is absent the product has no SKU → leave it NULL (no fallback).
+SPEC_SKU = "Modelkennung"
 
 
 def _find_main_product(apollo: dict[str, Any], sku_id: str) -> dict[str, Any]:
@@ -466,7 +470,7 @@ def parse_pdp_html(html: str, sku_id: str, cfg: Any = None) -> dict[str, Any]:
         # No.39 similar — needs Alternativen/reco source
         "retailer_sku_name_similar": None,
         # sku is common; product-specific specs come from cfg.extract_pdp_spec
-        "sku": text_clean(features.get(SPEC_SKU)) or text_clean(product.get("ean")),
+        "sku": text_clean(features.get(SPEC_SKU)),
         **spec,
         # No.44-46 ratings
         "star_rating": round(avg, 1) if avg is not None else None,
@@ -639,7 +643,7 @@ def parse_comparison_detail(resp: Any, sku_id: str, cfg: Any = None) -> dict[str
         "sku_id": sku_id,
         "delivery_availability": d_de, "delivery_availability_en": d_en,
         "pick_up_availability": p_de, "pick_up_availability_en": p_en,
-        "sku": text_clean(feats.get(SPEC_SKU)) or text_clean(pa.get("ean")),
+        "sku": text_clean(feats.get(SPEC_SKU)),
         **spec,
         "retailer_sku_name_similar": MULTI_VALUE_DELIMITER.join(similar_titles) or None,
         "star_rating": round(avg, 1) if avg is not None else None,
