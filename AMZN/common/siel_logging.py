@@ -149,6 +149,9 @@ def parse_amzn_apex_price(value: Any) -> str | None:
     text = re.sub(r"\s+", " ", str(value)).strip()
     if not text:
         return None
+    split_match = re.search(r"(\d{1,3}(?:\.\d{3})*)\s*,\s*(\d{2})\s*€", text)
+    if split_match:
+        return f"{split_match.group(1)},{split_match.group(2)}€"
     match = _AMZN_EURO_PRICE_RE.search(text)
     if match:
         price = re.sub(r"\s+", "", match.group(0))
@@ -186,7 +189,6 @@ _RATINGS_RE = re.compile(
     r"(\d[\d,.]*)\s*(?:global\s+)?(?:ratings?|bewertungen|sternebewertungen|kundenbewertungen)\b",
     re.I,
 )
-_REVIEWS_RE = re.compile(r"(\d[\d,.]*)\s*(?:reviews?|rezension(?:en)?)\b", re.I)
 _DETAILS_TAIL_RE = re.compile(r"\s*(?:Details|Einzelheiten)\.?\s*$", re.I)
 _NUM_ONLY_RE = re.compile(r"\s*\d[\d,.]*\s*")
 _REF_PRICE_NOISE_RE = re.compile(
@@ -260,17 +262,6 @@ def parse_count_of_ratings(value: Any) -> str | None:
     match = _NUM_CHUNK_RE.search(text)
     return _count_token(match.group(0)) if match else None
 
-
-def parse_count_of_reviews(value: Any) -> str | None:
-    if value in (None, ""):
-        return None
-    text = str(value).strip()
-    match = _REVIEWS_RE.search(text)
-    if match:
-        return _count_token(match.group(1))
-    if _NUM_ONLY_RE.fullmatch(text):
-        return _count_token(text)
-    return None
 
 
 def parse_delivery(value: Any) -> str | None:
@@ -429,7 +420,7 @@ def log_detail_result(logger, rec: dict[str, Any], product: str | None = None) -
         fields += ["screen_size", "model_year", "estimated_annual_electricity_use"]
     elif product_key == "ref":
         fields += ["ref_refrigerator_type", "ref_capacity"]
-    fields += ["count_of_reviews", "detailed_review_content"]
+    fields += ["detailed_review_content"]
     parts = []
     for field in fields:
         if field == "detailed_review_content":

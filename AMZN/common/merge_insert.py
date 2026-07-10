@@ -83,17 +83,6 @@ def _normalize_count(value: Any) -> str | None:
     return parsed
 
 
-def _normalize_review_count(value: Any) -> str | None:
-    parsed = siel_log.parse_count_of_reviews(value)
-    if parsed is not None:
-        return parsed
-    if value in (None, ""):
-        return None
-    try:
-        return f"{int(str(value).replace(',', '').replace('.', '')):,}"
-    except ValueError:
-        return None
-
 
 def _normalize_merged_row(row: dict[str, Any]) -> dict[str, Any]:
     for field in ("final_sku_price", "original_sku_price"):
@@ -103,11 +92,6 @@ def _normalize_merged_row(row: dict[str, Any]) -> dict[str, Any]:
         row["star_rating"] = siel_log.parse_star_rating(row.get("star_rating"))
     if row.get("count_of_star_ratings") not in (None, ""):
         row["count_of_star_ratings"] = _normalize_count(row.get("count_of_star_ratings"))
-    if row.get("count_of_reviews") not in (None, ""):
-        row["count_of_reviews"] = _normalize_review_count(row.get("count_of_reviews"))
-    elif row.get("detailed_review_content") not in (None, ""):
-        count = siel_log.count_review_cards(row.get("detailed_review_content"))
-        row["count_of_reviews"] = str(count) if count else None
     if row.get("model_year") not in (None, ""):
         row["model_year"] = siel_log.parse_model_year(row.get("model_year"))
     if row.get("sku_assurance") not in (None, ""):
@@ -134,7 +118,7 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
              detail_rec: dict[str, Any] | None) -> dict[str, Any] | None:
     detail_rec = detail_rec or {}
     detail_skip = detail_rec.get("_detail_skip")
-    redirect_listing_only = detail_skip == "asin_mismatch" and detail_rec.get("redirect") is True
+    redirect_listing_only = detail_skip in {"asin_mismatch", "url_mismatch_name_mismatch"} and detail_rec.get("redirect") is True
     if detail_skip and not redirect_listing_only:
         return None
 
@@ -143,6 +127,7 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
         return None
     redirect_use_landing = detail_rec.get("_redirect_use_landing") is True and detail_rec.get("redirect") is True
     detail_first = redirect_use_landing
+    detail_values = {} if redirect_listing_only else detail_rec
     crawl_dt = _first(detail_rec.get("crawl_datetime"), primary.get("crawl_datetime"), detail_rec.get("crawl_strdatetime"))
     item = _first(detail_rec.get("item"), detail_rec.get("landing_asin"), primary.get("item"), primary.get("asin"))
     if redirect_listing_only:
@@ -162,38 +147,36 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
         "redirect": detail_rec.get("redirect") if detail_rec.get("redirect") is not None else False,
         "retailer_sku_name": _first(
             primary.get("retailer_sku_name") if detail_first else None,
-            detail_rec.get("retailer_sku_name"),
+            detail_values.get("retailer_sku_name"),
             primary.get("retailer_sku_name"),
         ),
         "final_sku_price": _first(
-            detail_rec.get("final_sku_price") if detail_first else None,
+            detail_values.get("final_sku_price"),
             primary.get("final_sku_price"),
-            detail_rec.get("final_sku_price"),
         ),
         "original_sku_price": _first(
-            detail_rec.get("original_sku_price") if detail_first else None,
+            detail_values.get("original_sku_price"),
             primary.get("original_sku_price"),
-            detail_rec.get("original_sku_price"),
         ),
-        "savings": _first(primary.get("savings"), detail_rec.get("savings")),
-        "sku_popularity": _first(primary.get("sku_popularity"), detail_rec.get("sku_popularity")),
+        "savings": _first(primary.get("savings"), detail_values.get("savings")),
+        "sku_popularity": _first(primary.get("sku_popularity"), detail_values.get("sku_popularity")),
         "number_of_units_purchased_past_month": _first(
+            detail_values.get("number_of_units_purchased_past_month"),
             primary.get("number_of_units_purchased_past_month"),
-            detail_rec.get("number_of_units_purchased_past_month"),
         ),
-        "sku_status": _first(primary.get("sku_status"), detail_rec.get("sku_status")),
-        "discount_type": _first(primary.get("discount_type"), detail_rec.get("discount_type")),
+        "sku_status": _first(primary.get("sku_status"), detail_values.get("sku_status")),
+        "discount_type": _first(primary.get("discount_type"), detail_values.get("discount_type")),
     }
     detail_fields = [
-        "available_quantity_for_purchase", "delivery_availability", "fastest_delivery",
+        "delivery_availability", "fastest_delivery",
         "inventory_status", "screen_size", "model_year", "sku",
         "sku_assurance", "estimated_annual_electricity_use", "retailer_sku_name_similar",
-        "star_rating", "count_of_star_ratings", "count_of_reviews",
+        "star_rating", "count_of_star_ratings",
         "summarized_review_content", "detailed_review_content",
         "ref_refrigerator_type", "ref_capacity",
     ]
     for field in detail_fields:
-        row[field] = _first(detail_rec.get(field), primary.get(field))
+        row[field] = _first(detail_values.get(field), primary.get(field))
     if redirect_listing_only:
         row["_redirect_listing_only"] = True
     _normalize_merged_row(row)

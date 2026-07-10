@@ -45,12 +45,15 @@ _PHRASES = [
     (r"\bbefristetes\s+angebot\b", "Limited Time Offer"),
     (r"\bzeitlich\s+begrenztes\s+angebot\b", "Limited Time Offer"),
     (r"\blimited\s+time\s+offer\b", "Limited Time Offer"),
+    (r"\bendet\s+in\b", "Ends in"),
     (r"\bprime\s+exklusiv(?:es)?\s+angebot\b", "Prime Exclusive Offer"),
     (r"\btop\s+angebot\b", "Top Offer"),
     (r"\bangebot\b", "Offer"),
     (r"\bgratis\s+lieferung\b", "FREE delivery"),
     (r"\bkostenlose\s+lieferung\b", "FREE delivery"),
     (r"\bkostenloser\s+versand\b", "FREE delivery"),
+    (r"\bfuer\s+qualifizierte\s+erstbestellung\b", "for qualifying first order"),
+    (r"\bfür\s+qualifizierte\s+erstbestellung\b", "for qualifying first order"),
     (r"\boder\s+schnellste\s+lieferung\s+frühestens\b", "Or earliest delivery"),
     (r"\boder\s+schnellste\s+lieferung\s+fruehestens\b", "Or earliest delivery"),
     (r"\bschnellste\s+lieferung\s+frühestens\b", "earliest delivery"),
@@ -62,6 +65,9 @@ _PHRASES = [
     (r"\bnur\s+noch\s+(\d+)\s+in\s+stock\b", r"Only \1 left in stock"),
     (r"\bvor\u00fcbergehend\s+nicht\s+auf\s+lager\b", "Temporarily out of stock"),
     (r"\bvoruebergehend\s+nicht\s+auf\s+lager\b", "Temporarily out of stock"),
+    (r"\bderzeit\s+nicht\s+auf\s+lager\b", "Currently out of stock"),
+    (r"\bderzeit\s+nicht\s+in\s+stock\b", "Currently out of stock"),
+    (r"\bnicht\s+auf\s+lager\b", "Out of stock"),
     (r"\bauf\s+lager\b", "In Stock"),
     (r"\bderzeit\s+nicht\s+verf\u00fcgbar\b", "Currently unavailable"),
     (r"\bderzeit\s+nicht\s+verfuegbar\b", "Currently unavailable"),
@@ -72,6 +78,7 @@ _PHRASES = [
     (r"\bbestellen\s+sie\s+innerhalb\b", "Order within"),
     (r"\binnerhalb\b", "within"),
     (r"\bstunden?\b", "hours"),
+    (r"\bstdn\.?\b", "hrs"),
     (r"\bstd\.?\b", "hrs"),
     (r"\bminuten?\b", "mins"),
     (r"\bmin\.?\b", "mins"),
@@ -127,6 +134,20 @@ def _translate_dates(text: str) -> str:
     text = re.sub(
         rf"\b(?P<day>\d{{1,2}})\.\s*(?P<month>{month_names})\b",
         month_day,
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    def english_range(match: re.Match[str]) -> str:
+        month = match.group("month")
+        start_day = int(match.group("start"))
+        end_day = match.group("end")
+        suffix = match.group("suffix")
+        return f"{month} {_ordinal(start_day)} - {month} {end_day}{suffix}"
+
+    text = re.sub(
+        r"\b(?P<start>\d{1,2})\.\s*-\s*(?P<month>January|February|March|April|May|June|July|August|September|October|November|December)\s+(?P<end>\d{1,2})(?P<suffix>st|nd|rd|th)\b",
+        english_range,
         text,
         flags=re.IGNORECASE,
     )

@@ -20,7 +20,24 @@ def review_url(product_url: str | None, asin: str | None) -> str | None:
 
 def _norm_name(value: str | None) -> str:
     import re
-    return re.sub(r"\s+", " ", value or "").strip().casefold()
+    return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _norm_url(value: str | None) -> str:
+    return (parsers.canonical_url(value) or "").rstrip("/")
+
+
+def _urls_differ(listing_url: str | None, landing_url: str | None) -> bool:
+    listing = _norm_url(listing_url)
+    landing = _norm_url(landing_url)
+    return bool(listing and landing and listing != landing)
+
+
+def _extract_landing_name(driver, selector_map: dict[str, Any]) -> str | None:
+    if driver is None:
+        return None
+    value = selector_api.extract_single(driver, selector_map.get("retailer_sku_name"))
+    return selector_api.normalize_field("retailer_sku_name", value) if value else None
 
 
 def _crawl_datetime() -> str:
@@ -110,14 +127,14 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
             if save_html:
                 save_text(ref / f"{idx:04d}_{asin}_pdp.html", pdp["text"])
 
-            parsed_detail = selector_api.extract_detail(session.driver, selector_map, product=cfg.PRODUCT) if session.driver is not None and pdp.get("text") else {}
             landing_url = pdp.get("url") or product_url
             landing_asin = parsers.asin_from_url(landing_url)
+            parsed_detail = {}
             use_detail = True
             redirect_decision = None
-            if asin and landing_asin and asin != landing_asin:
+            if _urls_differ(product_url, landing_url):
                 listing_name = target.get("retailer_sku_name")
-                landing_name = parsed_detail.get("retailer_sku_name")
+                landing_name = _extract_landing_name(session.driver, selector_map) if pdp.get("text") else None
                 detail.update({
                     "redirect": True,
                     "landing_url": landing_url,
@@ -129,14 +146,15 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 if listing_name and landing_name and _norm_name(listing_name) == _norm_name(landing_name):
                     redirect_decision = "same_name_collect_landing"
                     detail["_redirect_use_landing"] = True
-                    detail["item"] = landing_asin
+                    detail["item"] = landing_asin or asin
                 else:
                     redirect_decision = "name_mismatch_listing_only"
-                    detail["_detail_skip"] = "asin_mismatch"
+                    detail["_detail_skip"] = "url_mismatch_name_mismatch"
                     use_detail = False
                 detail["_redirect_decision"] = redirect_decision
 
             if use_detail:
+                parsed_detail = selector_api.extract_detail(session.driver, selector_map, product=cfg.PRODUCT) if session.driver is not None and pdp.get("text") else {}
                 detail.update({k: v for k, v in parsed_detail.items() if v not in (None, "")})
                 detail["item"] = landing_asin or asin
                 detail["product_url"] = product_url
@@ -156,7 +174,6 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
             detail["loaded_url"] = landing_url
             detail["redirect_decision"] = redirect_decision
             review_text = bool(detail.get("detailed_review_content"))
-            review_count = detail.get("count_of_reviews")
             review_page_status = review.get("status")
             rows.append(detail)
             siel_log.warn_price_logic(logger, detail)
@@ -172,15 +189,14 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 "pdp_status": pdp.get("status"),
                 "review_page_status": review_page_status,
                 "review_text": review_text,
-                "review_count": review_count,
                 "redirect": detail.get("redirect"),
                 "redirect_decision": redirect_decision,
                 "detail_skip": detail.get("_detail_skip"),
                 "pdp_error": pdp.get("error"),
                 "review_error": review.get("error"),
             })
-            logger.info("rank=%d asin=%s pdp=%s review_text=%s review_count=%s review_page=%s redirect=%s detail_skip=%s", idx, asin, pdp.get("status"), review_text, review_count, review_page_status, redirect_decision or detail.get("redirect"), detail.get("_detail_skip"))
-            print(f"[detail/{cfg.PRODUCT}] rank={idx} asin={asin} pdp={pdp.get('status')} review_text={review_text} review_count={review_count or '-'} review_page={review_page_status or '-'} redirect={redirect_decision or detail.get('redirect')}", flush=True)
+            logger.info("rank=%d asin=%s pdp=%s review_text=%s review_page=%s redirect=%s detail_skip=%s", idx, asin, pdp.get("status"), review_text, review_page_status, redirect_decision or detail.get("redirect"), detail.get("_detail_skip"))
+            print(f"[detail/{cfg.PRODUCT}] rank={idx} asin={asin} pdp={pdp.get('status')} review_text={review_text} review_page={review_page_status or '-'} redirect={redirect_decision or detail.get('redirect')}", flush=True)
             if inter_detail_sleep > 0:
                 time.sleep(inter_detail_sleep)
     finally:

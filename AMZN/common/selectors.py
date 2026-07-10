@@ -18,6 +18,7 @@ from common.io_util import db_config, split_table
 ATTR_FIELDS = {"product_url": "href"}
 MULTI_FIELDS = {"retailer_sku_name_similar", "detailed_review_content"}
 EXPAND_FIELDS = {"expand_additional_details", "expand_item_details"}
+DISABLED_FIELDS = {"count_of_reviews"}
 
 
 def _quote(ident: str) -> str:
@@ -66,7 +67,7 @@ def load_selectors(stage: str, *, domain: str) -> dict[str, dict[str, str | None
             "fallback": row["fallback_xpath"],
         }
         for row in rows
-        if row["data_field"] and row["xpath_primary"]
+        if row["data_field"] and row["xpath_primary"] and str(row["data_field"]) not in DISABLED_FIELDS
     }
     if not selectors:
         raise RuntimeError(
@@ -84,7 +85,7 @@ def _element_text(el) -> str | None:
         text = clean(el.text)
         if text:
             return text
-        for attr in ("aria-label", "alt", "title", "value", "content"):
+        for attr in ("textContent", "innerText", "aria-label", "alt", "title", "value", "content"):
             value = clean(el.get_attribute(attr))
             if value:
                 return value
@@ -173,8 +174,6 @@ def normalize_field(field: str, value: str | None) -> str | None:
         return siel_logging.parse_star_rating(value)
     if field == "count_of_star_ratings":
         return siel_logging.parse_count_of_ratings(value)
-    if field == "count_of_reviews":
-        return siel_logging.parse_count_of_reviews(value)
     if field in {"final_sku_price", "original_sku_price"}:
         return siel_logging.parse_amzn_apex_price(value)
     if field == "model_year":
@@ -208,7 +207,7 @@ def extract_card(card, selectors: dict[str, dict[str, str | None]], *, sort: str
         "product_url": product_url,
     }
     for field, selector in selectors.items():
-        if field in {"base_container", "product_url"}:
+        if field in {"base_container", "product_url"} or field in DISABLED_FIELDS:
             continue
         value = extract_single(card, selector, attr=ATTR_FIELDS.get(field))
         if value:
@@ -349,20 +348,6 @@ def _normalize_bsr_record(raw: dict[str, Any]) -> dict[str, Any] | None:
         "item": asin,
         "product_url": product_url,
     }
-    name = clean(rec.get("retailer_sku_name"))
-    if name:
-        row["retailer_sku_name"] = name
-    price = normalize_field("final_sku_price", rec.get("final_sku_price"))
-    if price:
-        row["final_sku_price"] = price
-    rating_label = clean(rec.get("star_rating"))
-    count_label = clean(rec.get("count_of_star_ratings"))
-    star = normalize_field("star_rating", rating_label)
-    count = normalize_field("count_of_star_ratings", count_label) or normalize_field("count_of_star_ratings", rating_label)
-    if star:
-        row["star_rating"] = star
-    if count:
-        row["count_of_star_ratings"] = count
     return row
 
 
@@ -428,7 +413,7 @@ def extract_bsr_cards_siel(driver, selectors: dict[str, dict[str, str | None]], 
         pass
     if best_records:
         return best_records
-    return extract_cards(driver, selectors, sort="bsr", start_rank=start_rank)
+    return _rank_bsr_records(extract_cards(driver, selectors, sort="bsr", start_rank=start_rank), start_rank)
 
 
 def extract_cards(driver, selectors: dict[str, dict[str, str | None]], *, sort: str, start_rank: int = 1) -> list[dict[str, Any]]:
@@ -455,7 +440,7 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
         if field in selectors:
             click_expand(driver, selectors.get(field))
     for field, selector in selectors.items():
-        if field == "base_container" or field in EXPAND_FIELDS:
+        if field == "base_container" or field in EXPAND_FIELDS or field in DISABLED_FIELDS:
             continue
         if field in MULTI_FIELDS:
             values = extract_multi(driver, selector, limit=20)
@@ -476,7 +461,6 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
                         values = extract_multi(driver, selector, limit=20)
                 formatted = siel_logging.format_review_content(values)
                 data[field] = formatted
-                data["count_of_reviews"] = siel_logging.count_review_cards(formatted) if formatted else None
             elif field == "retailer_sku_name_similar":
                 if not values:
                     try:
@@ -509,8 +493,11 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
     except WebDriverException:
         pass
     selector_fields = set(selectors)
-    if data.get("detailed_review_content") and data.get("count_of_reviews") in (None, ""):
-        data["count_of_reviews"] = siel_logging.count_review_cards(data.get("detailed_review_content"))
+    if html:
+        parsed_fallback = parsers.parse_product_detail_html(html)
+        for field in ("sku", "screen_size", "model_year", "estimated_annual_electricity_use"):
+            if field in selector_fields and data.get(field) in (None, "") and parsed_fallback.get(field) not in (None, ""):
+                data[field] = normalize_field(field, parsed_fallback.get(field))
     if (
         "star_rating" in selector_fields
         and "count_of_star_ratings" in selector_fields

@@ -31,7 +31,6 @@ _EXPECTED_DETAIL_FIELDS_BY_PRODUCT = {
         "screen_size",
         "model_year",
         "estimated_annual_electricity_use",
-        "available_quantity_for_purchase",
     },
     "REF": {"sku", "ref_refrigerator_type", "ref_capacity"},
 }
@@ -39,7 +38,6 @@ _EURO = "\u20ac"
 _FIELD_PATTERNS = {
     "star_rating": re.compile(r"^\d+(?:\.\d+)?$"),
     "count_of_star_ratings": re.compile(r"^\d[\d,]*$"),
-    "count_of_reviews": re.compile(r"^\d[\d,]*$"),
     "final_sku_price": re.compile(
         rf"^(?:\d[\d.]*(?:,\d{{2}})?{re.escape(_EURO)}|{re.escape(_EURO)}\d[\d.]*(?:,\d{{2}})?)$"
     ),
@@ -106,7 +104,6 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
         "sku_null": [],
         "price_inversion": [],
         "rating_count_no_rating": [],
-        "review_count_no_review_text": [],
         "all_null_fields": [],
         "notice_null_fields": [],
         "type_mismatch": [],
@@ -180,10 +177,6 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
         rating_count = parse_int(rec.get("count_of_star_ratings"))
         if rating_count is not None and rating_count >= 1 and rec.get("star_rating") in (None, ""):
             issues["rating_count_no_rating"].append({"url": url, "count_of_star_ratings": rec.get("count_of_star_ratings")})
-        review_count = parse_int(rec.get("count_of_reviews"))
-        if review_count is not None and review_count >= 1 and rec.get("detailed_review_content") in (None, ""):
-            issues["review_count_no_review_text"].append({"url": url, "count_of_reviews": rec.get("count_of_reviews")})
-
         for field in _FIELD_PATTERNS:
             value = rec.get(field)
             if value in (None, ""):
@@ -252,7 +245,6 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     sku_nulls = issues["sku_null"]
     price_inv = issues["price_inversion"]
     rating_mis = issues["rating_count_no_rating"]
-    review_mis = issues["review_count_no_review_text"]
     all_null = issues["all_null_fields"]
     notice_null = issues.get("notice_null_fields", [])
     type_mis = issues["type_mismatch"]
@@ -263,7 +255,7 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     db_insert_zero = issues.get("db_insert_zero", [])
     db_summary = issues.get("db_insert_summary") or {}
     has_warning = bool(
-        redirects or sku_nulls or price_inv or rating_mis or review_mis or all_null or type_mis
+        redirects or sku_nulls or price_inv or rating_mis or all_null or type_mis
         or run_errors or detail_zero or listing_page_failures
     )
     has_sos = bool(db_insert_zero)
@@ -329,10 +321,6 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
         lines.append(f"- count_of_star_ratings>=1 but star_rating null: {len(rating_mis)}")
         for item in rating_mis:
             lines.append(f"  - {item['url']} (count_of_star_ratings={item['count_of_star_ratings']})")
-    if review_mis:
-        lines.append(f"- count_of_reviews>=1 but detailed_review_content null: {len(review_mis)}")
-        for item in review_mis:
-            lines.append(f"  - {item['url']} (count_of_reviews={item['count_of_reviews']})")
     if all_null:
         lines.append(f"- detail record all-null field (XPath/layout drift suspected): {len(all_null)}")
         for item in all_null:

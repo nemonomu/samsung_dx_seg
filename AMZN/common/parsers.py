@@ -80,6 +80,20 @@ def _rating_count(root) -> str | None:
     return None
 
 
+_INVENTORY_STATUS_RE = re.compile(
+    r"\b(?:Nur noch\s+\d+\s+(?:auf Lager|in stock)|Only\s+\d+\s+left\s+in\s+stock)\b",
+    re.I,
+)
+
+
+def _inventory_status_text(root) -> str | None:
+    text = clean_text(root.get_text(" "))
+    if not text:
+        return None
+    match = _INVENTORY_STATUS_RE.search(text)
+    return match.group(0) if match else None
+
+
 _INVISIBLE_RE = re.compile(r"[\u200e\u200f\u200b\xa0]+")
 _KEY_TRANS = str.maketrans({
     "\u00e4": "ae", "\u00c4": "ae", "\u00f6": "oe", "\u00d6": "oe",
@@ -206,6 +220,7 @@ def parse_listing_html(html: str, *, page: int, sort: str, start_rank: int = 1) 
             "sku_popularity": translate_field("sku_popularity", clean_text(item.select_one(".a-badge-label .a-badge-text, .a-badge-label").get_text(" ") if item.select_one(".a-badge-label .a-badge-text, .a-badge-label") else None)),
             "number_of_units_purchased_past_month": clean_text(item.select_one("span.a-size-base.a-color-secondary").get_text(" ") if item.select_one("span.a-size-base.a-color-secondary") else None),
             "sku_status": "Sponsored" if (item.select_one(".puis-sponsored-label-text") or "Gesponsert" in item.get_text(" ")) else None,
+            "inventory_status": translate_field("inventory_status", _inventory_status_text(item)),
             "star_rating": _rating_text(item),
             "count_of_star_ratings": _rating_count(item),
         }
@@ -235,8 +250,6 @@ def parse_bsr_html(html: str, *, start_rank: int = 1) -> list[dict[str, Any]]:
             if not asin or asin in seen:
                 continue
             seen.add(asin)
-            name_node = item.select_one("img[alt], .p13n-sc-truncate, a.a-link-normal span")
-            name = clean_text(name_node.get("alt") if name_node and name_node.name == "img" else name_node.get_text(" ") if name_node else None)
             rank_node = item.select_one(".zg-bdg-text")
             rank_text = clean_text(rank_node.get_text(" ")) if rank_node else None
             parsed_rank = None
@@ -248,11 +261,6 @@ def parse_bsr_html(html: str, *, start_rank: int = 1) -> list[dict[str, Any]]:
                 "asin": asin,
                 "item": asin,
                 "product_url": url,
-                "retailer_sku_name": name,
-                "final_sku_price": _price_text(item),
-                "original_sku_price": _original_price(item),
-                "star_rating": _rating_text(item),
-                "count_of_star_ratings": _rating_count(item),
                 "bsr_rank": parsed_rank or rank,
             }
             rows.append(row)
@@ -278,17 +286,16 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
     fastest = soup.select_one("#mir-layout-DELIVERY_BLOCK-slot-SECONDARY_DELIVERY_MESSAGE_LARGE")
     data["delivery_availability"] = translate_field("delivery_availability", clean_text(delivery.get_text(" ")) if delivery else None)
     data["fastest_delivery"] = translate_field("fastest_delivery", clean_text(fastest.get_text(" ")) if fastest else None)
-    qty = soup.find(string=re.compile(r"Nur noch \d+ auf Lager", re.I))
-    data["available_quantity_for_purchase"] = clean_text(qty)
 
     facts = _collect_product_facts(soup)
     fact_text = " | ".join([*facts.keys(), *facts.values()])
     data["facts_json"] = json.dumps(facts, ensure_ascii=False)
     data["sku"] = first_by_key(
         facts,
-        "Manufacturer Part Number", "Mfr Part Number", "Model Number", "Modellnummer",
+        "Hersteller-Teilenummer", "Manufacturer Part Number", "Mfr Part Number",
+        "Hersteller-Modellnummer", "Model Number", "Modellnummer",
         "Part Number", "Artikelnummer", "Item Model Number", "Item model number",
-        "Item Part Number", "Model Name", "Manufacturer reference", "Herstellerreferenz",
+        "Item Part Number", "Modellname", "Model Name", "Manufacturer reference", "Herstellerreferenz",
     )
     data["model_year"] = first_by_key(facts, "Modelljahr", "Model Year") or _model_year_from_text(data.get("retailer_sku_name"), fact_text)
     data["screen_size"] = first_by_key(
@@ -298,9 +305,8 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
     ) or _screen_size_from_text(data.get("retailer_sku_name"), fact_text)
     data["estimated_annual_electricity_use"] = first_by_key(
         facts,
-        "J\u00e4hrlicher Energieverbrauch", "Jaehrlicher Energieverbrauch", "Energieverbrauch",
-        "Annual Energy Consumption", "Energy Consumption", "Elektrische Leistung", "Wattage", "Power Consumption",
-    )
+        "J\u00e4hrlicher Energieverbrauch", "Jaehrlicher Energieverbrauch",
+    ) or first_by_key(facts, "Elektrische Leistung")
 
     similar = []
     for node in soup.select("#sp_detail a[href*='/dp/'], #similarities_feature_div a[href*='/dp/'], #anonCarousel1 a[href*='/dp/']"):
@@ -314,11 +320,13 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
 
 
 def first_by_key(facts: dict[str, str | None], *keys: str) -> str | None:
-    wanted_keys = [_fact_key(wanted) for wanted in keys]
-    for key, value in facts.items():
-        normalized = _fact_key(key)
-        if value and any(wanted and wanted in normalized for wanted in wanted_keys):
-            return value
+    normalized_facts = [(_fact_key(key), value) for key, value in facts.items()]
+    for wanted in (_fact_key(key) for key in keys):
+        if not wanted:
+            continue
+        for normalized, value in normalized_facts:
+            if value and wanted in normalized:
+                return value
     return None
 
 def parse_review_html(html: str, *, limit: int = 20) -> dict[str, Any]:
@@ -343,7 +351,6 @@ def parse_review_html(html: str, *, limit: int = 20) -> dict[str, Any]:
     summary_node = soup.select_one("[data-hook='cr-insights-widget'] span, .reviewSummary")
     summary = clean_text(summary_node.get_text(" ")) if summary_node else None
     return {
-        "count_of_reviews": len(reviews) if reviews else None,
         "summarized_review_content": summary,
         "detailed_review_content": " ||| ".join(f"review{i} - {text}" for i, text in enumerate(reviews, start=1)) if reviews else None,
     }
