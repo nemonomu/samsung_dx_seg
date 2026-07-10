@@ -193,6 +193,9 @@ def _model_year_from_text(*values: Any) -> str | None:
         match = re.search(r"(?:modelljahr|model\s+year)[^0-9]{0,30}(20[0-3]\d)", text, flags=re.IGNORECASE)
         if match:
             return match.group(1)
+        paren_match = re.search(r"[\[(]\s*(20[0-3]\d)\s*[\])]", text)
+        if paren_match:
+            return paren_match.group(1)
     return None
 
 

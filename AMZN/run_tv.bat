@@ -7,4 +7,4 @@ if errorlevel 1 (
     echo   python -m pip install -r requirements.txt
     exit /b 1
 )
-python run.py --product tv --email-report %*
+python run.py --product tv --email-report --streaming-insert %*
