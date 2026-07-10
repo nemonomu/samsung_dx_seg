@@ -1,12 +1,14 @@
 """Step14: load mmkt_full_output.csv into dx_seg.dx_seg_tv_retail_com (PostgreSQL).
 
-Batch-replace semantics: rows matching the CSV's batch_id(s) + account_name
-("MMKT") are deleted first, then all CSV rows are re-inserted. Only columns that
-exist in the target table are written; empty strings become SQL NULL. DB
-credentials come from DB_CONFIG in the project .env and are never printed.
+INSERT-ONLY: this step NEVER deletes or updates existing DB rows. Each run
+appends the current crawl (distinguished by its batch_id). Any deletion or
+edit of existing rows must be done manually by the user — the pipeline is not
+permitted to remove DB data automatically. Only columns that exist in the target
+table are written; empty strings become SQL NULL. DB credentials come from
+DB_CONFIG in the project .env and are never printed.
 
   python MMKT/step14_db_save.py --dry-run   # map + report, no DB connection
-  python MMKT/step14_db_save.py             # actually load
+  python MMKT/step14_db_save.py             # actually load (insert-only)
 """
 from __future__ import annotations
 
@@ -38,12 +40,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=os.getenv("MMKT_DB_DRY_RUN", "0").strip().lower() in {"1", "true", "yes", "y"},
         help="Map rows and report, but do not connect/write.",
-    )
-    p.add_argument(
-        "--replace-account",
-        action="store_true",
-        help="full reload: delete ALL existing rows for this account_name, then insert "
-             "(use when the batch_id changed, e.g. a fresh re-crawl).",
     )
     return p.parse_args()
 
@@ -134,22 +130,9 @@ def main() -> int:
                     raise RuntimeError(f"DB table not found: {schema}.{table}")
                 insert_columns = [c for c in existing if c != "id" and c in csv_fields]
 
-                deleted = 0
-                if args.replace_account:
-                    cur.execute(
-                        f"DELETE FROM {quote_ident(schema)}.{quote_ident(table)} "
-                        f"WHERE account_name = %s",
-                        (ACCOUNT_NAME,),
-                    )
-                    deleted = cur.rowcount
-                elif batch_ids:
-                    cur.execute(
-                        f"DELETE FROM {quote_ident(schema)}.{quote_ident(table)} "
-                        f"WHERE batch_id = ANY(%s) AND account_name = %s",
-                        (batch_ids, ACCOUNT_NAME),
-                    )
-                    deleted = cur.rowcount
-
+                # INSERT-ONLY: never delete/update existing rows. Each run appends
+                # the current crawl (its own batch_id). Removing DB rows is a manual,
+                # user-authorized action only — the pipeline must not do it.
                 column_sql = ", ".join(quote_ident(c) for c in insert_columns)
                 placeholders = ", ".join(["%s"] * len(insert_columns))
                 sql = (
@@ -167,13 +150,12 @@ def main() -> int:
             "success": True,
             "skipped": False,
             "inserted_columns": insert_columns,
-            "deleted_existing": deleted,
             "inserted": inserted,
         }
     )
     write_json(cfg.OUTPUT_ROOT / "step14_db_save_manifest.json", manifest)
     print(f"[step14] target={schema}.{table} account={ACCOUNT_NAME} "
-          f"deleted={deleted} inserted={inserted} columns={len(insert_columns)}")
+          f"inserted={inserted} columns={len(insert_columns)} (insert-only, no delete)")
     return 0
 
 

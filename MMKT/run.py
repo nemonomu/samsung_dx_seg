@@ -27,7 +27,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--concurrency", type=int, default=1)
     p.add_argument("--transport", choices=["uc", "zenrows"], default="uc")
     p.add_argument("--dry-db", action="store_true", help="db step runs --dry-run")
-    p.add_argument("--no-replace", action="store_true", help="db step keeps existing rows (batch-replace only)")
     p.add_argument("--resume", action="store_true", help="detail step keeps already-collected rows, fetches only the rest")
     return p.parse_args()
 
@@ -59,7 +58,8 @@ def main() -> int:
     if "full" in steps:
         run_step("common.full_output", *P)
     if "db" in steps:
-        db_args = ["--dry-run"] if args.dry_db else ([] if args.no_replace else ["--replace-account"])
+        # db_save is insert-only; it never deletes existing rows.
+        db_args = ["--dry-run"] if args.dry_db else []
         run_step("common.db_save", *P, *db_args)
     if "notify" in steps:
         run_step("common.notify", *P)

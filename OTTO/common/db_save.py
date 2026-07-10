@@ -80,10 +80,8 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
                     return manifest
                 csv_fields = list(rows[0].keys())
                 insert_cols = [c for c in existing if c != "id" and c in csv_fields]
-                deleted = 0
-                if batch_ids:
-                    cur.execute(f"DELETE FROM {_quote(schema)}.{_quote(table)} WHERE batch_id = ANY(%s) AND account_name = %s", (batch_ids, cfg.ACCOUNT_NAME))
-                    deleted = cur.rowcount
+                # NOTE: insert-only. This step NEVER deletes/updates existing DB rows.
+                # Any row removal must be done manually by the user (explicit permission).
                 col_sql = ", ".join(_quote(c) for c in insert_cols)
                 ph = ", ".join(["%s"] * len(insert_cols))
                 cur.executemany(
@@ -94,7 +92,7 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
     finally:
         conn.close()
 
-    manifest.update(success=True, dry_run=False, inserted=inserted, deleted_existing=deleted, inserted_columns=insert_cols)
+    manifest.update(success=True, dry_run=False, inserted=inserted, inserted_columns=insert_cols)
     write_json(out / "step14_db_save_manifest.json", manifest)
-    print(f"[db/{cfg.PRODUCT}] target={schema}.{table} deleted={deleted} inserted={inserted} cols={len(insert_cols)}")
+    print(f"[db/{cfg.PRODUCT}] target={schema}.{table} inserted={inserted} cols={len(insert_cols)} (insert-only, no delete)")
     return manifest
