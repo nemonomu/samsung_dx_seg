@@ -88,6 +88,7 @@ def _normalize_merged_row(row: dict[str, Any]) -> dict[str, Any]:
     for field in ("final_sku_price", "original_sku_price"):
         if row.get(field) not in (None, ""):
             row[field] = siel_log.parse_amzn_apex_price(row.get(field))
+    siel_log.null_original_when_same_as_final(row)
     if row.get("star_rating") not in (None, ""):
         row["star_rating"] = siel_log.parse_star_rating(row.get("star_rating"))
     if row.get("count_of_star_ratings") not in (None, ""):

@@ -4,16 +4,17 @@ from __future__ import annotations
 import re
 from typing import Any
 
+_EURO = chr(8364)
+
 TRANSLATED_FIELDS = {
     "discount_type",
-    "sku_popularity",
+    "sku_status",
     "delivery_availability",
     "fastest_delivery",
     "inventory_status",
     "screen_size",
     "ref_refrigerator_type",
 }
-
 _WEEKDAYS = {
     "montag": "Monday",
     "dienstag": "Tuesday",
@@ -51,12 +52,14 @@ _PHRASES = [
     (r"\bangebot\b", "Offer"),
     (r"\bdu\s+zahlst\b", "You pay"),
     (r"\bcoupon\s+mit\s+(\d+)\s*%\s+rabatt\s+angewendet\b", r"Coupon with \1% discount applied"),
+    (r"\bcoupon\s+mit\s+([\d.,]+)\s*(?:\u20ac|EUR)?\s+rabatt\s+angewendet\b", r"Coupon with \1 € discount applied"),
     (r"\bgratis\s+lieferung\b", "FREE delivery"),
     (r"\bkostenlose\s+lieferung\b", "FREE delivery"),
     (r"\bkostenloser\s+versand\b", "FREE delivery"),
     (r"\bzum\s+wunschtermin\s+an\s+einen\s+ort\s+deiner\s+wahl\b", "by appointment to a location of your choice"),
     (r"\bfuer\s+qualifizierte\s+erstbestellung\b", "for qualifying first order"),
     (r"\bfür\s+qualifizierte\s+erstbestellung\b", "for qualifying first order"),
+    (r"\bfuer\b", "for"),
     (r"\boder\s+schnellste\s+lieferung\s+frühestens\b", "Or earliest delivery"),
     (r"\boder\s+schnellste\s+lieferung\s+fruehestens\b", "Or earliest delivery"),
     (r"\bschnellste\s+lieferung\s+frühestens\b", "earliest delivery"),
@@ -66,6 +69,7 @@ _PHRASES = [
     (r"\blieferung\b", "delivery"),
     (r"\bnur\s+noch\s+(\d+)\s+auf\s+lager\b", r"Only \1 left in stock"),
     (r"\bnur\s+noch\s+(\d+)\s+in\s+stock\b", r"Only \1 left in stock"),
+    (r"\bmehr\s+ist\s+unterwegs\b", "more on the way"),
     (r"\bvor\u00fcbergehend\s+nicht\s+auf\s+lager\b", "Temporarily out of stock"),
     (r"\bvoruebergehend\s+nicht\s+auf\s+lager\b", "Temporarily out of stock"),
     (r"\bderzeit\s+nicht\s+auf\s+lager\b", "Currently out of stock"),
@@ -172,19 +176,58 @@ _GERMAN_ASCII_MAP = {
 }
 
 _REF_TYPE_PHRASES = [
+    (r"\bkompakt\s+ohne\s+gefrierfach\b", "compact without freezer compartment"),
+    (r"\bvollformat\s*\(\s*ohne\s+gefrierfach\s*\)", "full-size without freezer compartment"),
+    (r"\bvollformat\s*\(\s*gefrierfach\s+unterhalb\s*\)", "full-size freezer-on-bottom"),
+    (r"\bvollformat\s*\(\s*gefrierfach\s+oberhalb\s*\)", "full-size freezer-on-top"),
+    (r"\bkuehlschrank\s+ohne\s+gefrierfach\b", "refrigerator without freezer compartment"),
+    (r"^\s*\"?mit\s+gefrierfach\"?\s*$", "with freezer compartment"),
+    (r"\bohne\s+gefrierfach\b", "without freezer compartment"),
+    (r"\bgefrierfach\s+innen\b", "internal freezer compartment"),
+    (r"\bkompakt\s+freezer[-\s]*on[-\s]*top\b", "compact freezer-on-top"),
+    (r"\bkompakter\s+gefrierschrank\s+unten\b", "compact freezer-on-bottom"),
+    (r"\bkompakt\s+interner\s+gefrierschrank\b", "compact internal freezer compartment"),
+    (r"\bkompakt\b", "compact"),
+    (r"\bkuehlfach\s+unten\s*/\s*eiswuerfelfach\s+oben\b", "refrigerator compartment bottom / ice cube compartment top"),
+    (r"\bkuehlraum\s+oben\s*/\s*gefrierraum\s+unten\b", "refrigerator compartment top / freezer compartment bottom"),
+    (r"\bgefrierraum\s+oben\s*/\s*kuehlraum\s+unten\b", "freezer compartment top / refrigerator compartment bottom"),
+    (r"\bfreezer[-\s]*on[-\s]*top\s*/\s*kuehlteil\s+unten\b", "freezer-on-top / refrigerator compartment bottom"),
+    (r"\beinbau[-\s]*kuehlgeraet\b", "built-in refrigerator"),
+    (r"\bfranzoesische\s+tueren\b", "French Door"),
+    (r"\bfreistehend\b", "freestanding"),
+    (r"\bmanuell\b", "manual"),
+    (r"\bwendbare\s+tuer\b", "reversible door"),
+    (r"\bintegrierte\s+auffangschale\b", "integrated drip tray"),
+    (r"\bedelstahl\s+antifingerprint\b", "stainless steel anti-fingerprint"),
+    (r"\bbosch\s+kuehl\s+gefrier\b", "Bosch refrigerator-freezer"),
+    (r"^\s*kuehlschrank\s*$", "refrigerator"),
+    (r"\bvollraum\b", "all-refrigerator"),
+    (r"\bohne\s+wasserspender\b", "without water dispenser"),
+    (r"\bmit\s+eis\s*[-/]?\s*/?\s*wasserspender\b", "with ice/water dispenser"),
+    (r"\bmultifach\s+mit\s+schubladen,\s*regalen,\s*flaschenfaechern\s+und\s+eierfaechern\b", "multi-compartment with drawers, shelves, bottle compartments and egg compartments"),
+    (r"\bsmart\s+inverter\s+kompressor\b", "Smart Inverter Compressor"),
+    (r"\bmini\s+reffrigerator\b", "Mini Refrigerator"),
+    (r"\bcompact\s+freezer[-\s]*on[-\s]*bottom\b", "compact freezer-on-bottom"),
+    (r"\bcompact\s+side[-\s]*by[-\s]*side\b", "compact Side-by-Side"),
+    (r"\bfull[-\s]*sized\s+side[-\s]*by[-\s]*side\b", "full-size Side-by-Side"),
+    (r"\bfull[-\s]*sized\s+french\s+door\b", "full-size French Door"),
+    (r"\bside[-\s]+by[-\s]+side\b", "Side-by-Side"),
+    (r"\bsingle\s+door\b", "Single Door"),
+    (r"\bcross\s+door\b", "Cross Door"),
     (r"\bgefrierfach\s+unten\b", "freezer-on-bottom"),
     (r"\bgefrierteil\s+unten\b", "freezer-on-bottom"),
     (r"\bgefrierfach\s+oben\b", "freezer-on-top"),
     (r"\bgefrierteil\s+oben\b", "freezer-on-top"),
     (r"\bkuehl[-\s]*gefrier[-\s]*kombination\b", "refrigerator-freezer combination"),
     (r"\bkuehlschrank\s+mit\s+gefrierfach\b", "refrigerator with freezer compartment"),
-    (r"\bside\s+by\s+side\b", "Side by Side"),
-    (r"\bfrench\s+door\b", "French Door"),
+    (r"\bsmall\uff0cno\s+freezer\s+compartment\b", "small, no freezer compartment"),
+    (r"\u5c0f\u578b\uff0c\u65e0\u51b7\u51bb\u5ba4", "small, no freezer compartment"),
 ]
 
 
 def _translate_common(text: str) -> str:
-    out = _translate_dates(text)
+    out = text.translate(_GERMAN_ASCII_MAP)
+    out = _translate_dates(out)
     for pattern, repl in _PHRASES:
         out = _replace_case_insensitive(out, pattern, repl)
     return re.sub(r"\s+", " ", out).strip()
@@ -210,7 +253,7 @@ def translate_field(field: str, value: Any) -> str | None:
             return "Bestseller"
         if "amazons tipp" in folded or "amazon's choice" in folded or "amazon\u2019s choice" in folded:
             return "Amazon's Choice"
-        return None
+        return _translate_common(normalized)
     if field == "screen_size":
         match = re.search(r"(\d+(?:[,.]\d+)?)\s*(?:zoll|inch(?:es)?|[\"\u201d])", text, flags=re.IGNORECASE)
         if match:

@@ -184,6 +184,15 @@ def normalize_field(field: str, value: str | None) -> str | None:
         return translate_field(field, siel_logging.parse_fastest_delivery(value))
     if field == "sku_assurance":
         return siel_logging.parse_sku_assurance(value)
+    if field == "sku":
+        sku = clean(value)
+        if sku and re.fullmatch(r"B0[A-Z0-9]{8}", sku.strip()):
+            return None
+        return sku
+    if field == "ref_refrigerator_type":
+        return translate_field(field, clean(value))
+    if field == "ref_capacity":
+        return clean(value)
     if field == "bsr_rank":
         return clean(value)
     return translate_field(field, clean(value))
@@ -212,6 +221,13 @@ def extract_card(card, selectors: dict[str, dict[str, str | None]], *, sort: str
         value = extract_single(card, selector, attr=ATTR_FIELDS.get(field))
         if value:
             row[field] = normalize_field(field, value)
+    if "sku_status" in selectors and not row.get("sku_status"):
+        try:
+            card_text = card.text or ""
+        except (StaleElementReferenceException, WebDriverException):
+            card_text = ""
+        if "gesponsert" in card_text.casefold() or "sponsored" in card_text.casefold():
+            row["sku_status"] = "Sponsored"
     if sort == "bsr":
         rank_text = row.get("bsr_rank")
         parsed_rank = None
@@ -462,6 +478,20 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
                 formatted = siel_logging.format_review_content(values)
                 data[field] = formatted
             elif field == "retailer_sku_name_similar":
+                if str(product).lower() == "ref":
+                    values = []
+                    try:
+                        values = parsers.extract_sp_detail2_titles(driver.page_source or "")
+                    except WebDriverException:
+                        values = []
+                    if not values:
+                        scroll_to_bottom(driver, pause=0.7, max_scrolls=5)
+                        try:
+                            values = parsers.extract_sp_detail2_titles(driver.page_source or "")
+                        except WebDriverException:
+                            values = []
+                    data[field] = siel_logging.format_similar_names(values)
+                    continue
                 if not values:
                     try:
                         driver.execute_script(
@@ -475,10 +505,7 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
                     if not values:
                         scroll_to_bottom(driver, pause=0.7, max_scrolls=5)
                         values = extract_multi(driver, selector, limit=20)
-                if str(product).lower() == "ref":
-                    values = siel_logging.filter_similar_noise_ref(values)
-                else:
-                    values = siel_logging.filter_similar_noise(values)
+                values = siel_logging.filter_similar_noise(values)
                 data[field] = siel_logging.format_similar_names(values)
             else:
                 data[field] = siel_logging.SIMILAR_SEP.join(values) if values else None
@@ -495,7 +522,9 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
     selector_fields = set(selectors)
     if html:
         parsed_fallback = parsers.parse_product_detail_html(html)
-        for field in ("sku", "screen_size", "model_year", "estimated_annual_electricity_use", "retailer_sku_name_similar"):
+        for field in ("sku", "screen_size", "model_year", "estimated_annual_electricity_use", "retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity", "number_of_units_purchased_past_month"):
+            if str(product).lower() == "ref" and field == "retailer_sku_name_similar":
+                continue
             if field in selector_fields and data.get(field) in (None, "") and parsed_fallback.get(field) not in (None, ""):
                 data[field] = normalize_field(field, parsed_fallback.get(field))
     if (

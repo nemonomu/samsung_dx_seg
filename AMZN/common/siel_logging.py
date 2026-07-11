@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -165,6 +166,31 @@ def _repair_missing_euro_decimal(price: str) -> str:
     if len(compact) < 3:
         return price
     return _format_euro_amount(compact[:-2], compact[-2:])
+
+def price_amount(value: Any) -> Decimal | None:
+    parsed = parse_amzn_apex_price(value)
+    if not parsed:
+        return None
+    token = _PRICE_TOKEN_RE.search(parsed)
+    if not token:
+        return None
+    try:
+        return Decimal(_normal_number(token.group(0))).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def prices_equal(left: Any, right: Any) -> bool:
+    left_amount = price_amount(left)
+    right_amount = price_amount(right)
+    return left_amount is not None and right_amount is not None and left_amount == right_amount
+
+
+def null_original_when_same_as_final(record: dict[str, Any]) -> dict[str, Any]:
+    if prices_equal(record.get("final_sku_price"), record.get("original_sku_price")):
+        record["original_sku_price"] = None
+    return record
+
 
 def parse_amzn_apex_price(value: Any) -> str | None:
     if value in (None, ""):

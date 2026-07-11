@@ -163,6 +163,105 @@ def _collect_product_facts(soup: BeautifulSoup) -> dict[str, str]:
     return facts
 
 
+
+_FACT_ROW_SELECTORS = ", ".join([
+    "#productOverview_feature_div tr",
+    "#poExpander tr",
+    "#productFactsDesktopExpander tr",
+    "#productFactsDesktop_feature_div tr",
+    "#productDetails_expanderTables_depthLeftSections tr",
+    "#productDetails_expanderTables_depthRightSections tr",
+    "#productDetails_techSpec_section_1 tr",
+    "#productDetails_detailBullets_sections1 tr",
+    "#technicalSpecifications_feature_div tr",
+    "#prodDetails tr",
+    "#tech tr",
+    "table.a-keyvalue tr",
+    "table.prodDetTable tr",
+])
+
+
+def _append_unique(values: list[str], value: Any) -> None:
+    text = _fact_clean(value)
+    if text and text not in values:
+        values.append(text)
+
+
+def _fact_values_from_soup(soup: BeautifulSoup, *keys: str) -> list[str]:
+    wanted = {_fact_key(key) for key in keys if _fact_key(key)}
+    values: list[str] = []
+    if not wanted:
+        return values
+    for row in soup.select(_FACT_ROW_SELECTORS):
+        cells = [_fact_clean(c.get_text(" ")) for c in row.select("th,td")]
+        cells = [c for c in cells if c]
+        if len(cells) >= 2 and _fact_key(cells[0]) in wanted:
+            _append_unique(values, cells[-1])
+    for li in soup.select("#detailBullets_feature_div li"):
+        key_node = li.select_one("span.a-text-bold")
+        text = _fact_clean(li.get_text(" "))
+        if key_node and text:
+            key = _fact_clean(key_node.get_text(" "))
+            value = text
+            if key and value.startswith(key):
+                value = value[len(key):]
+            if _fact_key(key) in wanted:
+                _append_unique(values, value)
+            continue
+        if text and re.search(r"[:\uff1a]", text):
+            key, value = re.split(r"\s*[:\uff1a]\s*", text, maxsplit=1)
+            if _fact_key(key) in wanted:
+                _append_unique(values, value)
+    return values
+
+
+def _detail_asin_from_page(soup: BeautifulSoup, facts: dict[str, str | None]) -> str | None:
+    for node in soup.select("input#ASIN, #averageCustomerReviews[data-asin], #cerberus-data-metrics[data-asin]"):
+        value = node.get("value") or node.get("data-asin")
+        text = clean_text(value)
+        if text and re.fullmatch(r"[A-Z0-9]{10}", text):
+            return text
+    asin = first_by_key(facts, "ASIN")
+    if asin and re.fullmatch(r"[A-Z0-9]{10}", asin.strip()):
+        return asin.strip()
+    return None
+
+
+def _is_asin_sku_candidate(value: Any, page_asin: str | None) -> bool:
+    text = clean_text(value)
+    if not text:
+        return False
+    text = text.strip().upper()
+    if page_asin and text == page_asin.strip().upper():
+        return True
+    return bool(re.fullmatch(r"B0[A-Z0-9]{8}", text))
+
+
+def _first_sku_value(soup: BeautifulSoup, facts: dict[str, str | None]) -> str | None:
+    page_asin = _detail_asin_from_page(soup, facts)
+    model_names = _fact_values_from_soup(soup, "Modellname", "Model Name")
+    for value in model_names:
+        if not _is_asin_sku_candidate(value, page_asin):
+            return value
+
+    model_number_keys = (
+        "Hersteller-Teilenummer", "Manufacturer Part Number", "Mfr Part Number",
+        "Hersteller-Modellnummer", "Manufacturer Model Number",
+        "Model Number", "Modellnummer",
+        "Part Number", "Artikelnummer", "Item Model Number", "Item model number",
+        "Item Part Number", "Manufacturer reference", "Herstellerreferenz",
+    )
+    model_numbers = _fact_values_from_soup(soup, *model_number_keys)
+    for value in model_numbers:
+        if not _is_asin_sku_candidate(value, page_asin):
+            return value
+
+    fallback = first_by_key(facts, "Modellname", "Model Name", *model_number_keys)
+    if fallback and not _is_asin_sku_candidate(fallback, page_asin):
+        return fallback
+    return None
+
+
 def _screen_size_from_text(*values: Any) -> str | None:
     patterns = (
         r"(\d{2,3}(?:[,.]\d+)?)\s*(?:zoll|inch(?:es)?|[\"\u201d])",
@@ -271,6 +370,39 @@ def parse_bsr_html(html: str, *, start_rank: int = 1) -> list[dict[str, Any]]:
     return rows
 
 
+def _direct_text(node: Any) -> str | None:
+    strings = []
+    for child in getattr(node, "contents", []) or []:
+        if isinstance(child, str):
+            strings.append(child)
+    return clean_text(" ".join(strings))
+
+
+def _sp_detail2_title_value(node: Any) -> str | None:
+    divs = [child for child in getattr(node, "children", []) if getattr(child, "name", None) == "div"]
+    if len(divs) >= 2:
+        text = _direct_text(divs[1]) or clean_text(divs[1].get_text(" "))
+        if text:
+            return text
+    return clean_text(node.get("title") or node.get("aria-label"))
+
+
+def _extract_sp_detail2_titles_from_soup(soup: BeautifulSoup, *, limit: int = 20) -> list[str]:
+    titles: list[str] = []
+    for node in soup.select("#sp_detail2 [id^='sp_detail2_'][id$='_title']"):
+        text = _sp_detail2_title_value(node)
+        if text and text not in titles:
+            titles.append(text)
+        if len(titles) >= limit:
+            break
+    return titles
+
+
+def extract_sp_detail2_titles(html: str, *, limit: int = 20) -> list[str]:
+    soup = BeautifulSoup(html or "", "lxml")
+    return _extract_sp_detail2_titles_from_soup(soup, limit=limit)
+
+
 def parse_product_detail_html(html: str) -> dict[str, Any]:
     soup = BeautifulSoup(html or "", "lxml")
     data: dict[str, Any] = {}
@@ -289,17 +421,13 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
     fastest = soup.select_one("#mir-layout-DELIVERY_BLOCK-slot-SECONDARY_DELIVERY_MESSAGE_LARGE")
     data["delivery_availability"] = translate_field("delivery_availability", clean_text(delivery.get_text(" ")) if delivery else None)
     data["fastest_delivery"] = translate_field("fastest_delivery", clean_text(fastest.get_text(" ")) if fastest else None)
+    bought = soup.select_one("#social-proofing-faceout-title-tk_bought")
+    data["number_of_units_purchased_past_month"] = clean_text(bought.get_text(" ")) if bought else None
 
     facts = _collect_product_facts(soup)
     fact_text = " | ".join([*facts.keys(), *facts.values()])
     data["facts_json"] = json.dumps(facts, ensure_ascii=False)
-    data["sku"] = first_by_key(
-        facts,
-        "Hersteller-Teilenummer", "Manufacturer Part Number", "Mfr Part Number",
-        "Hersteller-Modellnummer", "Model Number", "Modellnummer",
-        "Part Number", "Artikelnummer", "Item Model Number", "Item model number",
-        "Item Part Number", "Modellname", "Model Name", "Manufacturer reference", "Herstellerreferenz",
-    )
+    data["sku"] = _first_sku_value(soup, facts)
     data["model_year"] = first_by_key(facts, "Modelljahr", "Model Year") or _model_year_from_text(data.get("retailer_sku_name"), fact_text)
     data["screen_size"] = first_by_key(
         facts,
@@ -310,6 +438,15 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
         facts,
         "J\u00e4hrlicher Energieverbrauch", "Jaehrlicher Energieverbrauch",
     ) or first_by_key(facts, "Elektrische Leistung")
+    ref_type_value = first_by_key(facts, "Konfiguration", "Configuration")
+    ref_capacity_value = first_by_key(
+        facts,
+        "Fassungsverm\u00f6gen", "Fassungsvermoegen",
+        "Gesamtvolumen", "Gesamtnutzinhalt", "Nutzinhalt gesamt", "Gesamtkapazit\u00e4t", "Gesamtkapazitaet",
+        "Total Capacity", "Capacity",
+    )
+    data["ref_refrigerator_type"] = ref_type_value
+    data["ref_capacity"] = ref_capacity_value
 
     similar = []
 
@@ -319,8 +456,8 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
             similar.append(text)
         return len(similar) >= 20
 
-    for node in soup.select("#sp_detail2 a[id*='_title']"):
-        if add_similar(node.get("title") or node.get("aria-label") or node.get_text(" ")):
+    for value in _extract_sp_detail2_titles_from_soup(soup):
+        if add_similar(value):
             break
     if len(similar) < 20:
         for node in soup.select("#sp_detail2 [data-adfeedbackdetails]"):

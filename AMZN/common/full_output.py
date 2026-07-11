@@ -1,6 +1,7 @@
 """Step09: join Amazon listing targets and detail rows into DB-loadable output."""
 from __future__ import annotations
 
+from common import siel_logging
 from common.config import run_meta
 from common.io_util import ACCOUNT_NAME, COUNTRY, category_output_root, read_csv, write_csv, write_json
 from common.translations import translate_record_fields
@@ -52,7 +53,10 @@ def run(cfg) -> dict:
             "original_sku_price": first(detail.get("original_sku_price"), target.get("original_sku_price")),
             "savings": target.get("savings"),
             "sku_popularity": target.get("sku_popularity"),
-            "number_of_units_purchased_past_month": target.get("number_of_units_purchased_past_month"),
+            "number_of_units_purchased_past_month": first(
+                detail.get("number_of_units_purchased_past_month"),
+                target.get("number_of_units_purchased_past_month"),
+            ),
             "sku_status": target.get("sku_status"),
             "discount_type": target.get("discount_type"),
             "available_quantity_for_purchase": None,
@@ -72,6 +76,7 @@ def run(cfg) -> dict:
             "ref_refrigerator_type": detail.get("ref_refrigerator_type"),
             "ref_capacity": detail.get("ref_capacity"),
         }
+        siel_logging.null_original_when_same_as_final(row)
         translate_record_fields(row)
         rows.append(row)
     path = out / "amzn_full_output.csv"

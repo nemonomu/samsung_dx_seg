@@ -19,6 +19,16 @@ def _merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+
+
+def _renumber_main_ranks(rows: list[dict[str, Any]]) -> int:
+    next_rank = 1
+    for row in rows:
+        if row.get("main_rank") not in (None, ""):
+            row["main_rank"] = next_rank
+            next_rank += 1
+    return next_rank - 1
+
 def run(cfg) -> dict[str, Any]:
     out = category_output_root(cfg.PRODUCT)
     main_rows = read_csv(out / "amzn_listing_main.csv")
@@ -35,6 +45,7 @@ def run(cfg) -> dict[str, Any]:
         else:
             by_asin[asin] = _merge(by_asin[asin], row)
     rows = [by_asin[asin] for asin in order]
+    main_target_unique = _renumber_main_ranks(rows)
     path = out / "amzn_final_targets.csv"
     write_csv(path, rows)
     manifest = {
@@ -43,9 +54,10 @@ def run(cfg) -> dict[str, Any]:
         "main_rows": len(main_rows),
         "bsr_rows": len(bsr_rows),
         "unique_targets": len(rows),
-        "main_target_unique": LISTING_TARGET,
+        "main_target_unique": main_target_unique,
         "bsr_rank_limit": BSR_TARGET,
-        "main_target_shortfall": max(0, LISTING_TARGET - sum(1 for r in rows if r.get("main_rank"))),
+        "main_target_shortfall": max(0, LISTING_TARGET - main_target_unique),
+        "main_rank_renumbered": True,
         "output": str(path),
     }
     write_json(out / "step02_final_targets_manifest.json", manifest)
