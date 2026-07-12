@@ -1,6 +1,7 @@
 """DB-backed XPath selectors and Selenium extractors for Amazon.de."""
 from __future__ import annotations
 
+import os
 import re
 import time
 from typing import Any
@@ -162,6 +163,21 @@ def scroll_to_bottom(root, *, pause: float = 0.7, max_scrolls: int = 5) -> None:
             last_h = new_h
     except WebDriverException:
         return
+
+def _page_height(driver) -> int:
+    try:
+        return int(driver.execute_script(
+            "return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);"
+        ) or 0)
+    except WebDriverException:
+        return 0
+
+
+def _scroll_to(driver, y: int) -> None:
+    try:
+        driver.execute_script("window.scrollTo(0, arguments[0]);", max(0, int(y)))
+    except WebDriverException:
+        pass
 
 def normalize_field(field: str, value: str | None) -> str | None:
     if not value:
@@ -386,7 +402,7 @@ def _rank_bsr_records(records: list[dict[str, Any]], start_rank: int) -> list[di
 
 
 def extract_bsr_cards_siel(driver, selectors: dict[str, dict[str, str | None]], *, start_rank: int = 1,
-                           expected_count: int = 50) -> list[dict[str, Any]]:
+                           expected_count: int = 50, logger: Any | None = None) -> list[dict[str, Any]]:
     best_records: list[dict[str, Any]] = []
 
     def remember_records() -> list[dict[str, Any]]:
@@ -397,40 +413,87 @@ def extract_bsr_cards_siel(driver, selectors: dict[str, dict[str, str | None]], 
         return records
 
     records = remember_records()
+    if logger:
+        logger.info("bsr js render initial records=%d", len(records))
     if len(records) >= expected_count:
         return records
-    pause = 2.0
+    pause = float(os.getenv("AMZN_BSR_SCROLL_PAUSE", "2") or 2)
+    plateau_count = 0
+    last_count = len(records)
     try:
+        height = _page_height(driver)
+        if logger:
+            logger.info("bsr js render scroll start target=%d height=%d pause=%.1fs", expected_count, height, pause)
         for pct in (20, 40, 60, 80, 100):
             driver.execute_script('window.scrollTo(0, document.body.scrollHeight * arguments[0]);', pct / 100)
             time.sleep(pause)
             records = remember_records()
+            if len(records) == last_count:
+                plateau_count += 1
+            else:
+                plateau_count = 0
+            last_count = len(records)
+            if logger:
+                logger.info(
+                    "bsr js render scroll pct=%d records=%d best=%d plateau=%d",
+                    pct, len(records), len(best_records), plateau_count,
+                )
             if len(records) >= expected_count:
                 return records
+            if len(records) >= 30 and plateau_count >= 3:
+                break
         for amount in (700, 900, 1100, 1300, 1500, 1800, 2200, 2600):
             _dispatch_wheel(driver, amount)
             time.sleep(0.45)
             records = remember_records()
+            if logger:
+                logger.info("bsr js render wheel dy=%d records=%d best=%d", amount, len(records), len(best_records))
             if len(records) >= expected_count:
                 return records
         driver.execute_script('window.scrollTo(0, document.body.scrollHeight);')
         time.sleep(pause)
         records = remember_records()
+        if logger:
+            logger.info("bsr js render bottom records=%d best=%d height=%d", len(records), len(best_records), _page_height(driver))
         if len(records) >= expected_count:
             return records
+
+        if 30 <= len(best_records) < expected_count:
+            extra_cycles = int(os.getenv("AMZN_BSR_CLOSE_SETTLE_CYCLES", "3") or 3)
+            for cycle in range(1, extra_cycles + 1):
+                before = len(best_records)
+                _scroll_to(driver, 0)
+                time.sleep(0.7)
+                _key_scroll(driver, Keys.END, times=2, pause=0.7)
+                _selenium_wheel(driver, 3200)
+                time.sleep(pause)
+                records = remember_records()
+                if logger:
+                    logger.info(
+                        "bsr js render settle cycle=%d records=%d best=%d before=%d",
+                        cycle, len(records), len(best_records), before,
+                    )
+                if len(records) >= expected_count:
+                    return records
+                if len(best_records) >= expected_count:
+                    return best_records
         _key_scroll(driver, Keys.PAGE_DOWN, 8, pause=0.35)
         records = remember_records()
+        if logger:
+            logger.info("bsr js render after page_down records=%d best=%d", len(records), len(best_records))
         if len(records) >= expected_count:
             return records
         _key_scroll(driver, Keys.END, 1, pause=0.5)
         time.sleep(1.0)
         records = remember_records()
-    except WebDriverException:
-        pass
+        if logger:
+            logger.info("bsr js render after end records=%d best=%d", len(records), len(best_records))
+    except Exception as exc:
+        if logger:
+            logger.warning("bsr js render failed: %s: %s", type(exc).__name__, str(exc)[:220])
     if best_records:
         return best_records
     return _rank_bsr_records(extract_cards(driver, selectors, sort="bsr", start_rank=start_rank), start_rank)
-
 
 def extract_cards(driver, selectors: dict[str, dict[str, str | None]], *, sort: str, start_rank: int = 1) -> list[dict[str, Any]]:
     cards = _find(driver, (selectors.get("base_container") or {}).get("xpath"))

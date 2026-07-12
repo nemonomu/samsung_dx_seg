@@ -7,6 +7,8 @@ import time
 from datetime import datetime
 from typing import Any
 
+from selenium.common.exceptions import WebDriverException
+
 from common import parsers, selectors as selector_api, siel_logging as siel_log
 from common.config import BSR_TARGET, DEFAULT_SLEEP, DEFAULT_TIMEOUT, LISTING_TARGET
 from common.http import add_query, save_text
@@ -110,7 +112,8 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                     page_load_strategy=page_load_strategy,
                 )
                 own_session = True
-            for page in range(1, max_pages + 1):
+            page_limit = min(max_pages, max(1, (target + 49) // 50)) if sort == "bsr" else max_pages
+            for page in range(1, page_limit + 1):
                 url = page_url(cfg, sort, page)
                 logger.info("page=%d url=%s", page, url)
                 resp = session.fetch(
@@ -131,9 +134,46 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                             selector_map,
                             start_rank=start_rank,
                             expected_count=expected_count,
+                            logger=logger,
                         )
                     else:
                         parsed = selector_api.extract_cards(session.driver, selector_map, sort=sort, start_rank=start_rank)
+                    if sort == "bsr":
+                        if not parsed:
+                            logger.info("page=%d records=0 -> refresh", page)
+                            try:
+                                session.driver.refresh()
+                                time.sleep(3)
+                                parsed = selector_api.extract_bsr_cards_siel(
+                                    session.driver,
+                                    selector_map,
+                                    start_rank=start_rank,
+                                    expected_count=expected_count,
+                                    logger=logger,
+                                )
+                                logger.info("page=%d records=%d (after refresh primary-grid pass)", page, len(parsed))
+                            except WebDriverException as exc:
+                                logger.warning("page=%d refresh failed: %s", page, exc)
+                        elif len(parsed) < expected_count:
+                            logger.info(
+                                "page=%d records=%d<%d -> refresh/retry primary-grid pass",
+                                page, len(parsed), expected_count,
+                            )
+                            try:
+                                session.driver.refresh()
+                                time.sleep(3)
+                                retry_parsed = selector_api.extract_bsr_cards_siel(
+                                    session.driver,
+                                    selector_map,
+                                    start_rank=start_rank,
+                                    expected_count=expected_count,
+                                    logger=logger,
+                                )
+                                if len(retry_parsed) > len(parsed):
+                                    parsed = retry_parsed
+                                logger.info("page=%d records=%d (after refresh/retry primary-grid pass)", page, len(parsed))
+                            except WebDriverException as exc:
+                                logger.warning("page=%d refresh retry failed: %s", page, exc)
                 parsed = [
                     _apply_record_meta(cfg, _normalize_listing_row(r), sort=sort, page=page, source_url=resp["url"], batch_id=batch_id)
                     for r in parsed
@@ -142,7 +182,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                 pages.append({"page": page, "url": resp["url"], "status": resp["status"], "bytes": resp["bytes"], "parsed_rows": len(parsed), "error": resp["error"]})
                 logger.info("page=%d status=%s records=%d total=%d bytes=%s error=%s", page, resp["status"], len(parsed), len(rows), resp["bytes"], resp["error"])
                 print(f"[listing/{cfg.PRODUCT}/{sort}] page={page} status={resp['status']} parsed={len(parsed)} total={len(rows)}", flush=True)
-                if len(rows) >= target or not parsed:
+                if len(rows) >= target or (not parsed and sort != "bsr"):
                     break
                 if inter_page_sleep > 0:
                     time.sleep(inter_page_sleep)

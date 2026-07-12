@@ -71,6 +71,18 @@ def _emit_error(emit, *, stage: str, product: str, message: str, **extra: Any) -
     emit(rec)
 
 
+def _emit_warning(emit, *, stage: str, product: str, message: str, **extra: Any) -> None:
+    rec = {
+        "stage": stage,
+        "product": product,
+        "_warn": extra.pop("_warn", stage + " warning"),
+        "message": message,
+        "crawl_datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    rec.update(extra)
+    emit(rec)
+
+
 def _run_bsr_with_retries(cfg, args: argparse.Namespace, *, batch_id: str, emit) -> list[dict[str, Any]]:
     stage_max = args.bsr_max_rank
     strategies = _bsr_page_load_strategies(args)
@@ -135,8 +147,17 @@ def _run_bsr_with_retries(cfg, args: argparse.Namespace, *, batch_id: str, emit)
         emit(row)
     if len(best_rows) < required:
         message = f"BSR target not met: captured={len(best_rows)} required={required} expected={expected}"
-        _emit_error(emit, stage="bsr", product=cfg.PRODUCT, message=message, _error="bsr target not met", captured=len(best_rows), required=required, expected=expected)
-        raise RuntimeError(message)
+        siel_log.run_log(f"stage=bsr product={cfg.PRODUCT} warning={message}; continuing detail/db", "WARNING")
+        _emit_warning(
+            emit,
+            stage="bsr_shortfall",
+            product=cfg.PRODUCT,
+            message=message,
+            _warn="bsr target not met",
+            captured=len(best_rows),
+            required=required,
+            expected=expected,
+        )
     return best_rows
 
 

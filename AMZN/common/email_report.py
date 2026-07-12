@@ -108,6 +108,7 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
         "notice_null_fields": [],
         "type_mismatch": [],
         "run_error": [],
+        "run_warning": [],
         "detail_zero": [],
         "stage_counts": {},
         "stage_summaries": {},
@@ -141,6 +142,14 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
                 issues["listing_page_failure"].append(item)
             else:
                 issues["run_error"].append(item)
+        if rec.get("_warn"):
+            warning_stage = rec.get("warning_stage") or stage or "unknown"
+            issues["run_warning"].append({
+                "stage": warning_stage,
+                "page_no": rec.get("page_no"),
+                "url": rec.get("source_url") or rec.get("product_url") or "",
+                "message": rec.get("message") or rec.get("_warn"),
+            })
         if rec.get("_summary") and rec.get("summary_stage"):
             issues["stage_summaries"][rec.get("summary_stage")] = rec
         if stage == "db_insert_summary" or rec.get("run_type") == "jsonl_db_save":
@@ -249,6 +258,7 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     notice_null = issues.get("notice_null_fields", [])
     type_mis = issues["type_mismatch"]
     run_errors = issues.get("run_error", [])
+    run_warnings = issues.get("run_warning", [])
     detail_zero = issues.get("detail_zero", [])
     stage_counts = issues.get("stage_counts", {})
     listing_page_failures = issues.get("listing_page_failure", [])
@@ -256,7 +266,7 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     db_summary = issues.get("db_insert_summary") or {}
     has_warning = bool(
         redirects or sku_nulls or price_inv or rating_mis or all_null or type_mis
-        or run_errors or detail_zero or listing_page_failures
+        or run_errors or run_warnings or detail_zero or listing_page_failures
     )
     has_sos = bool(db_insert_zero)
     severity = "sos" if has_sos else ("warning" if has_warning else "ok")
@@ -300,6 +310,10 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     if run_errors:
         lines.append(f"- run errors: {len(run_errors)}")
         for item in run_errors[:20]:
+            lines.append(f"  - stage={item.get('stage')} message={item.get('message')}")
+    if run_warnings:
+        lines.append(f"- run warnings: {len(run_warnings)}")
+        for item in run_warnings[:20]:
             lines.append(f"  - stage={item.get('stage')} message={item.get('message')}")
     if listing_page_failures:
         lines.append(f"- listing page failures: {len(listing_page_failures)}")
