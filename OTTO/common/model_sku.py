@@ -84,10 +84,13 @@ def _pid_vid_map(suchbegriff: str, hard_cap: int = 4000) -> dict[str, str]:
 
 
 def model_context(targets: list[dict[str, Any]] | None, suchbegriff,
-                  labels: tuple[str, ...] = ("Modellbezeichnung",)) -> dict[str, Any]:
+                  labels: tuple[str, ...] = ("Modellbezeichnung",),
+                  required_any: list[tuple[str, ...]] | None = None) -> dict[str, Any]:
     """{"model": {product_id: {label: value, _name: ...}}} via /vergleich/ on current vids.
     `suchbegriff` may be a single term or several (e.g. REF also lists beverage coolers
-    under 'getraenkekuehlschrank')."""
+    under 'getraenkekuehlschrank'). `required_any` forces a per-id re-fetch for a vid that
+    rendered but dropped a whole either/or group (e.g. Gesamtrauminhalt OR Gesamtnutzinhalt)
+    so an intermittently-dropped capacity cell is recovered rather than stored as NULL."""
     targets = targets or []
     terms = [suchbegriff] if isinstance(suchbegriff, str) else list(suchbegriff)
     pid_vid: dict[str, str] = {}
@@ -102,7 +105,8 @@ def model_context(targets: list[dict[str, Any]] | None, suchbegriff,
         if pid and vid and pid not in seen:
             seen.add(pid)
             q.append((pid, vid))
-    chars = compare.characteristics_map([vid for _, vid in q], list(labels), required=["Modellbezeichnung"]) if q else {}
+    chars = compare.characteristics_map([vid for _, vid in q], list(labels), required=["Modellbezeichnung"],
+                                        required_any=required_any) if q else {}
     return {"model": {pid: chars.get(vid, {}) for pid, vid in q}}
 
 

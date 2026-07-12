@@ -20,6 +20,7 @@ from common.io_util import category_output_root
 from common.parsers import format_detailed_review_content, parse_review_html
 
 REVIEW_DETAIL_LIMIT = 20  # detailed_review_content collects up to this many written reviews
+QA_FILL_WARN = 0.90  # spec-field fill rate below this logs a loud [QA][WARN] (advisory only)
 from common.reco import fetch_similar_product_names
 
 BASE_HEAD = [
@@ -269,12 +270,28 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "none", ti
 
     output_csv = out / "otto_full_output.csv"
     write_output(output_csv, fields, rows)
+
+    # Read-only fill-rate QA: never changes a collected value, only reports coverage so a
+    # silent regression (e.g. a truncated category set nulling loading_type) is visible in
+    # the log + manifest instead of passing unnoticed. WARN threshold is advisory.
+    qa_fields = list(cfg.SPEC_FIELDS) + ["sku"]
+    n = len(rows) or 1
+    fill_rate = {f: round(sum(1 for r in rows if str(r.get(f) or "").strip()) / n, 4) for f in qa_fields}
+    print(f"[full/{cfg.PRODUCT}][QA] rows={len(rows)} fill_rate=" +
+          ", ".join(f"{f}={v:.1%}" for f, v in fill_rate.items()), flush=True)
+    low = [f for f in cfg.SPEC_FIELDS if fill_rate[f] < QA_FILL_WARN]
+    if low:
+        print(f"[full/{cfg.PRODUCT}][QA][WARN] low coverage (<{QA_FILL_WARN:.0%}): " +
+              ", ".join(f"{f}={fill_rate[f]:.1%}" for f in low) +
+              " - check /vergleich/ or category throttling before trusting this batch", flush=True)
+
     manifest = {
         "run_type": "full_output", "product": cfg.PRODUCT,
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "batch_id": run_meta["batch_id"], "output_rows": len(rows),
         "spec_fields": list(cfg.SPEC_FIELDS), "use_datasheet": cfg.USE_DATASHEET,
         "pdp_supplement": pdp_supplement, "output": str(output_csv), "attempts": attempts,
+        "fill_rate": fill_rate,
     }
     write_json(out / "step09_full_output_manifest.json", manifest)
     print(f"[full/{cfg.PRODUCT}] output={output_csv} rows={len(rows)}")

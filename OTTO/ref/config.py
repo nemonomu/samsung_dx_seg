@@ -55,6 +55,8 @@ EXCLUDE_KEYWORDS = (
     # accessories/consumables that carry "kühlschrank" in the name but aren't fridges
     "möbelfolie", "folie", "aufkleber", "organizer", "abtauhilfe", "flüssigreiniger",
     "kühlbox", "dosenspender", "reiniger",
+    # measuring / locking accessories (thermometer, padlock) named "... Kühlschrank ..."
+    "thermometer", "schloss",
 )
 
 
@@ -78,14 +80,26 @@ def classify(name: str | None) -> tuple[bool, str]:
     return False, "missing_ref_keyword"
 
 
+_NAME_LITER = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:liter|l)\b", re.I)
+
+
+def _capacity_from_name(name: str | None) -> str | None:
+    """Total volume stated in the listing name (e.g. GastroHero/Klarstein/Royal Catering
+    commercial coolers: '... 403l ...', '... 10 liter ...') — the last-resort source when
+    the datasheet, /vergleich/ and EPREL all lack a total-volume label."""
+    m = _NAME_LITER.search(name or "")
+    return f"{m.group(1)} l" if m else None
+
+
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
     # ref_capacity = TOTAL volume only (Gesamtrauminhalt/Gesamtnutzinhalt), never a partial
-    # like "Rauminhalt der Kühlfächer". datasheet -> /vergleich/ -> EPREL; skip placeholders.
+    # like "Rauminhalt der Kühlfächer". datasheet -> /vergleich/ -> EPREL -> name; skip placeholders.
     capacity = next((v for v in (
         datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l"),
         model_sku.characteristic(target, ctx, "Gesamtrauminhalt", "Gesamtnutzinhalt"),
         eprel.fridge_total_volume(sku),
+        _capacity_from_name(target.get("retailer_sku_name")),
     ) if model_sku.has_value(v)), None)
     # Kasada-free default from the listing name; PDP supplement overrides if enabled.
     ref_type = translate_ref_type(target.get("retailer_sku_name"))
@@ -94,7 +108,12 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
 
 def prepare_context(targets=None) -> dict[str, Any]:
     # /vergleich/ Modellbezeichnung (sku fallback) + Gesamtrauminhalt (capacity for beverage
-    # coolers the datasheet/EPREL household registry miss), on current bestVariationIds
+    # coolers the datasheet/EPREL household registry miss), on current bestVariationIds.
+    # NOTE: we deliberately do NOT force a capacity re-fetch here (model_context supports
+    # required_any). ~70 household fridges legitimately lack a /vergleich/ volume label (their
+    # capacity comes from the datasheet), so retrying the whole capacity-missing set would add
+    # ~50% more /vergleich/ requests every run and risk throttling the sku/Modellbezeichnung
+    # harvest that already works — a bad trade for the rare commercial-cooler cell drop.
     return model_sku.model_context(targets, (SUCHBEGRIFF, "getraenkekuehlschrank"),
                                    labels=("Modellbezeichnung", "Gesamtrauminhalt", "Gesamtnutzinhalt"))
 

@@ -67,6 +67,8 @@ EXCLUDE_KEYWORDS = (
     # laundry balls / lint removers (not a washing machine)
     "wäschekugel", "waschkugel", "fusselball", "fusselbälle", "tierhaarentferner",
     "griff", "türgriff", "zubehör", "ersatzteil", "ersatz",
+    # machine cleaners / descalers (carry "waschmaschine" but are consumables, not washers)
+    "reiniger", "entkalker",
 )
 
 
@@ -171,36 +173,53 @@ def _ever_fetch(rule: str, offset: int, timeout: int = 45, attempts: int = 3) ->
     return None
 
 
-def _category_vids(cat: str, hard_cap: int = 4000) -> set[str]:
+def _category_vids(cat: str, hard_cap: int = 4000, complete_rounds: int = 5) -> set[str]:
     """All bestVariationIds in the waschmaschinen>{cat} subcategory (Kasada-free everglades).
-    The loading_type fallback when OTTO ships no Bauart. Pages are retried so a transient
-    failure does not silently truncate the set (an incomplete set = missed frontloaders)."""
-    vids: set[str] = set()
-    offset = 0
-    total = None
-    consecutive_fail = 0
+    The loading_type fallback when OTTO ships no Bauart.
+
+    A transient page failure used to truncate the set and silently drop boundary
+    frontloaders (the set size was seen swinging 389..470 for the same category, which
+    made loading_type flip between NULL and 'Front loader' across runs). We now
+    re-paginate and UNION until the collected set reaches the reported `count` (or stops
+    growing), and warn LOUDLY if it still can't — so a truncated set is never accepted as
+    final in silence."""
     rule = f"(und.(sind.kategorien.waschmaschinen.{cat}).(suchbegriff.waschmaschinen).(~.(v.1)))"
-    while offset < hard_cap:
-        data = _ever_fetch(rule, offset)
-        if data is None:
-            consecutive_fail += 1
-            if consecutive_fail >= 3:
-                break  # give up rather than loop forever; partial set still helps
-            continue  # retry the same offset
+    vids: set[str] = set()
+    total = None
+    prev = -1
+    for _round in range(complete_rounds):
+        offset = 0
         consecutive_fail = 0
-        intent = next((it for it in data.get("intents", []) if it.get("intent") == "ranked"), {})
-        products = intent.get("products", []) or []
-        if total is None:
-            total = intent.get("count")
-        if not products:
+        while offset < hard_cap:
+            data = _ever_fetch(rule, offset)
+            if data is None:
+                consecutive_fail += 1
+                if consecutive_fail >= 3:
+                    break  # abandon this pass; the outer round re-paginates from 0
+                continue  # retry the same offset
+            consecutive_fail = 0
+            intent = next((it for it in data.get("intents", []) if it.get("intent") == "ranked"), {})
+            products = intent.get("products", []) or []
+            if total is None:
+                total = intent.get("count")
+            if not products:
+                break
+            for p in products:
+                vid = p.get("bestVariationId") or p.get("id")
+                if vid:
+                    vids.add(str(vid))
+            offset += len(products)
+            if total and offset >= total:
+                break
+        if total is None or len(vids) >= total:
             break
-        for p in products:
-            vid = p.get("bestVariationId") or p.get("id")
-            if vid:
-                vids.add(str(vid))
-        offset += len(products)
-        if total and len(vids) >= total:
-            break
+        if len(vids) == prev:
+            break  # converged below total; more rounds won't help
+        prev = len(vids)
+    if total and len(vids) < total:
+        print(f"[ldy][WARN] category '{cat}' incomplete after {complete_rounds} rounds: "
+              f"{len(vids)}/{total} vids - some frontloaders may fall back to NULL loading_type",
+              flush=True)
     return vids
 
 
@@ -328,6 +347,14 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
         if ctx.get("is_top", {}).get(pid):
             loading = LOADING_MAP["toplader"]
         elif ctx.get("is_front", {}).get(pid):
+            loading = LOADING_MAP["frontlader"]
+    if loading is None:
+        # Built-in (Einbau) and washer-dryer (Waschtrockner) washers are front-loading by
+        # construction: OTTO lists them OUTSIDE the waschmaschinen>frontlader subcategory and
+        # ships no Bauart/Beladung on /vergleich/, so neither the field nor the category
+        # fallback catches them — yet a top-loading built-in or washer-dryer does not exist.
+        nm = f"{name or ''} {target.get('retailer_sku_name') or ''}"
+        if re.search(r"einbau|waschtrockner", nm, re.I):
             loading = LOADING_MAP["frontlader"]
     # capacity = WASH capacity. For a washer-dryer, use only "(Waschen)"-explicit sources so
     # the drying capacity is never picked. top_info "Kapazität Waschen" and the name's first

@@ -178,21 +178,33 @@ def _multi_pass(ids: list[str], labels: list[str], timeout: int, sleep: float,
 
 def characteristics_map(variation_ids: list[str], labels: list[str], *, timeout: int = 45,
                         sleep: float = 0.6, retry_rounds: int = 2, retry_sleep: float = 1.5,
-                        final_individual: bool = True, required: list[str] | None = None) -> dict[str, dict[str, str | None]]:
+                        final_individual: bool = True, required: list[str] | None = None,
+                        required_any: list[tuple[str, ...]] | None = None) -> dict[str, dict[str, str | None]]:
     """{variation_id: {label: value, _name: full product name}} for several characteristics
     in one set of /vergleich/ requests. A vid is re-queried (batched rounds, then per-id
-    batch=1) if its column did not render at all (no name/labels) OR a `required` label is
-    missing — batched comparison pages intermittently drop a cell, and the per-id pass is
-    reliable. Genuinely absent labels stay missing after the retries."""
+    batch=1) if its column did not render at all (no name/labels), OR a `required` label is
+    missing, OR a `required_any` group has none of its labels present — batched comparison
+    pages intermittently drop a single cell (seen with REF Gesamtrauminhalt: present on a
+    per-id fetch, dropped in the batch), and the per-id pass is reliable. `required_any`
+    groups an either/or intent (e.g. Gesamtrauminhalt OR Gesamtnutzinhalt) so a fridge that
+    genuinely carries one is not endlessly retried for the other. Labels that stay missing
+    after the per-id pass are genuinely absent on OTTO."""
     ids = [str(v) for v in variation_ids if v]
     result = _multi_pass(ids, labels, timeout, sleep)
 
-    def _incomplete(vid: str) -> bool:
+    def _incomplete(vid: str, include_any: bool = True) -> bool:
         d = result.get(vid, {})
         rendered = bool(d.get(NAME_KEY)) or any(v for k, v in d.items() if k != NAME_KEY)
         if not rendered:
             return True
         if required and not all(d.get(lbl) for lbl in required):
+            return True
+        # required_any (e.g. a capacity either/or group) drives only the cheap BATCHED
+        # retries: an intermittently-dropped cell usually re-renders within a couple of
+        # batched passes. It must NOT drive the per-id pass — that would fetch one page for
+        # every item that GENUINELY lacks the group (most fridges get capacity from the
+        # datasheet), which is prohibitively slow.
+        if include_any and required_any and any(not any(d.get(lbl) for lbl in grp) for grp in required_any):
             return True
         return False
 
@@ -203,11 +215,11 @@ def characteristics_map(variation_ids: list[str], labels: list[str], *, timeout:
                     result[vid][key] = val
 
     for _ in range(retry_rounds):
-        missing = [v for v in ids if _incomplete(v)]
+        missing = [v for v in ids if _incomplete(v, include_any=True)]
         if not missing:
             break
         _merge(_multi_pass(missing, labels, timeout, retry_sleep))
     if final_individual:
-        missing = [v for v in ids if _incomplete(v)]
+        missing = [v for v in ids if _incomplete(v, include_any=False)]
         _merge(_multi_pass(missing, labels, timeout, retry_sleep, batch_size=1))
     return result
