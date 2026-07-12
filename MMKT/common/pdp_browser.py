@@ -248,6 +248,24 @@ class PdpBrowserSession:
         except Exception as exc:
             return [{"status": None, "error": type(exc).__name__ + ": " + str(exc)}] * len(calls)
 
+    def fetch_page_text(self, url: str) -> str:
+        """In-page fetch() of a page URL → raw SSR HTML text (page cookies, no
+        navigation). Used to recover fields that live only in the PDP description
+        body (e.g. REF ref_capacity)."""
+        try:
+            res = self._page.evaluate(
+                """async (url) => {
+                    try { const r = await fetch(url, {credentials: 'include'});
+                          let b = null; try { b = await r.text(); } catch (e) {}
+                          return {status: r.status, body: b}; }
+                    catch (e) { return {status: null, error: String(e)}; }
+                }""",
+                url,
+            )
+        except Exception:
+            return ""
+        return (res or {}).get("body") or "" if isinstance(res, dict) else ""
+
     def fetch_pdp_detail(self, url: str, sku_id: str) -> dict[str, Any]:
         """GraphQL-ONLY (no navigation): one concurrent batch of comparison +
         summary + reviews. The comparison response carries the main product's

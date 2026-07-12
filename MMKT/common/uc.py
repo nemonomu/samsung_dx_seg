@@ -46,6 +46,16 @@ fetch(url, {credentials: 'include', headers})
   .catch(e => done({status: null, error: String(e)}));
 """
 
+# Same, but a plain document fetch (no custom headers) → raw SSR HTML text.
+_XHR_TEXT_JS = r"""
+const done = arguments[arguments.length - 1];
+const url = arguments[0];
+fetch(url, {credentials: 'include'})
+  .then(async r => { let b=null; try { b = await r.text(); } catch(e){}
+                     done({status: r.status, body: b}); })
+  .catch(e => done({status: null, error: String(e)}));
+"""
+
 
 CHROME_EXE_CANDIDATES = (
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -266,6 +276,18 @@ class UcSession:
             except Exception:
                 data = None
         return {"status": (res or {}).get("status"), "data": data, "raw": body}
+
+    def fetch_page_text(self, url: str) -> str:
+        """In-browser fetch() of a page URL → raw SSR HTML text (uses page
+        cookies, no navigation/render). Used to recover fields that live only in
+        the PDP description body (e.g. REF ref_capacity)."""
+        try:
+            res = self.driver.execute_async_script(_XHR_TEXT_JS, url)
+        except Exception:
+            return ""
+        if isinstance(res, dict):
+            return res.get("body") or ""
+        return ""
 
     def _gql_many(self, specs: list[tuple[str, dict[str, Any]]]) -> list[dict[str, Any]]:
         """Fire several persisted GraphQL fetches CONCURRENTLY (Promise.all) in one

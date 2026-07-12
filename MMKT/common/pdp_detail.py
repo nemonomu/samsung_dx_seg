@@ -199,6 +199,17 @@ def main() -> int:
                             "attempts": attempt,
                         })
                         if candidate.get(spec0) or nav == 200:
+                            # Optional per-product recovery of a field that lives
+                            # only in the PDP description body (REF ref_capacity).
+                            # Lazy: fetch_page_text runs only if the field is empty.
+                            recover = getattr(cfg, "recover_missing_from_description", None)
+                            if recover is not None:
+                                try:
+                                    recover(candidate, lambda: session.fetch_page_text(url))
+                                except Exception as exc:
+                                    with lock:
+                                        print(f"[step02][w{worker_id}] capacity recover failed "
+                                              f"{sku_id}: {exc!r}", flush=True)
                             row = candidate
                             break
                         row = candidate  # keep last even if weak
