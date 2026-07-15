@@ -188,6 +188,7 @@ class UcSession:
     def open(self) -> None:
         import undetected_chromedriver as uc
 
+        opened_at = time.perf_counter()
         options = uc.ChromeOptions()
         options.add_argument("--lang=de-DE")
         options.add_argument("--disable-blink-features=AutomationControlled")
@@ -205,7 +206,9 @@ class UcSession:
         exe = os.getenv("MMKT_CHROME_EXE", "").strip()
         if exe:
             kwargs["browser_executable_path"] = exe
+        print(f"[uc] launching Chrome headless={self.headless} timeout={self.nav_timeout_s}s ...", flush=True)
         self.driver = uc.Chrome(**kwargs)
+        print(f"[uc] Chrome launched ({time.perf_counter() - opened_at:.1f}s); configuring session ...", flush=True)
         # remember the Chrome PID we launched so close() can kill its whole tree
         # (UC's quit() leaks chrome.exe children on Windows).
         self._browser_pid = getattr(self.driver, "browser_pid", None)
@@ -233,14 +236,19 @@ class UcSession:
 
     def _warmup(self) -> None:
         status: dict[str, Any] = {"home_blocked": None, "consent": None, "error": None}
+        started = time.perf_counter()
         try:
+            print(f"[uc] warmup: opening MediaMarkt home (timeout={self.nav_timeout_s}s) ...", flush=True)
             self.driver.get(MMKT_HOME)
+            print(f"[uc] warmup: home loaded; waiting {self.warmup_s:.1f}s for Cloudflare/consent ...", flush=True)
             time.sleep(self.warmup_s)
             status["consent"] = self._click_consent()
             status["home_blocked"] = self._blocked(self.driver.page_source)
         except Exception as exc:
             status["error"] = type(exc).__name__ + ": " + str(exc)
         self.warmup_status = status
+        print(f"[uc] warmup: finished in {time.perf_counter() - started:.1f}s "
+              f"blocked={status['home_blocked']} consent={status['consent'] or 'none'}", flush=True)
         if status.get("home_blocked"):
             print(f"[uc] WARNING: home page BLOCKED by Cloudflare after warmup "
                   f"(Chrome major={self.version_main}). Most likely a driver/Chrome "

@@ -123,6 +123,8 @@ def main() -> int:
 
     for page in range(1, max_pages + 1):
         url = page_url(base_url, page)
+        print(f"[step01] sort={args.sort} page={page:>2}/{max_pages} fetching "
+              f"(unique={len(seen)}/{target}) ...", flush=True)
         html, status, elapsed, err = fetch_page(url)
         (raw_dir / f"page_{page:02d}.html").write_text(html, encoding="utf-8")
         rows = parse_listing_html(html, page=page) if status == 200 else []
@@ -138,7 +140,7 @@ def main() -> int:
         page_log.append({"page": page, "status": status, "parsed": len(rows),
                          "new_unique": new, "elapsed": elapsed, "error": err})
         print(f"[step01] sort={args.sort} page={page:>2} status={status} "
-              f"parsed={len(rows):>2} new={new:>2} total_unique={len(seen)} ({elapsed}s)")
+              f"parsed={len(rows):>2} new={new:>2} total_unique={len(seen)} ({elapsed}s)", flush=True)
         if status != 200 or not rows:
             bad_pages += 1
             if bad_pages >= 3:
