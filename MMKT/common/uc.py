@@ -27,7 +27,6 @@ from common.pdp_browser import (
     _comparison_vars,
     _reviews_vars,
     _summary_vars,
-    detail_present,
 )
 
 MMKT_HOME = "https://www.mediamarkt.de/"
@@ -352,15 +351,9 @@ class UcSession:
         self.open()
 
     def fetch_pdp_detail(self, url: str, sku_id: str, *, review_pages: int | None = None) -> dict[str, Any]:
-        """Same shape as PdpBrowserSession.fetch_pdp_detail, but local UC: navigate
-        the PDP (SSR html) then in-page GraphQL for the 3 lazy fields."""
+        """Fetch PDP detail through GraphQL from the warmed browser session."""
         review_pages = self.review_pages if review_pages is None else review_pages
         started = time.perf_counter()
-        # Open the PDP first. MediaMarkt's API rejects GraphQL calls made
-        # directly from the warmed home page with an HTML 403 response; running
-        # fetch() from the PDP supplies the expected Referer/browser state.
-        nav = self.navigate(url)
-        html = nav["html"]
         # GetComparisonTableRecommendations carries the main product's
         # specs/delivery/pickup/ratings + similar; summary + reviews come
         # alongside. All GraphQL calls still run in one concurrent round trip.
@@ -398,19 +391,12 @@ class UcSession:
             error = "gql_failed " + statuses
             if extras:
                 error += " " + " ".join(extras)
-        nav_errors = []
-        if nav.get("blocked"):
-            nav_errors.append("pdp_blocked")
-        if nav.get("error"):
-            nav_errors.append(f"pdp_navigation={nav['error']}")
-        if nav_errors:
-            error = " ".join(nav_errors + ([error] if error else []))
         return {
             "sku_id": sku_id,
             "url": url,
             "nav_status": comparison.get("status"),
-            "detail_present": comparison.get("status") == 200 or detail_present(html),
-            "html": html,
+            "detail_present": comparison.get("status") == 200,
+            "html": "",
             "comparison_resp": comparison.get("data"),
             "summary_resp": summary.get("data"),
             "review_resps": [r.get("data") for r in reviews],
@@ -425,11 +411,21 @@ class UcSession:
 
     def close(self) -> None:
         pid = getattr(self, "_browser_pid", None)
-        if self.driver is not None:
+        driver = self.driver
+        self.driver = None
+        if driver is not None:
             try:
-                self.driver.quit()
+                driver.quit()
             except Exception:
                 pass
+            finally:
+                # UC's __del__ unconditionally calls quit() a second time.
+                # Replace it on this already-closed instance so Windows does
+                # not emit the harmless "invalid handle" traceback.
+                try:
+                    driver.quit = lambda: None
+                except Exception:
+                    pass
         # Force-kill the Chrome process tree we launched (by PID — never touches
         # the user's own Chrome), since UC's quit() leaves orphans on Windows.
         if pid:
@@ -439,5 +435,4 @@ class UcSession:
                                capture_output=True)
             except Exception:
                 pass
-        self.driver = None
         self._browser_pid = None
