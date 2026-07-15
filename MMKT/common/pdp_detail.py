@@ -222,6 +222,10 @@ def main() -> int:
                             diagnostic_logged = True
                     except Exception as exc:
                         last_err = type(exc).__name__ + ": " + str(exc)
+                    # Do not launch and warm another Chrome after the final
+                    # allowed attempt; there is no subsequent request to use it.
+                    if attempt >= args.max_retries + 1:
+                        break
                     # 429 = Cloudflare rate-limit: BACK OFF and retry with the SAME
                     # session — reconnecting just hammers the IP harder (churn loop).
                     if nav == 429:

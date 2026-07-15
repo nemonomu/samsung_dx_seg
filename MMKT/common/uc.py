@@ -347,9 +347,14 @@ class UcSession:
         the PDP (SSR html) then in-page GraphQL for the 3 lazy fields."""
         review_pages = self.review_pages if review_pages is None else review_pages
         started = time.perf_counter()
-        # GraphQL-ONLY (no page navigation): GetComparisonTableRecommendations
-        # carries the main product's specs/delivery/pickup/ratings + similar;
-        # summary + reviews come alongside. All in ONE concurrent round trip.
+        # Open the PDP first. MediaMarkt's API rejects GraphQL calls made
+        # directly from the warmed home page with an HTML 403 response; running
+        # fetch() from the PDP supplies the expected Referer/browser state.
+        nav = self.navigate(url)
+        html = nav["html"]
+        # GetComparisonTableRecommendations carries the main product's
+        # specs/delivery/pickup/ratings + similar; summary + reviews come
+        # alongside. All GraphQL calls still run in one concurrent round trip.
         specs = [
             ("GetComparisonTableRecommendations", _comparison_vars(sku_id)),
             ("GetReviewsSummary", _summary_vars(sku_id)),
@@ -384,12 +389,19 @@ class UcSession:
             error = "gql_failed " + statuses
             if extras:
                 error += " " + " ".join(extras)
+        nav_errors = []
+        if nav.get("blocked"):
+            nav_errors.append("pdp_blocked")
+        if nav.get("error"):
+            nav_errors.append(f"pdp_navigation={nav['error']}")
+        if nav_errors:
+            error = " ".join(nav_errors + ([error] if error else []))
         return {
             "sku_id": sku_id,
             "url": url,
             "nav_status": comparison.get("status"),
-            "detail_present": comparison.get("status") == 200,
-            "html": "",
+            "detail_present": comparison.get("status") == 200 or detail_present(html),
+            "html": html,
             "comparison_resp": comparison.get("data"),
             "summary_resp": summary.get("data"),
             "review_resps": [r.get("data") for r in reviews],
