@@ -199,6 +199,11 @@ def main() -> int:
                             "fetch_error": detail.get("error"), "crawl_strdatetime": crawl_dt,
                             "attempts": attempt,
                         })
+                        if detail.get("error") and not diagnostic_logged:
+                            with lock:
+                                print(f"[step02][w{worker_id}][diag] sku={sku_id} "
+                                      f"{detail['error']}", flush=True)
+                            diagnostic_logged = True
                         if candidate.get(spec0) or nav == 200:
                             # Optional per-product recovery of a field that lives
                             # only in the PDP description body (REF ref_capacity).
@@ -215,11 +220,6 @@ def main() -> int:
                             break
                         row = candidate  # keep last even if weak
                         last_err = detail.get("error") or f"nav={nav}"
-                        if detail.get("error") and not diagnostic_logged:
-                            with lock:
-                                print(f"[step02][w{worker_id}][diag] sku={sku_id} "
-                                      f"{detail['error']}", flush=True)
-                            diagnostic_logged = True
                     except Exception as exc:
                         last_err = type(exc).__name__ + ": " + str(exc)
                     # Do not launch and warm another Chrome after the final

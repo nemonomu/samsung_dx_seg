@@ -167,6 +167,8 @@ class UcSession:
         settle_s: float = 1.2,
         warmup_s: float = 3.0,
         review_pages: int = 4,
+        performance_logging: bool = False,
+        block_images: bool = True,
     ) -> None:
         self.headless = headless
         self.nav_timeout_s = nav_timeout_s
@@ -174,6 +176,8 @@ class UcSession:
         self.settle_s = settle_s
         self.warmup_s = warmup_s
         self.review_pages = review_pages
+        self.performance_logging = performance_logging
+        self.block_images = block_images
         self.driver = None
         self.version_main = chrome_version_main()
         self.warmup_status: dict[str, Any] = {}
@@ -194,7 +198,12 @@ class UcSession:
         options.add_argument("--disable-blink-features=AutomationControlled")
         # Skip images — big bandwidth/time win; SSR HTML + apollo + GraphQL are
         # unaffected (we never read pixels). Cloudflare's JS challenge still runs.
-        options.add_argument("--blink-settings=imagesEnabled=false")
+        if self.block_images:
+            options.add_argument("--blink-settings=imagesEnabled=false")
+        if self.performance_logging:
+            # Diagnostic-only CDP events. Disabled for normal batches to avoid
+            # accumulating a large in-memory performance log.
+            options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
         kwargs: dict[str, Any] = {"options": options, "headless": self.headless, "use_subprocess": True}
         if self.version_main:
             kwargs["version_main"] = self.version_main

@@ -15,6 +15,7 @@ step00_capture_pdp_har.py if they start returning 404/PersistedQueryNotFound.
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from typing import Any
@@ -29,7 +30,9 @@ GRAPHQL_ENDPOINT = "https://www.mediamarkt.de/api/v1/graphql"
 # referer / user-agent / sec-ch-ua, so those are omitted here).
 GRAPHQL_BASE_HEADERS = {
     "apollographql-client-name": "pwa-client-pqm",
-    "apollographql-client-version": "8.451.0",
+    "apollographql-client-version": (
+        os.getenv("MMKT_GRAPHQL_CLIENT_VERSION") or "8.461.2"
+    ).strip(),
     "accept": "*/*",
     "content-type": "application/json",
     "x-mms-country": "DE",
@@ -44,7 +47,7 @@ CONSENT_SELECTORS = (
 )
 DETAIL_SIGNALS = ("Modelljahr", "Bildschirmdiagonale", "Leistungsaufnahme")
 
-# Persisted queries captured from a real PDP (build 73eee0d, 2026-06-29).
+# Persisted queries verified against a real PDP (build 0ef32db, 2026-07-15).
 PERSISTED = {
     "GetReviewsSummary": "273a424b84399fff753d18781c2c6bf872169c4216566b9ce22f1879d9366726",
     "GetProductReviews": "0b159c715666ae7dbd6d0c632743eae31886b749a93e50280d39897f491d46f7",
