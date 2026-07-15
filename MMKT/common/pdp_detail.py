@@ -171,6 +171,7 @@ def main() -> int:
             with lock:
                 print(f"[step02][w{worker_id}] session open FAILED: {exc!r}", flush=True)
             return
+        diagnostic_logged = False
         try:
             for i, t in shard:
                 sku_id = t["sku_id"].strip()
@@ -214,6 +215,11 @@ def main() -> int:
                             break
                         row = candidate  # keep last even if weak
                         last_err = detail.get("error") or f"nav={nav}"
+                        if detail.get("error") and not diagnostic_logged:
+                            with lock:
+                                print(f"[step02][w{worker_id}][diag] sku={sku_id} "
+                                      f"{detail['error']}", flush=True)
+                            diagnostic_logged = True
                     except Exception as exc:
                         last_err = type(exc).__name__ + ": " + str(exc)
                     # 429 = Cloudflare rate-limit: BACK OFF and retry with the SAME

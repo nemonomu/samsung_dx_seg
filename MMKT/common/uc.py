@@ -305,7 +305,8 @@ class UcSession:
             "const done = arguments[arguments.length-1];"
             "Promise.all(arguments[0].map(async (c)=>{"
             " try { const r = await fetch(c.url,{credentials:'include',headers:c.headers});"
-            "       let b=null; try{ b = await r.text(); }catch(e){} return {status:r.status, body:b}; }"
+            "       let b=null; try{ b = await r.text(); }catch(e){}"
+            "       return {status:r.status, body:b, contentType:r.headers.get('content-type')||''}; }"
             " catch(e){ return {status:null, error:String(e)}; }"
             "})).then(done);"
         )
@@ -322,7 +323,19 @@ class UcSession:
                     data = json.loads(body)
                 except Exception:
                     data = None
-            out.append({"status": (res or {}).get("status"), "data": data})
+            status = (res or {}).get("status")
+            # Keep only a short response preview for diagnostics. Request
+            # headers/cookies are deliberately not returned or logged.
+            preview = None
+            if status != 200 and body:
+                preview = " ".join(body.split())[:300]
+            out.append({
+                "status": status,
+                "data": data,
+                "content_type": (res or {}).get("contentType"),
+                "body_preview": preview,
+                "transport_error": (res or {}).get("error"),
+            })
         return out
 
     def reconnect(self) -> None:
@@ -346,6 +359,31 @@ class UcSession:
         comparison = results[0]
         summary = results[1]
         reviews = results[2:2 + review_pages]
+        failed_statuses: dict[str, list[str]] = {}
+        first_failure: dict[str, Any] | None = None
+        for (operation, _), result in zip(specs, results):
+            if result.get("status") == 200:
+                continue
+            failed_statuses.setdefault(operation, []).append(str(result.get("status")))
+            if first_failure is None:
+                first_failure = result
+        error = None
+        if failed_statuses:
+            statuses = " ".join(
+                f"{operation}={','.join(values)}"
+                for operation, values in failed_statuses.items()
+            )
+            detail = first_failure or {}
+            extras = []
+            if detail.get("content_type"):
+                extras.append(f"content_type={detail['content_type']}")
+            if detail.get("transport_error"):
+                extras.append(f"transport={detail['transport_error']}")
+            if detail.get("body_preview"):
+                extras.append(f"body={detail['body_preview']}")
+            error = "gql_failed " + statuses
+            if extras:
+                error += " " + " ".join(extras)
         return {
             "sku_id": sku_id,
             "url": url,
@@ -360,7 +398,7 @@ class UcSession:
                 "summary": summary.get("status"),
                 "reviews": [r.get("status") for r in reviews],
             },
-            "error": None,
+            "error": error,
             "elapsed_seconds": round(time.perf_counter() - started, 2),
         }
 
