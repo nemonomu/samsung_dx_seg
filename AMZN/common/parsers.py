@@ -237,29 +237,73 @@ def _is_asin_sku_candidate(value: Any, page_asin: str | None) -> bool:
     return bool(re.fullmatch(r"B0[A-Z0-9]{8}", text))
 
 
-def _first_sku_value(soup: BeautifulSoup, facts: dict[str, str | None]) -> str | None:
-    page_asin = _detail_asin_from_page(soup, facts)
-    model_names = _fact_values_from_soup(soup, "Modellname", "Model Name")
-    for value in model_names:
-        if not _is_asin_sku_candidate(value, page_asin):
-            return value
+_TV_SKU_KEY_PRIORITY = (
+    ("Hersteller-Modellnummer",),
+    ("Manufacturer Model Number",),
+    ("Modellnummer",),
+    ("Model Number",),
+    ("Item Model Number", "Item model number"),
+    ("SKU Number",),
+    ("Herstellerreferenz",),
+    ("Manufacturer reference",),
+    ("Mfr Part Number",),
+    ("Manufacturer Part Number",),
+    ("Hersteller-Teilenummer",),
+    ("Part Number",),
+    ("Item Part Number", "Item part number"),
+    ("Teilenummer",),
+    ("Artikelnummer",),
+    ("Modellname",),
+    ("Model Name",),
+)
 
-    model_number_keys = (
-        "Hersteller-Teilenummer", "Manufacturer Part Number", "Mfr Part Number",
-        "Hersteller-Modellnummer", "Manufacturer Model Number",
-        "Model Number", "Modellnummer",
-        "Part Number", "Artikelnummer", "Item Model Number", "Item model number",
-        "Item Part Number", "Manufacturer reference", "Herstellerreferenz",
-    )
-    model_numbers = _fact_values_from_soup(soup, *model_number_keys)
-    for value in model_numbers:
-        if not _is_asin_sku_candidate(value, page_asin):
-            return value
+_REF_SKU_KEY_PRIORITY = (
+    ("Modellnummer",),
+    ("Model Number",),
+    ("Item Model Number", "Item model number"),
+    ("Hersteller-Modellnummer",),
+    ("Manufacturer Model Number",),
+    ("SKU Number",),
+    ("Herstellerreferenz",),
+    ("Manufacturer reference",),
+    ("Mfr Part Number",),
+    ("Manufacturer Part Number",),
+    ("Hersteller-Teilenummer",),
+    ("Part Number",),
+    ("Item Part Number", "Item part number"),
+    ("Teilenummer",),
+    ("Artikelnummer",),
+    ("Modellname",),
+    ("Model Name",),
+)
 
-    fallback = first_by_key(facts, "Modellname", "Model Name", *model_number_keys)
-    if fallback and not _is_asin_sku_candidate(fallback, page_asin):
-        return fallback
+_MODEL_NAME_KEYS = (("Modellname",), ("Model Name",))
+
+
+def _first_sku_for_priority(
+    soup: BeautifulSoup,
+    page_asin: str | None,
+    priority: tuple[tuple[str, ...], ...],
+) -> str | None:
+    for keys in priority:
+        for value in _fact_values_from_soup(soup, *keys):
+            if not _is_asin_sku_candidate(value, page_asin):
+                return value
     return None
+
+
+def _first_sku_value(
+    soup: BeautifulSoup,
+    facts: dict[str, str | None],
+    *,
+    product: str | None = None,
+) -> str | None:
+    page_asin = _detail_asin_from_page(soup, facts)
+    priority = _REF_SKU_KEY_PRIORITY if str(product or "").upper() == "REF" else _TV_SKU_KEY_PRIORITY
+    sku = _first_sku_for_priority(soup, page_asin, priority)
+    if sku and "BNDL_" in sku.upper():
+        return _first_sku_for_priority(soup, page_asin, _MODEL_NAME_KEYS)
+    return sku
 
 
 def _screen_size_from_text(*values: Any) -> str | None:
@@ -403,7 +447,7 @@ def extract_sp_detail2_titles(html: str, *, limit: int = 20) -> list[str]:
     return _extract_sp_detail2_titles_from_soup(soup, limit=limit)
 
 
-def parse_product_detail_html(html: str) -> dict[str, Any]:
+def parse_product_detail_html(html: str, *, product: str | None = None) -> dict[str, Any]:
     soup = BeautifulSoup(html or "", "lxml")
     data: dict[str, Any] = {}
     title = soup.select_one("#productTitle")
@@ -427,7 +471,7 @@ def parse_product_detail_html(html: str) -> dict[str, Any]:
     facts = _collect_product_facts(soup)
     fact_text = " | ".join([*facts.keys(), *facts.values()])
     data["facts_json"] = json.dumps(facts, ensure_ascii=False)
-    data["sku"] = _first_sku_value(soup, facts)
+    data["sku"] = _first_sku_value(soup, facts, product=product)
     data["model_year"] = first_by_key(facts, "Modelljahr", "Model Year") or _model_year_from_text(data.get("retailer_sku_name"), fact_text)
     data["screen_size"] = first_by_key(
         facts,

@@ -584,9 +584,12 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
         pass
     selector_fields = set(selectors)
     if html:
-        parsed_fallback = parsers.parse_product_detail_html(html)
+        parsed_fallback = parsers.parse_product_detail_html(html, product=product)
         for field in ("sku", "screen_size", "model_year", "estimated_annual_electricity_use", "retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity", "number_of_units_purchased_past_month"):
             if str(product).lower() == "ref" and field == "retailer_sku_name_similar":
+                continue
+            if field == "sku" and parsed_fallback.get(field) not in (None, ""):
+                data[field] = normalize_field(field, parsed_fallback.get(field))
                 continue
             if field in selector_fields and data.get(field) in (None, "") and parsed_fallback.get(field) not in (None, ""):
                 data[field] = normalize_field(field, parsed_fallback.get(field))
