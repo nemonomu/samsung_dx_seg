@@ -3,20 +3,22 @@
 
 BEGIN;
 
-CREATE TABLE IF NOT EXISTS dx_seg.dx_seg_xpath_selectors_bak_20260716_sku
-(LIKE dx_seg.dx_seg_xpath_selectors INCLUDING ALL);
+CREATE TABLE IF NOT EXISTS dx_seg.dx_seg_xpath_selectors_backup AS
+SELECT *
+FROM dx_seg.dx_seg_xpath_selectors
+WITH NO DATA;
 
-INSERT INTO dx_seg.dx_seg_xpath_selectors_bak_20260716_sku
-SELECT source.*
-FROM dx_seg.dx_seg_xpath_selectors AS source
-WHERE source.site_account = 'Amazon'
-  AND source.page_type = 'detail'
-  AND source.domain IN ('tv', 'ref')
-  AND source.data_field = 'sku'
+INSERT INTO dx_seg.dx_seg_xpath_selectors_backup
+SELECT s.*
+FROM dx_seg.dx_seg_xpath_selectors AS s
+WHERE s.site_account = 'Amazon'
+  AND s.page_type = 'detail'
+  AND s.domain IN ('tv', 'ref')
+  AND s.data_field = 'sku'
   AND NOT EXISTS (
       SELECT 1
-      FROM dx_seg.dx_seg_xpath_selectors_bak_20260716_sku AS backup
-      WHERE backup.id = source.id
+      FROM dx_seg.dx_seg_xpath_selectors_backup AS b
+      WHERE b.id = s.id
   );
 
 UPDATE dx_seg.dx_seg_xpath_selectors
@@ -54,6 +56,6 @@ COMMIT;
 --     fallback_xpath = backup.fallback_xpath,
 --     is_active = backup.is_active,
 --     updated_at = backup.updated_at
--- FROM dx_seg.dx_seg_xpath_selectors_bak_20260716_sku AS backup
+-- FROM dx_seg.dx_seg_xpath_selectors_backup AS backup
 -- WHERE target.id = backup.id;
 -- COMMIT;
