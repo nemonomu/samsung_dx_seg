@@ -45,17 +45,7 @@ _FIELD_PATTERNS = {
         rf"^(?:\d[\d.]*(?:,\d{{2}})?{re.escape(_EURO)}|{re.escape(_EURO)}\d[\d.]*(?:,\d{{2}})?)$"
     ),
 }
-_PRICE_SENTINELS = (
-    "Currently unavailable",
-    "No featured offers",
-    "See price in cart",
-    "Temporarily out of stock",
-    "Price higher than typical",
-    "Derzeit nicht verf\u00fcgbar",
-    "Derzeit nicht verfuegbar",
-    "Keine hervorgehobenen Angebote verf\u00fcgbar",
-    "Keine hervorgehobenen Angebote verfuegbar",
-)
+_PRICE_SENTINELS = siel_log.AMZN_PRICE_SENTINELS
 _STAR_SENTINELS = ("No customer reviews",)
 
 

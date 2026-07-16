@@ -131,7 +131,7 @@ _EURO = "\u20ac"
 _AMZN_EURO_PRICE_RE = re.compile(
     rf"(?:{re.escape(_EURO)}\s*\d[\d.\s]*(?:,\d{{2}})?|\d[\d.\s]*(?:,\d{{2}})?\s*{re.escape(_EURO)})"
 )
-_AMZN_PRICE_SENTINELS = (
+AMZN_PRICE_SENTINELS = (
     "Currently unavailable",
     "No featured offers",
     "See price in cart",
@@ -139,8 +139,10 @@ _AMZN_PRICE_SENTINELS = (
     "Price higher than typical",
     "Derzeit nicht verf\u00fcgbar",
     "Derzeit nicht verfuegbar",
+    "Derzeit nicht auf Lager",
     "Keine hervorgehobenen Angebote verf\u00fcgbar",
     "Keine hervorgehobenen Angebote verfuegbar",
+    "H\u00f6herer Preis als \u00fcblich",
 )
 
 
@@ -207,7 +209,7 @@ def parse_amzn_apex_price(value: Any) -> str | None:
         if price.startswith(_EURO):
             price = price[1:] + _EURO
         return _repair_missing_euro_decimal(price)
-    if any(sentinel.casefold() in text.casefold() for sentinel in _AMZN_PRICE_SENTINELS):
+    if any(sentinel.casefold() in text.casefold() for sentinel in AMZN_PRICE_SENTINELS):
         return text
     return None
 
