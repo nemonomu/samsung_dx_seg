@@ -293,17 +293,29 @@ class UcSession:
                 data = None
         return {"status": (res or {}).get("status"), "data": data, "raw": body}
 
-    def fetch_page_text(self, url: str) -> str:
+    def fetch_page_response(self, url: str) -> dict[str, Any]:
         """In-browser fetch() of a page URL → raw SSR HTML text (uses page
         cookies, no navigation/render). Used to recover fields that live only in
         the PDP description body (e.g. REF ref_capacity)."""
         try:
             res = self.driver.execute_async_script(_XHR_TEXT_JS, url)
-        except Exception:
-            return ""
-        if isinstance(res, dict):
-            return res.get("body") or ""
-        return ""
+        except Exception as exc:
+            return {
+                "status": None,
+                "body": "",
+                "error": type(exc).__name__ + ": " + str(exc),
+            }
+        if not isinstance(res, dict):
+            return {"status": None, "body": "", "error": "invalid fetch response"}
+        return {
+            "status": res.get("status"),
+            "body": res.get("body") or "",
+            "error": res.get("error"),
+        }
+
+    def fetch_page_text(self, url: str) -> str:
+        """Compatibility wrapper for description-only recovery callers."""
+        return self.fetch_page_response(url)["body"]
 
     def _gql_many(self, specs: list[tuple[str, dict[str, Any]]]) -> list[dict[str, Any]]:
         """Fire several persisted GraphQL fetches CONCURRENTLY (Promise.all) in one

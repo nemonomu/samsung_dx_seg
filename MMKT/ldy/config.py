@@ -6,6 +6,7 @@ LDY replaces TV's screen_size/model_year/electricity with:
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from common import config as base
@@ -38,10 +39,17 @@ LDY_LOADING_TRANSLATIONS = {
 CAPACITY_FEATURE = "Füllmenge Baumwolle (Waschen)"
 
 
+def _norm_kg(raw: str | None) -> str | None:
+    value = text_clean(raw)
+    if not value:
+        return None
+    value = re.sub(r" *kg *$", "", value, flags=re.I).strip()
+    return f"{value}kg" if value else None
+
+
 def extract_pdp_spec(features: dict[str, str]) -> dict[str, Any]:
     load = text_clean(features.get("Beladung"))
-    cap = text_clean(features.get(CAPACITY_FEATURE))
     return {
         "ldy_loading_type": LDY_LOADING_TRANSLATIONS.get(load, load) if load else None,
-        "ldy_capacity": f"{cap}kg" if cap else None,
+        "ldy_capacity": _norm_kg(features.get(CAPACITY_FEATURE)),
     }

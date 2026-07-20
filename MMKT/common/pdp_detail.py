@@ -88,10 +88,17 @@ def merge_detail(html: str, detail: dict[str, Any], sku_id: str, cfg) -> dict[st
     delivery/pickup/ratings/similar; reviews + summary come alongside. Falls back
     to SSR-HTML parsing only if the comparison response is empty AND html exists."""
     row = parse_comparison_detail(detail.get("comparison_resp"), sku_id, cfg)
+    comparison_matched = row is not None
     if not row:
         row = parse_pdp_html(html, sku_id, cfg)
+    if not row:
+        row = {"sku_id": str(sku_id)}
     reviews = parse_product_reviews(detail.get("review_resps") or [])
     summary = parse_reviews_summary(detail.get("summary_resp"))
+    # Comparison is the primary average; the reviews distribution is the
+    # authoritative fallback when comparison reviewStatistics is absent.
+    if row.get("star_rating") in (None, "") and reviews.get("star_rating") is not None:
+        row["star_rating"] = reviews["star_rating"]
     # Reviews query is authoritative for counts + the top-20 written reviews.
     if reviews.get("count_of_star_ratings") is not None:
         row["count_of_star_ratings"] = reviews["count_of_star_ratings"]
@@ -99,7 +106,53 @@ def merge_detail(html: str, detail: dict[str, Any], sku_id: str, cfg) -> dict[st
     if reviews.get("detailed_review_content"):
         row["detailed_review_content"] = reviews["detailed_review_content"]
     row["summarized_review_content"] = summary
+    row["_comparison_matched"] = comparison_matched
     return row
+
+
+def backfill_missing_pdp_fields(
+    row: dict[str, Any], html: str, sku_id: str, cfg
+) -> tuple[bool, list[str]]:
+    """Fill only blank SKU/spec fields from an exact-target SSR PDP response."""
+    fields = ["sku", *cfg.SPEC_FIELDS]
+    ssr_row = parse_pdp_html(html, sku_id, cfg)
+    if not ssr_row:
+        return False, []
+    recovered: list[str] = []
+    for field in fields:
+        if row.get(field) in (None, "") and ssr_row.get(field) not in (None, ""):
+            row[field] = ssr_row[field]
+            recovered.append(field)
+    return True, recovered
+
+
+def needs_pdp_backfill(row: dict[str, Any], nav_status: Any, cfg) -> bool:
+    """Backfill the reported primary-spec gap after a successful GQL response.
+
+    This intentionally uses the product's primary detail marker. Treating every
+    blank optional spec/SKU as a retry trigger would issue extra PDP requests for
+    legitimate source-null fields and increase Cloudflare pressure.
+    """
+    return nav_status == 200 and row.get(cfg.SPEC_FIELDS[0]) in (None, "")
+
+
+def detail_attempt_is_usable(
+    nav_status: Any,
+    comparison_matched: bool,
+    ssr_attempted: bool,
+    ssr_valid: bool,
+) -> bool:
+    """Reject HTTP-200 responses that contain neither target GQL nor target SSR."""
+    if nav_status != 200:
+        return False
+    return comparison_matched or (ssr_attempted and ssr_valid)
+
+
+def detail_attempt_is_rate_limited(
+    nav_status: Any, ssr_attempted: bool, ssr_status: Any
+) -> bool:
+    """Treat either the comparison request or required SSR fallback as 429."""
+    return nav_status == 429 or (ssr_attempted and ssr_status == 429)
 
 
 def main() -> int:
@@ -182,14 +235,42 @@ def main() -> int:
                 # or the navigation failed — a dead session fails instantly otherwise.
                 for attempt in range(1, args.max_retries + 2):
                     nav = None
+                    last_err = None
+                    ssr_attempted = False
+                    ssr_valid = False
+                    ssr_status: Any = None
                     try:
                         if session is None:
                             session = make_session(args.transport, args.review_pages)
                             session.open()
                         detail = session.fetch_pdp_detail(url, sku_id)
-                        candidate = merge_detail(detail["html"], detail, sku_id, cfg)
-                        ok = detail["gql_status"]
                         nav = detail["nav_status"]
+                        candidate = merge_detail(detail["html"], detail, sku_id, cfg)
+                        comparison_matched = bool(candidate.pop("_comparison_matched", False))
+                        pdp_html: str | None = None
+                        if needs_pdp_backfill(candidate, nav, cfg):
+                            ssr_attempted = True
+                            page_response = session.fetch_page_response(url)
+                            ssr_status = page_response.get("status")
+                            pdp_html = page_response.get("body") or ""
+                            target_valid, recovered = backfill_missing_pdp_fields(
+                                candidate, pdp_html, sku_id, cfg
+                            )
+                            ssr_valid = ssr_status == 200 and target_valid
+                            remaining = [
+                                field for field in ["sku", *cfg.SPEC_FIELDS]
+                                if candidate.get(field) in (None, "")
+                            ]
+                            with lock:
+                                print(
+                                    f"[step02][w{worker_id}] ssr-backfill "
+                                    f"sku={sku_id} status={ssr_status} "
+                                    f"target={'ok' if target_valid else 'MISS'} "
+                                    f"recovered={','.join(recovered) or '-'} "
+                                    f"remaining={','.join(remaining) or '-'}",
+                                    flush=True,
+                                )
+                        ok = detail["gql_status"]
                         candidate.update({
                             "rank": t.get("rank") or t.get("position") or i,
                             "product_url": url, "nav_status": nav,
@@ -204,14 +285,35 @@ def main() -> int:
                                 print(f"[step02][w{worker_id}][diag] sku={sku_id} "
                                       f"{detail['error']}", flush=True)
                             diagnostic_logged = True
-                        if candidate.get(spec0) or nav == 200:
+                        if (
+                            detail_attempt_is_usable(
+                                nav, comparison_matched, ssr_attempted, ssr_valid
+                            )
+                            and not detail_attempt_is_rate_limited(
+                                nav, ssr_attempted, ssr_status
+                            )
+                        ):
+                            # Only current-attempt warnings belong on a successful
+                            # row; errors from an earlier retry must not leak here.
+                            last_err = None
+                            if ssr_attempted and not ssr_valid:
+                                last_err = f"ssr_backfill_failed status={ssr_status}"
+                            elif ssr_attempted and candidate.get(spec0) in (None, ""):
+                                last_err = f"field_missing_after_valid_ssr field={spec0}"
+                            if last_err and not candidate.get("fetch_error"):
+                                candidate["fetch_error"] = last_err
                             # Optional per-product recovery of a field that lives
                             # only in the PDP description body (REF ref_capacity).
                             # Lazy: fetch_page_text runs only if the field is empty.
                             recover = getattr(cfg, "recover_missing_from_description", None)
                             if recover is not None:
                                 try:
-                                    recover(candidate, lambda: session.fetch_page_text(url))
+                                    recover(
+                                        candidate,
+                                        lambda: pdp_html
+                                        if pdp_html is not None
+                                        else session.fetch_page_text(url),
+                                    )
                                 except Exception as exc:
                                     with lock:
                                         print(f"[step02][w{worker_id}] capacity recover failed "
@@ -219,7 +321,15 @@ def main() -> int:
                             row = candidate
                             break
                         row = candidate  # keep last even if weak
-                        last_err = detail.get("error") or f"nav={nav}"
+                        ssr_diag = (
+                            f"status={ssr_status} valid={ssr_valid}"
+                            if ssr_attempted else "not_attempted"
+                        )
+                        last_err = detail.get("error") or (
+                            f"semantic_detail_missing nav={nav} "
+                            f"comparison_matched={comparison_matched} ssr={ssr_diag}"
+                        )
+                        candidate["fetch_error"] = last_err
                     except Exception as exc:
                         last_err = type(exc).__name__ + ": " + str(exc)
                     # Do not launch and warm another Chrome after the final
@@ -228,7 +338,7 @@ def main() -> int:
                         break
                     # 429 = Cloudflare rate-limit: BACK OFF and retry with the SAME
                     # session — reconnecting just hammers the IP harder (churn loop).
-                    if nav == 429:
+                    if detail_attempt_is_rate_limited(nav, ssr_attempted, ssr_status):
                         backoff = min(90, 20 * attempt)
                         with lock:
                             print(f"[step02][w{worker_id}] rate-limited (429) on {sku_id} — "

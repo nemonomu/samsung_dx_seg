@@ -49,11 +49,11 @@ def _read_json(path: Path) -> dict[str, Any]:
         return {}
 
 
-# A row "got its PDP detail" if any GraphQL-only field came back — these are all
-# NULL when the detail step is Cloudflare/CAPTCHA-blocked even though listing
-# (main_rank) still looks full. Catches the "No issues but everything blocked" trap.
+# A row "got its PDP detail" if a comparison/PDP-only field came back. Ratings
+# are deliberately excluded because step09 may recover them from listing JSON-LD;
+# counting those would hide a Cloudflare-blocked detail run.
 def _detail_present(r: dict, spec_fields: list[str]) -> bool:
-    keys = ["sku", "delivery_availability", "star_rating", "count_of_star_ratings", *spec_fields]
+    keys = ["sku", "delivery_availability", *spec_fields]
     return any((r.get(k) or "").strip() for k in keys)
 
 

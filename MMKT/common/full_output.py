@@ -70,6 +70,30 @@ def first(*vals: Any) -> Any:
     return None
 
 
+def resolve_rating_fields(
+    detail: dict[str, Any],
+    main_listing: dict[str, Any] | None,
+    bsr_listing: dict[str, Any] | None,
+) -> tuple[Any, Any, Any]:
+    """Resolve ratings without mixing rating-count and review-count semantics.
+
+    Listing JSON-LD's legacy count_of_reviews column is AggregateRating's
+    reviewCount/ratingCount, so it is only a fallback for count_of_star_ratings.
+    GetProductReviews.totalResults remains the sole count_of_reviews source.
+    """
+    m = main_listing or {}
+    b = bsr_listing or {}
+    listing_star = first(m.get("star_rating"), b.get("star_rating"))
+    listing_rating_count = first(
+        m.get("count_of_star_ratings"), m.get("count_of_reviews"),
+        b.get("count_of_star_ratings"), b.get("count_of_reviews"),
+    )
+    star = first(detail.get("star_rating"), listing_star) or "0.0"
+    n_star = first(detail.get("count_of_star_ratings"), listing_rating_count) or 0
+    n_rev = first(detail.get("count_of_reviews")) or 0
+    return star, n_star, n_rev
+
+
 def main() -> int:
     if hasattr(sys.stdout, "buffer"):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -120,9 +144,7 @@ def main() -> int:
         d = detail_by_id.get(sku_id, {})
         if not d:
             missing_detail += 1
-        star = first(d.get("star_rating")) or "0.0"
-        n_star = first(d.get("count_of_star_ratings")) or 0
-        n_rev = first(d.get("count_of_reviews")) or 0
+        star, n_star, n_rev = resolve_rating_fields(d, m, b)
         rows.append({
             "account_name": ACCOUNT_NAME, "product": cfg.PRODUCT, "country": COUNTRY,
             "page_type": PAGE_TYPE,

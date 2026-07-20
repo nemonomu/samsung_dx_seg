@@ -251,7 +251,7 @@ class PdpBrowserSession:
         except Exception as exc:
             return [{"status": None, "error": type(exc).__name__ + ": " + str(exc)}] * len(calls)
 
-    def fetch_page_text(self, url: str) -> str:
+    def fetch_page_response(self, url: str) -> dict[str, Any]:
         """In-page fetch() of a page URL → raw SSR HTML text (page cookies, no
         navigation). Used to recover fields that live only in the PDP description
         body (e.g. REF ref_capacity)."""
@@ -265,9 +265,23 @@ class PdpBrowserSession:
                 }""",
                 url,
             )
-        except Exception:
-            return ""
-        return (res or {}).get("body") or "" if isinstance(res, dict) else ""
+        except Exception as exc:
+            return {
+                "status": None,
+                "body": "",
+                "error": type(exc).__name__ + ": " + str(exc),
+            }
+        if not isinstance(res, dict):
+            return {"status": None, "body": "", "error": "invalid fetch response"}
+        return {
+            "status": res.get("status"),
+            "body": res.get("body") or "",
+            "error": res.get("error"),
+        }
+
+    def fetch_page_text(self, url: str) -> str:
+        """Compatibility wrapper for description-only recovery callers."""
+        return self.fetch_page_response(url)["body"]
 
     def fetch_pdp_detail(self, url: str, sku_id: str) -> dict[str, Any]:
         """GraphQL-ONLY (no navigation): one concurrent batch of comparison +

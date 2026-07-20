@@ -330,7 +330,10 @@ def _resolve_features(apollo: dict[str, Any], product: dict[str, Any]) -> dict[s
         for ref in group.get("features") or []:
             ent = apollo.get(ref.get("__ref")) if isinstance(ref, dict) else None
             if isinstance(ent, dict) and ent.get("name") is not None:
-                features.setdefault(ent["name"], ent.get("value"))
+                name = ent["name"]
+                value = ent.get("value")
+                if name not in features or features[name] in (None, ""):
+                    features[name] = value
     return features
 
 
@@ -429,7 +432,7 @@ def tv_extract_pdp_spec(features: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def parse_pdp_html(html: str, sku_id: str, cfg: Any = None) -> dict[str, Any]:
+def parse_pdp_html(html: str, sku_id: str, cfg: Any = None) -> dict[str, Any] | None:
     """Parse a MediaMarkt PDP into the SEG detail fields. Common fields
     (delivery, pickup, sku, ratings, reviews) are product-agnostic; the
     product-specific spec fields come from cfg.extract_pdp_spec(features) — TV:
@@ -438,9 +441,13 @@ def parse_pdp_html(html: str, sku_id: str, cfg: Any = None) -> dict[str, Any]:
     """
     sku_id = str(sku_id)
     state = extract_preloaded_state(html)
+    if not state:
+        return None
     apollo = (state or {}).get("apolloState") or {}
 
     product = _find_main_product(apollo, sku_id)
+    if not product:
+        return None
     features = _resolve_features(apollo, product)
     pickup = _entity_by_id(apollo, "CofrPickupFeature", sku_id)
 
@@ -502,16 +509,44 @@ def parse_reviews_summary(resp: Any) -> str | None:
     return text_clean(data.get("reviewsSummary"))
 
 
+def _rating_distribution_stats(distribution: Any) -> tuple[int | None, float | None]:
+    """Return (rating count, weighted average) for a complete 1..5 distribution.
+
+    A missing or malformed distribution is unknown (None, None). An explicitly
+    present all-zero distribution is a known unrated product (0, None).
+    """
+    if not isinstance(distribution, list) or not distribution:
+        return None, None
+    pairs: list[tuple[float, int]] = []
+    for item in distribution:
+        if not isinstance(item, dict):
+            return None, None
+        try:
+            value = float(item.get("value"))
+            count = int(item.get("count"))
+        except (TypeError, ValueError):
+            return None, None
+        if not 1 <= value <= 5 or count < 0:
+            return None, None
+        pairs.append((value, count))
+    total = sum(count for _, count in pairs)
+    if total == 0:
+        return 0, None
+    average = sum(value * count for value, count in pairs) / total
+    return total, round(average, 1)
+
+
 def parse_product_reviews(resp_pages: Any, *, top: int = 20) -> dict[str, Any]:
     """GetProductReviews (one or more reviewPage responses) → review fields.
 
-    Returns count_of_star_ratings (rating distribution sum / totalResults),
-    count_of_reviews (records carrying written text), and detailed_review_content
-    (top-N written reviews joined). No.45-48.
+    Returns star_rating + count_of_star_ratings from the rating distribution,
+    count_of_reviews from totalResults (written reviews), and
+    detailed_review_content (top-N written reviews joined). No.44-48.
     """
     pages = resp_pages if isinstance(resp_pages, list) else [resp_pages]
     total_results: int | None = None
     distribution_sum: int | None = None
+    distribution_average: float | None = None
     merged: dict[str, dict[str, Any]] = {}  # review id -> review
     for page in pages:
         data = _unwrap_data(page)
@@ -520,7 +555,7 @@ def parse_product_reviews(resp_pages: Any, *, top: int = 20) -> dict[str, Any]:
             total_results = reviews_obj.get("totalResults")
         dist = (reviews_obj.get("rating") or {}).get("distribution") or []
         if dist and distribution_sum is None:
-            distribution_sum = sum(int(d.get("count") or 0) for d in dist)
+            distribution_sum, distribution_average = _rating_distribution_stats(dist)
         for rv in reviews_obj.get("reviews") or []:
             rid = rv.get("id") or rv.get("cid")
             if rid and rid not in merged:
@@ -541,7 +576,12 @@ def parse_product_reviews(resp_pages: Any, *, top: int = 20) -> dict[str, Any]:
         if text_clean((r.get("feedback") or {}).get("full"))
     ]
     return {
-        "count_of_star_ratings": distribution_sum or total_results,
+        "star_rating": distribution_average,
+        # totalResults is the written-review count, not the number of ratings.
+        # Keep rating count unknown when no valid distribution was returned so
+        # merge_detail can preserve comparison's count and step09 can use the
+        # listing AggregateRating fallback.
+        "count_of_star_ratings": distribution_sum,
         "count_of_reviews": total_results,
         "detailed_review_content": _format_reviews(written[:top]),
         "_written_review_count": len(written),
@@ -590,12 +630,18 @@ def _comparison_main(resp: Any, sku_id: str) -> tuple[dict | None, list[dict]]:
         return None, []
     main = None
     for p in prods:
-        pid = _norm_id((p.get("productAggregate") or {}).get("productId")) or \
-              _norm_id((p.get("cofrProductAggregate") or {}).get("id"))
-        if pid == str(sku_id):
+        aggregate = p.get("productAggregate") or {}
+        cofr = p.get("cofrProductAggregate") or {}
+        candidate_ids = {
+            _norm_id(aggregate.get("productId")),
+            _norm_id(cofr.get("productId")),
+            _norm_id(cofr.get("id")),
+        }
+        if str(sku_id) in candidate_ids:
             main = p
             break
-    main = main or prods[0]
+    if main is None:
+        return None, []
     others = [p for p in prods if p is not main]
     return main, others
 
@@ -617,7 +663,10 @@ def parse_comparison_detail(resp: Any, sku_id: str, cfg: Any = None) -> dict[str
     for g in fg:
         for f in g.get("features") or []:
             if isinstance(f, dict) and f.get("name") is not None:
-                feats.setdefault(f["name"], f.get("value"))
+                name = f["name"]
+                value = f.get("value")
+                if name not in feats or feats[name] in (None, ""):
+                    feats[name] = value
 
     spec_extractor = getattr(cfg, "extract_pdp_spec", None) or tv_extract_pdp_spec
     spec = spec_extractor(feats)
