@@ -175,55 +175,37 @@ _GERMAN_ASCII_MAP = {
     0x00df: "ss",
 }
 
-_REF_TYPE_PHRASES = [
-    (r"\bkompakt\s+ohne\s+gefrierfach\b", "compact without freezer compartment"),
-    (r"\bvollformat\s*\(\s*ohne\s+gefrierfach\s*\)", "full-size without freezer compartment"),
-    (r"\bvollformat\s*\(\s*gefrierfach\s+unterhalb\s*\)", "full-size freezer-on-bottom"),
-    (r"\bvollformat\s*\(\s*gefrierfach\s+oberhalb\s*\)", "full-size freezer-on-top"),
-    (r"\bkuehlschrank\s+ohne\s+gefrierfach\b", "refrigerator without freezer compartment"),
-    (r"^\s*\"?mit\s+gefrierfach\"?\s*$", "with freezer compartment"),
-    (r"\bohne\s+gefrierfach\b", "without freezer compartment"),
-    (r"\bgefrierfach\s+innen\b", "internal freezer compartment"),
-    (r"\bkompakt\s+freezer[-\s]*on[-\s]*top\b", "compact freezer-on-top"),
-    (r"\bkompakter\s+gefrierschrank\s+unten\b", "compact freezer-on-bottom"),
-    (r"\bkompakt\s+interner\s+gefrierschrank\b", "compact internal freezer compartment"),
-    (r"\bkompakt\b", "compact"),
-    (r"\bkuehlfach\s+unten\s*/\s*eiswuerfelfach\s+oben\b", "refrigerator compartment bottom / ice cube compartment top"),
-    (r"\bkuehlraum\s+oben\s*/\s*gefrierraum\s+unten\b", "refrigerator compartment top / freezer compartment bottom"),
-    (r"\bgefrierraum\s+oben\s*/\s*kuehlraum\s+unten\b", "freezer compartment top / refrigerator compartment bottom"),
-    (r"\bfreezer[-\s]*on[-\s]*top\s*/\s*kuehlteil\s+unten\b", "freezer-on-top / refrigerator compartment bottom"),
-    (r"\beinbau[-\s]*kuehlgeraet\b", "built-in refrigerator"),
-    (r"\bfranzoesische\s+tueren\b", "French Door"),
-    (r"\bfreistehend\b", "freestanding"),
-    (r"\bmanuell\b", "manual"),
-    (r"\bwendbare\s+tuer\b", "reversible door"),
-    (r"\bintegrierte\s+auffangschale\b", "integrated drip tray"),
-    (r"\bedelstahl\s+antifingerprint\b", "stainless steel anti-fingerprint"),
-    (r"\bbosch\s+kuehl\s+gefrier\b", "Bosch refrigerator-freezer"),
-    (r"^\s*kuehlschrank\s*$", "refrigerator"),
-    (r"\bvollraum\b", "all-refrigerator"),
-    (r"\bohne\s+wasserspender\b", "without water dispenser"),
-    (r"\bmit\s+eis\s*[-/]?\s*/?\s*wasserspender\b", "with ice/water dispenser"),
-    (r"\bmultifach\s+mit\s+schubladen,\s*regalen,\s*flaschenfaechern\s+und\s+eierfaechern\b", "multi-compartment with drawers, shelves, bottle compartments and egg compartments"),
-    (r"\bsmart\s+inverter\s+kompressor\b", "Smart Inverter Compressor"),
-    (r"\bmini\s+reffrigerator\b", "Mini Refrigerator"),
-    (r"\bcompact\s+freezer[-\s]*on[-\s]*bottom\b", "compact freezer-on-bottom"),
-    (r"\bcompact\s+side[-\s]*by[-\s]*side\b", "compact Side-by-Side"),
-    (r"\bfull[-\s]*sized\s+side[-\s]*by[-\s]*side\b", "full-size Side-by-Side"),
-    (r"\bfull[-\s]*sized\s+french\s+door\b", "full-size French Door"),
-    (r"\bside[-\s]+by[-\s]+side\b", "Side-by-Side"),
-    (r"\bsingle\s+door\b", "Single Door"),
-    (r"\bcross\s+door\b", "Cross Door"),
-    (r"\bgefrierfach\s+unten\b", "freezer-on-bottom"),
-    (r"\bgefrierteil\s+unten\b", "freezer-on-bottom"),
-    (r"\bgefrierfach\s+oben\b", "freezer-on-top"),
-    (r"\bgefrierteil\s+oben\b", "freezer-on-top"),
-    (r"\bkuehl[-\s]*gefrier[-\s]*kombination\b", "refrigerator-freezer combination"),
-    (r"\bkuehlschrank\s+mit\s+gefrierfach\b", "refrigerator with freezer compartment"),
-    (r"\bsmall\uff0cno\s+freezer\s+compartment\b", "small, no freezer compartment"),
-    (r"\u5c0f\u578b\uff0c\u65e0\u51b7\u51bb\u5ba4", "small, no freezer compartment"),
-]
+_REF_TYPE_EXCLUDES = (
+    r"\b(?:getraenke?\s*kuehlschrank|getraenkekuehler|beverage\s+(?:cooler|refrigerator|fridge))\b",
+    r"\b(?:fleischreifeschrank|meat\s+aging\s+cabinet)\b",
+    r"\b(?:kuehlvitrine|display\s+(?:refrigerator|fridge|cooler))\b",
+    r"\b(?:kuehlbox|cooler\s+box)\b",
+)
 
+_REF_TYPE_PATTERNS = (
+    (r"\bfrench[-\s]*door\b", "French Door"),
+    (r"\bside[-\s]*by[-\s]*side\b", "Side-by-Side"),
+    (
+        r"\bkuehl[-/\s]*(?:und\s+)?gefrier[-/\s]*(?:kombination|kombi|schrank)\b|"
+        r"\b(?:fridge|refrigerator)[-/\s]+freezer(?:\s+combination)?\b|"
+        r"\bkuehlschrank\s+mit\s+gefrierfach\b",
+        "Fridge-freezer Combination",
+    ),
+    (r"\bfreezer[-\s]*on[-\s]*bottom\b|\bgefrier(?:fach|teil)\s+unten\b", "Freezer-on-bottom"),
+    (r"\bfreezer[-\s]*on[-\s]*top\b|\bgefrier(?:fach|teil)\s+oben\b", "Freezer-on-top"),
+    (
+        r"\b(?:einbau[-\s]*kuehlschrank|built[-\s]*in\s+refrigerator|integrated\s+refrigerator)\b",
+        "Built-in Refrigerator",
+    ),
+    (r"\b(?:single[-\s]*door|kuehlschrank\s+mit\s+(?:einer|1)\s+tuer)\b", "Single Door"),
+    (r"\b(?:counter[-\s]*depth|thekentiefe)\b", "Counter Depth"),
+    (r"\b(?:tisch|vollraum|unterbau|stand|mini|kompakt)?[-\s]*kuehlschrank\b|\b(?:refrigerator|fridge)\b", "Refrigerator"),
+)
+
+_REF_TYPE_WEAK_FACT_PATTERNS = (
+    (r"^(?:eingebaut|einbau|eingebettet|built[-\s]*in|integrated)$", "Built-in Refrigerator"),
+    (r"^(?:zaehler\s+tie|counter[-\s]*depth|thekentiefe)$", "Counter Depth"),
+)
 
 def _translate_common(text: str) -> str:
     out = text.translate(_GERMAN_ASCII_MAP)
@@ -233,11 +215,59 @@ def _translate_common(text: str) -> str:
     return re.sub(r"\s+", " ", out).strip()
 
 
-def _translate_ref_refrigerator_type(text: str) -> str:
-    out = text.translate(_GERMAN_ASCII_MAP)
-    for pattern, repl in _REF_TYPE_PHRASES:
-        out = _replace_case_insensitive(out, pattern, repl)
-    return re.sub(r"\s+", " ", out).strip()
+def classify_ref_refrigerator_type(value: Any, *, allow_weak_fact: bool = False) -> tuple[str, str | None]:
+    """Return (valid|excluded|unknown, normalized refrigerator form)."""
+    text = _clean(value)
+    if text is None:
+        return "unknown", None
+    key = text.translate(_GERMAN_ASCII_MAP).casefold()
+    key = re.sub(r"[\u2010-\u2015]", "-", key)
+    key = re.sub(r"\s+", " ", key).strip()
+
+    for pattern in _REF_TYPE_EXCLUDES:
+        if re.search(pattern, key, flags=re.IGNORECASE):
+            return "excluded", None
+    valid_freezer_form = re.search(
+        r"\bfreezer[-\s]*on[-\s]*(?:top|bottom)\b|"
+        r"\b(?:fridge|refrigerator)[-/\s]+freezer\b|"
+        r"\bkuehl[-/\s]*(?:und\s+)?gefrier[-/\s]*(?:kombination|kombi|schrank)\b|"
+        r"\bkuehlschrank\s+mit\s+gefrierfach\b",
+        key,
+    )
+    if re.search(r"\b(?:freezer|gefrierschrank|gefriertruhe|tiefkuehlschrank|tiefkuehltruhe|gefriergeraet)\b", key) and not valid_freezer_form:
+        return "excluded", None
+    for pattern, normalized in _REF_TYPE_PATTERNS:
+        if re.search(pattern, key, flags=re.IGNORECASE):
+            return "valid", normalized
+    if allow_weak_fact:
+        for pattern, normalized in _REF_TYPE_WEAK_FACT_PATTERNS:
+            if re.search(pattern, key, flags=re.IGNORECASE):
+                return "valid", normalized
+    return "unknown", None
+
+
+def extract_ref_refrigerator_type(value: Any, *, allow_weak_fact: bool = False) -> str | None:
+    return classify_ref_refrigerator_type(value, allow_weak_fact=allow_weak_fact)[1]
+
+
+def resolve_ref_refrigerator_type(title: Any, *fact_values: Any) -> str | None:
+    """Resolve title first, then exact Aufbau facts; never use Konfiguration."""
+    state, normalized = classify_ref_refrigerator_type(title)
+    if state == "valid":
+        return normalized
+    if state == "excluded":
+        return None
+    for value in fact_values:
+        state, normalized = classify_ref_refrigerator_type(value, allow_weak_fact=True)
+        if state == "valid":
+            return normalized
+        if state == "excluded":
+            return None
+    return None
+
+
+def _translate_ref_refrigerator_type(text: str) -> str | None:
+    return extract_ref_refrigerator_type(text)
 
 
 def translate_field(field: str, value: Any) -> str | None:
@@ -267,7 +297,12 @@ def translate_field(field: str, value: Any) -> str | None:
 
 
 def translate_record_fields(record: dict[str, Any]) -> dict[str, Any]:
-    for field in TRANSLATED_FIELDS:
+    for field in TRANSLATED_FIELDS - {"ref_refrigerator_type"}:
         if field in record:
             record[field] = translate_field(field, record.get(field))
+    if "ref_refrigerator_type" in record:
+        record["ref_refrigerator_type"] = resolve_ref_refrigerator_type(
+            record.get("retailer_sku_name"),
+            record.get("ref_refrigerator_type"),
+        )
     return record

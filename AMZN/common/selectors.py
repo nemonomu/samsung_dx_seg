@@ -12,7 +12,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 from common import parsers, siel_logging
-from common.translations import translate_field
+from common.translations import resolve_ref_refrigerator_type, translate_field
 from common.io_util import db_config, split_table
 
 
@@ -515,11 +515,16 @@ def extract_cards(driver, selectors: dict[str, dict[str, str | None]], *, sort: 
 
 def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, product: str = "TV") -> dict[str, Any]:
     data: dict[str, Any] = {}
+    is_ref = str(product).lower() == "ref"
     for field in EXPAND_FIELDS:
         if field in selectors:
             click_expand(driver, selectors.get(field))
     for field, selector in selectors.items():
         if field == "base_container" or field in EXPAND_FIELDS or field in DISABLED_FIELDS:
+            continue
+        # The live DB selector points this field at Amazon's noisy
+        # "Konfiguration" row. REF type is resolved from title/Aufbau below.
+        if is_ref and field == "ref_refrigerator_type":
             continue
         if field in MULTI_FIELDS:
             values = extract_multi(driver, selector, limit=20)
@@ -585,14 +590,25 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
     selector_fields = set(selectors)
     if html:
         parsed_fallback = parsers.parse_product_detail_html(html, product=product)
+        if is_ref:
+            parsed_type = parsed_fallback.get("ref_refrigerator_type")
+            data["ref_refrigerator_type"] = (
+                normalize_field("ref_refrigerator_type", parsed_type)
+                if parsed_type not in (None, "")
+                else None
+            )
+            if parsed_fallback.get("ref_capacity") not in (None, ""):
+                data["ref_capacity"] = normalize_field("ref_capacity", parsed_fallback.get("ref_capacity"))
         for field in ("sku", "screen_size", "model_year", "estimated_annual_electricity_use", "retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity", "number_of_units_purchased_past_month"):
-            if str(product).lower() == "ref" and field == "retailer_sku_name_similar":
+            if is_ref and field in {"retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity"}:
                 continue
             if field == "sku" and parsed_fallback.get(field) not in (None, ""):
                 data[field] = normalize_field(field, parsed_fallback.get(field))
                 continue
             if field in selector_fields and data.get(field) in (None, "") and parsed_fallback.get(field) not in (None, ""):
                 data[field] = normalize_field(field, parsed_fallback.get(field))
+    elif is_ref:
+        data["ref_refrigerator_type"] = resolve_ref_refrigerator_type(data.get("retailer_sku_name"))
     if (
         "star_rating" in selector_fields
         and "count_of_star_ratings" in selector_fields

@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 from bs4 import BeautifulSoup
 
 from common.config import AMAZON_BASE
-from common.translations import translate_field
+from common.translations import resolve_ref_refrigerator_type, translate_field
 
 
 def clean_text(value: Any) -> str | None:
@@ -342,6 +342,40 @@ def _model_year_from_text(*values: Any) -> str | None:
     return None
 
 
+_REF_TITLE_CAPACITY_RE = re.compile(
+    r"(?<![\w.,])(\d{1,4}(?:[.,]\d+)?)\s*(l|liter)\b",
+    flags=re.IGNORECASE,
+)
+_REF_COOLING_CONTEXT_RE = re.compile(
+    r"(?:(?:k(?:ü|ue)hl(?:en|teil|raum|fach|volumen|bereich|zone)\b|k(?:ü|ue)hl\b)|"
+    r"refrigerator\s+(?:compartment|capacity|volume)|fridge\s+(?:compartment|capacity|volume))",
+    flags=re.IGNORECASE,
+)
+_REF_FREEZER_CONTEXT_RE = re.compile(
+    r"(?:gefrier(?:en|teil|raum|fach|volumen|bereich|zone)?|freezer)",
+    flags=re.IGNORECASE,
+)
+
+
+def _ref_capacity_from_title(value: Any) -> str | None:
+    """Use one title capacity, preferring an explicitly labelled refrigerator capacity."""
+    text = _fact_clean(value)
+    if not text:
+        return None
+    matches = list(_REF_TITLE_CAPACITY_RE.finditer(text))
+    if not matches:
+        return None
+    if len(matches) == 1:
+        match = matches[0]
+        return f"{match.group(1)} {match.group(2)}"
+    for match in matches:
+        start, end = match.span()
+        context = text[max(0, start - 14) : min(len(text), end + 14)]
+        if _REF_COOLING_CONTEXT_RE.search(context) and not _REF_FREEZER_CONTEXT_RE.search(context):
+            return f"{match.group(1)} {match.group(2)}"
+    return None
+
+
 def parse_listing_html(html: str, *, page: int, sort: str, start_rank: int = 1) -> list[dict[str, Any]]:
     soup = BeautifulSoup(html or "", "lxml")
     rows: list[dict[str, Any]] = []
@@ -482,12 +516,14 @@ def parse_product_detail_html(html: str, *, product: str | None = None) -> dict[
         facts,
         "J\u00e4hrlicher Energieverbrauch", "Jaehrlicher Energieverbrauch",
     ) or first_by_key(facts, "Elektrische Leistung")
-    ref_type_value = first_by_key(facts, "Konfiguration", "Configuration")
-    ref_capacity_value = first_by_key(
+    ref_type_value = resolve_ref_refrigerator_type(
+        data.get("retailer_sku_name"),
+        first_exact_by_key(facts, "Aufbautyp"),
+        first_exact_by_key(facts, "Aufbau"),
+    )
+    ref_capacity_value = _ref_capacity_from_title(data.get("retailer_sku_name")) or first_exact_by_key(
         facts,
         "Fassungsverm\u00f6gen", "Fassungsvermoegen",
-        "Gesamtvolumen", "Gesamtnutzinhalt", "Nutzinhalt gesamt", "Gesamtkapazit\u00e4t", "Gesamtkapazitaet",
-        "Total Capacity", "Capacity",
     )
     data["ref_refrigerator_type"] = ref_type_value
     data["ref_capacity"] = ref_capacity_value
@@ -531,6 +567,15 @@ def first_by_key(facts: dict[str, str | None], *keys: str) -> str | None:
         for normalized, value in normalized_facts:
             if value and wanted in normalized:
                 return value
+    return None
+
+
+def first_exact_by_key(facts: dict[str, str | None], *keys: str) -> str | None:
+    normalized_facts = {_fact_key(key): value for key, value in facts.items()}
+    for key in keys:
+        value = normalized_facts.get(_fact_key(key))
+        if value:
+            return value
     return None
 
 def parse_review_html(html: str, *, limit: int = 20) -> dict[str, Any]:
