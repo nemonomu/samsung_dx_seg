@@ -47,9 +47,18 @@ def _norm_kg(raw: str | None) -> str | None:
     return f"{value}kg" if value else None
 
 
-def extract_pdp_spec(features: dict[str, str]) -> dict[str, Any]:
+def _loading_from_name(name: str | None) -> str | None:
+    key = (text_clean(name) or "").casefold()
+    if "frontlader" in key:
+        return LDY_LOADING_TRANSLATIONS["Frontlader"]
+    if "toplader" in key:
+        return LDY_LOADING_TRANSLATIONS["Toplader"]
+    return None
+
+
+def extract_pdp_spec(features: dict[str, str], name: str | None = None) -> dict[str, Any]:
     load = text_clean(features.get("Beladung"))
     return {
-        "ldy_loading_type": LDY_LOADING_TRANSLATIONS.get(load, load) if load else None,
+        "ldy_loading_type": _loading_from_name(name) or (LDY_LOADING_TRANSLATIONS.get(load, load) if load else None),
         "ldy_capacity": _norm_kg(features.get(CAPACITY_FEATURE)),
     }

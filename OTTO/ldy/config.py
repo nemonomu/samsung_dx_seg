@@ -16,7 +16,7 @@ import urllib.request
 from typing import Any
 from urllib.parse import urlencode
 
-from common import compare, eprel
+from common import compare
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, top_info, transliterate
 
 EVERGLADES_URL = "https://www.otto.de/everglades/products"
@@ -114,18 +114,19 @@ def _loading_from_text(text: str | None) -> str | None:
 
 def resolve_loading(beladung: str | None, bauart: str | None, name: str | None) -> str | None:
     """loading_type priority (customer spec):
-      1) Beladung (Frontlader/Toplader) — the actual load position
-      2) a Frontlader/Toplader mention in the product name/subtitle
-      3) Bauart — Frontlader/Toplader translated; ANY other value (freistehend,
-         unterbaufähig, ...) kept as-is (customer collects the Bauart field verbatim)
+      1) an explicit Frontlader/Toplader mention in the product name/subtitle
+      2) Beladung (Frontlader/Toplader) — the actual load position
+      3) an explicit Frontlader/Toplader mention in Bauart
+
+    Bauart also contains installation/form-factor values (Einbau, freistehend,
+    Standgerät, Unterbau, Nein, ...); those are not loading positions and must
+    not be copied into ldy_loading_type.
     None -> caller falls back to everglades frontlader/toplader category membership.
     """
-    v = _loading_from_text(beladung) or _loading_from_text(name)
+    v = _loading_from_text(name) or _loading_from_text(beladung)
     if v:
         return v
-    if _has_value(bauart):
-        return _loading_from_text(bauart) or bauart.strip()
-    return None
+    return _loading_from_text(bauart)
 
 
 # /vergleich/ characteristic labels we read per SKU (Kasada-free). Beladung (load position)
@@ -361,19 +362,19 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     # "N kg" (wash is listed first) are wash-safe; generic /vergleich/ labels only for plain
     # washers.
     wt = _is_waschtrockner(name, target.get("retailer_sku_name"), vid_chars.get("Produkttyp"))
-    capacity = (top_info(target, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
-                or _capacity_from_name(name)
+    capacity = (_capacity_from_name(name)
                 or _capacity_from_name(target.get("retailer_sku_name"))
+                or top_info(target, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
                 or _vergleich_capacity(vid_chars, allow_generic=not wt)
                 or ctx.get("ds_capacity", {}).get(pid)
-                or eprel.washer_rated_capacity(sku))
+                )
     return {"ldy_loading_type": loading, "ldy_capacity": capacity}
 
 
 def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:
     """LDY has no datasheet; use the /vergleich/ Modellbezeichnung (handles space-separated
     models like 'BPW 814 A' the name-token heuristic misses). clean_model drops a trailing
-    EAN/EPREL number and colour."""
+    EAN suffix and colour."""
     ctx = ctx or {}
     pid = str(target.get("product_id") or "")
     from common import model_sku

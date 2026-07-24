@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from common import datasheet, eprel, model_sku, parsers
+from common import datasheet, model_sku, parsers
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, transliterate
 
 PRODUCT = "REF"
@@ -40,14 +40,31 @@ REF_TYPE_MAP = [
 ]
 
 
+_REF_TYPE_EXCLUDES = (
+    "gefrierschrank", "gefriertruhe", "getränkekühlschrank", "getraenkekuehlschrank",
+    "getränkekühler", "getraenkekuehler", "fleischreifeschrank", "kühlvitrine",
+    "kuehlvitrine", "kühlbox", "kuehlbox", "beverage cooler", "meat aging cabinet",
+    "display refrigerator", "cooler box",
+)
+
+
+def _type_key(value: str | None) -> str:
+    text = _norm(value) or ""
+    text = re.sub(r"\s*[-/]\s*", "-", text)
+    text = re.sub(r"-und\s+|\s+und\s+", "-", text)
+    return re.sub(r"-+", "-", re.sub(r"\s+", " ", text))
+
+
 def translate_ref_type(value: str | None) -> str | None:
-    key = _norm(value)
-    if not key:
+    key = _type_key(value)
+    if not key or any(token in key for token in _REF_TYPE_EXCLUDES):
         return None
     for german, english in REF_TYPE_MAP:
-        if german in key:
+        if _type_key(german) in key:
             return english
     return value  # unknown type -> keep raw
+
+
 POSITIVE_KEYWORDS = tuple(k for k, _ in REF_TYPE_MAP)
 EXCLUDE_KEYWORDS = (
     "wasserfilter", "filter", "ersatzteil", "einlegeboden", "abdeckung", "zubehör",
@@ -81,25 +98,53 @@ def classify(name: str | None) -> tuple[bool, str]:
 
 
 _NAME_LITER = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:liter|l)\b", re.I)
+_NAME_COOLING = re.compile(r"(?:k(?:ü|ue)hl(?:schrank|teil|raum|fach|bereich|zone|ung)?|fridge|refrigerator|cooling)", re.I)
+_NAME_FREEZER = re.compile(r"(?:gefrier(?:fach|teil|raum|bereich|zone)?|freezer)", re.I)
 
 
 def _capacity_from_name(name: str | None) -> str | None:
-    """Total volume stated in the listing name (e.g. GastroHero/Klarstein/Royal Catering
-    commercial coolers: '... 403l ...', '... 10 liter ...') — the last-resort source when
-    the datasheet, /vergleich/ and EPREL all lack a total-volume label."""
-    m = _NAME_LITER.search(name or "")
-    return f"{m.group(1)} l" if m else None
+    """Return explicit product-name volume, preferring the cooling compartment.
+
+    A title can contain both cooling and freezer capacities (e.g. ``249 L
+    Kühl + 94 L Gefrier``); in that case the cooling-labelled value is the
+    SEG ``ref_capacity``. With one unlabelled volume, keep that value.
+    """
+    text = name or ""
+    matches = list(_NAME_LITER.finditer(text))
+    if not matches:
+        return None
+    if len(matches) > 1:
+        for match in matches:
+            start, end = match.span()
+            before = text[max(0, start - 20):start]
+            after = text[end:end + 20]
+            labels: list[tuple[int, int, str]] = []
+            cooling_before = list(_NAME_COOLING.finditer(before))
+            cooling_after = _NAME_COOLING.search(after)
+            freezer_before = list(_NAME_FREEZER.finditer(before))
+            freezer_after = _NAME_FREEZER.search(after)
+            if cooling_before:
+                labels.append((len(before) - cooling_before[-1].end(), 1, "cooling"))
+            if cooling_after:
+                labels.append((cooling_after.start(), 0, "cooling"))
+            if freezer_before:
+                labels.append((len(before) - freezer_before[-1].end(), 1, "freezer"))
+            if freezer_after:
+                labels.append((freezer_after.start(), 0, "freezer"))
+            if labels and min(labels)[2] == "cooling":
+                return f"{match.group(1)} l"
+    return f"{matches[0].group(1)} l"
 
 
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
     # ref_capacity = TOTAL volume only (Gesamtrauminhalt/Gesamtnutzinhalt), never a partial
-    # like "Rauminhalt der Kühlfächer". datasheet -> /vergleich/ -> EPREL -> name; skip placeholders.
+    # like "Rauminhalt der Kühlfächer". Prefer an explicit title volume (cooling-labelled
+    # when a title also contains a freezer volume), then structured sources.
     capacity = next((v for v in (
+        _capacity_from_name(target.get("retailer_sku_name")),
         datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l"),
         model_sku.characteristic(target, ctx, "Gesamtrauminhalt", "Gesamtnutzinhalt"),
-        eprel.fridge_total_volume(sku),
-        _capacity_from_name(target.get("retailer_sku_name")),
     ) if model_sku.has_value(v)), None)
     # Kasada-free default from the listing name; PDP supplement overrides if enabled.
     ref_type = translate_ref_type(target.get("retailer_sku_name"))
@@ -108,7 +153,7 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
 
 def prepare_context(targets=None) -> dict[str, Any]:
     # /vergleich/ Modellbezeichnung (sku fallback) + Gesamtrauminhalt (capacity for beverage
-    # coolers the datasheet/EPREL household registry miss), on current bestVariationIds.
+    # coolers the datasheet/structured comparison page miss), on current bestVariationIds.
     # NOTE: we deliberately do NOT force a capacity re-fetch here (model_context supports
     # required_any). ~70 household fridges legitimately lack a /vergleich/ volume label (their
     # capacity comes from the datasheet), so retrying the whole capacity-missing set would add

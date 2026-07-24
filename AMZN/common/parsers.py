@@ -81,7 +81,13 @@ def _rating_count(root) -> str | None:
 
 
 _INVENTORY_STATUS_RE = re.compile(
-    r"\b(?:Nur noch\s+\d+\s+(?:auf Lager|in stock)|Only\s+\d+\s+left\s+in\s+stock)\b",
+    r"\b(?:"
+    r"Nur noch\s+\d+\s+(?:auf Lager|in stock)|Only\s+\d+\s+left\s+in\s+stock|"
+    r"Vorübergehend nicht auf Lager|Temporarily out of stock|"
+    r"Derzeit nicht auf Lager|Currently out of stock|Nicht auf Lager|Out of stock|"
+    r"Auf Lager|In Stock|Derzeit nicht verfügbar|Currently unavailable|"
+    r"Nicht verfügbar|Unavailable"
+    r")\b",
     re.I,
 )
 
@@ -494,7 +500,7 @@ def parse_product_detail_html(html: str, *, product: str | None = None) -> dict[
     if rating_count:
         data["count_of_star_ratings"] = clean_text(rating_count.get_text(" "))
     availability = soup.select_one("#availability, #availabilityInsideBuyBox_feature_div")
-    data["inventory_status"] = translate_field("inventory_status", clean_text(availability.get_text(" ")) if availability else None)
+    data["inventory_status"] = translate_field("inventory_status", _inventory_status_text(availability) if availability else None)
     delivery = soup.select_one("#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE, #deliveryBlockMessage")
     fastest = soup.select_one("#mir-layout-DELIVERY_BLOCK-slot-SECONDARY_DELIVERY_MESSAGE_LARGE")
     data["delivery_availability"] = translate_field("delivery_availability", clean_text(delivery.get_text(" ")) if delivery else None)
@@ -507,11 +513,17 @@ def parse_product_detail_html(html: str, *, product: str | None = None) -> dict[
     data["facts_json"] = json.dumps(facts, ensure_ascii=False)
     data["sku"] = _first_sku_value(soup, facts, product=product)
     data["model_year"] = first_by_key(facts, "Modelljahr", "Model Year") or _model_year_from_text(data.get("retailer_sku_name"), fact_text)
-    data["screen_size"] = first_by_key(
-        facts,
-        "Bildschirmgr\u00f6\u00dfe", "Bildschirmgroesse", "Bildschirmdiagonale", "Displaygr\u00f6\u00dfe", "Displaygroesse",
-        "Screen Size", "Display Size", "Standing screen display size",
-    ) or _screen_size_from_text(data.get("retailer_sku_name"), fact_text)
+    # Prefer an explicit diagonal in the product title; selector/fact text can be a
+    # generic accordion label (for example "Bild und Ton: ...").
+    data["screen_size"] = (
+        _screen_size_from_text(data.get("retailer_sku_name"))
+        or first_by_key(
+            facts,
+            "Bildschirmgr\u00f6\u00dfe", "Bildschirmgroesse", "Bildschirmdiagonale", "Displaygr\u00f6\u00dfe", "Displaygroesse",
+            "Screen Size", "Display Size", "Standing screen display size",
+        )
+        or _screen_size_from_text(fact_text)
+    )
     data["estimated_annual_electricity_use"] = first_by_key(
         facts,
         "J\u00e4hrlicher Energieverbrauch", "Jaehrlicher Energieverbrauch",

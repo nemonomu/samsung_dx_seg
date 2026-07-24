@@ -360,6 +360,18 @@ def _screen_size(features: dict[str, str]) -> str | None:
     return None
 
 
+def _screen_size_from_name(name: str | None) -> str | None:
+    """Parse an explicit Zoll/inch diagonal from the product name."""
+    m = re.search(r"(\d{2,3}(?:[.,]\d+)?)\s*(?:Zoll|inches?|\")", name or "", re.I)
+    if not m:
+        return None
+    value = m.group(1).replace(",", ".")
+    try:
+        return f"{value} inches" if 10 <= float(value) <= 150 else None
+    except ValueError:
+        return None
+
+
 def _power_use(features: dict[str, str]) -> str | None:
     """HDR on-mode power only — NO SDR fallback (per user)."""
     val = features.get(SPEC_POWER_HDR)
@@ -423,10 +435,10 @@ def _format_reviews(reviews: list[dict[str, Any]], limit: int = 20) -> str | Non
     )
 
 
-def tv_extract_pdp_spec(features: dict[str, str]) -> dict[str, Any]:
+def tv_extract_pdp_spec(features: dict[str, str], name: str | None = None) -> dict[str, Any]:
     """TV product-specific PDP spec fields (No.40-43)."""
     return {
-        "screen_size": _screen_size(features),
+        "screen_size": _screen_size_from_name(name) or _screen_size(features),
         "estimated_annual_electricity_use": _power_use(features),
         "model_year": text_clean(features.get(SPEC_MODEL_YEAR)),
     }
@@ -452,7 +464,8 @@ def parse_pdp_html(html: str, sku_id: str, cfg: Any = None) -> dict[str, Any] | 
     pickup = _entity_by_id(apollo, "CofrPickupFeature", sku_id)
 
     spec_extractor = getattr(cfg, "extract_pdp_spec", None) or tv_extract_pdp_spec
-    spec = spec_extractor(features)
+    product_name = text_clean(product.get("title") or product.get("name"))
+    spec = spec_extractor(features, product_name)
 
     # delivery_availability = the REAL displayed text (DOM), German + English.
     d_de, d_en = extract_delivery_text(html)
@@ -669,7 +682,8 @@ def parse_comparison_detail(resp: Any, sku_id: str, cfg: Any = None) -> dict[str
                     feats[name] = value
 
     spec_extractor = getattr(cfg, "extract_pdp_spec", None) or tv_extract_pdp_spec
-    spec = spec_extractor(feats)
+    product_name = text_clean(pa.get("title") or pa.get("name"))
+    spec = spec_extractor(feats, product_name)
 
     agg = main.get("cofrProductAggregate") or {}
     deliv = (agg.get("cofrDeliveryFeature") or {}).get("delivery") or {}

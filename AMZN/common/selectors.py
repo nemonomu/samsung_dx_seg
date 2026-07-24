@@ -599,6 +599,11 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
             )
             if parsed_fallback.get("ref_capacity") not in (None, ""):
                 data["ref_capacity"] = normalize_field("ref_capacity", parsed_fallback.get("ref_capacity"))
+        # Parsed PDP semantics outrank DB selectors for screen_size. This also ensures
+        # a title diagonal (e.g. ``32 Zoll``) replaces a generic/malformed selector value.
+        parsed_screen = parsed_fallback.get("screen_size")
+        if parsed_screen not in (None, ""):
+            data["screen_size"] = normalize_field("screen_size", parsed_screen)
         for field in ("sku", "screen_size", "model_year", "estimated_annual_electricity_use", "retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity", "number_of_units_purchased_past_month"):
             if is_ref and field in {"retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity"}:
                 continue

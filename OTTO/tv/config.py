@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from common import datasheet, eprel, model_sku
+from common import datasheet, model_sku
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, top_info, transliterate
 
 PRODUCT = "TV"
@@ -18,6 +18,8 @@ DB_TABLE = env_value("SEG_TV_DB_FINAL_TABLE", "dx_seg.dx_seg_tv_retail_com")
 SPEC_FIELDS = ["screen_size", "estimated_annual_electricity_use"]
 USE_DATASHEET = True
 PDP_SUPPLEMENT_FIELDS: list[str] = []  # summarized_review_content is PDP-only; left blank by default
+HDR_POWER_LABEL = "Leistungsaufnahme im Ein-Zustand bei hohem Dynamikumfang (HDR)"
+MODEL_CONTEXT_LABELS = ("Modellbezeichnung", HDR_POWER_LABEL)
 
 TV_POSITIVE_KEYWORDS = (
     "fernseher", "smart-tv", "smart tv", "oled-tv", "oled tv", "qled-tv", "qled tv",
@@ -63,8 +65,12 @@ def classify(name: str | None) -> tuple[bool, str]:
     return False, "missing_tv_positive_keyword"
 
 
-def _watt(value):
-    return value if (value and value != "NA") else None
+def _watt(value: str | None) -> str | None:
+    """Normalize a numeric watt value and reject source placeholders/non-power text."""
+    if not value or value == "NA":
+        return None
+    match = re.search(r"([0-9]+(?:[.,][0-9]+)?)[ ]*W(?:$|[^A-Za-z])", str(value), re.I)
+    return f"{match.group(1).replace(',', '.')} W" if match else None
 
 
 def _screen_from_topinfo(target: dict[str, Any]) -> str | None:
@@ -75,24 +81,38 @@ def _screen_from_topinfo(target: dict[str, Any]) -> str | None:
     return m.group(1).replace(",", ".") if m else None
 
 
+def _screen_from_name(name: str | None) -> str | None:
+    """Use an explicit diagonal in the product name before secondary sources."""
+    m = re.search(r"(\d{2,3}(?:[.,]\d+)?)\s*(?:Zoll|\")", name or "", re.I)
+    if not m:
+        return None
+    value = m.group(1).replace(",", ".")
+    try:
+        return value if 10 <= float(value) <= 150 else None
+    except ValueError:
+        return None
+
+
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
-    screen = datasheet.screen_inches(ds) or _screen_from_topinfo(target)
-    # HDR on-mode power only (SDR is not a collection target). When the datasheet marks
-    # HDR power explicitly "Nicht zutreffend" (a non-HDR TV), store that as-is — it is a
-    # real "not applicable", not a missed value. Only a genuine miss (parse failed /
-    # image-only) falls through to the EU EPREL registry, then NULL.
-    raw_hdr = datasheet.power_by_label(ds, hdr=True)
-    if raw_hdr == "NA":
-        electricity = "Nicht zutreffend"
-    else:
-        electricity = _watt(raw_hdr) or eprel.display_on_mode_power(sku)
+    # The listing title is the preferred source when it contains an explicit diagonal;
+    # top-info/datasheet are fallbacks for titles without one.
+    screen = (_screen_from_name(target.get("retailer_sku_name"))
+              or _screen_from_topinfo(target)
+              or datasheet.screen_inches(ds))
+    # HDR on-mode power only (SDR is not a collection target). Prefer the linked PDF;
+    # some OTTO PDFs are generic manufacturer brochures with no HDR power row, so use
+    # the already-batched /vergleich/ characteristics as the current OTTO fallback.
+    pdf_hdr = _watt(datasheet.power_by_label(ds, hdr=True))
+    compare_hdr = _watt(model_sku.characteristic(target, ctx, HDR_POWER_LABEL))
+    electricity = pdf_hdr or compare_hdr
     return {"screen_size": screen, "estimated_annual_electricity_use": electricity}
 
 
 def prepare_context(targets=None) -> dict[str, Any]:
-    # /vergleich/ Modellbezeichnung as a sku fallback for space-separated models
-    return model_sku.model_context(targets, SUCHBEGRIFF)
+    # The same batched /vergleich/ response supplies both model and HDR power; adding a
+    # parsed label does not add another HTTP request.
+    return model_sku.model_context(targets, SUCHBEGRIFF, labels=MODEL_CONTEXT_LABELS)
 
 
 def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:
