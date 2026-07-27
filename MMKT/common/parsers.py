@@ -19,6 +19,11 @@ from typing import Any
 MMKT_BASE = "https://www.mediamarkt.de"
 MULTI_VALUE_DELIMITER = " ||| "
 
+# Product configs may set this internal marker when the primary spec is
+# intentionally NULL by policy. It is persisted only in the step02 detail CSV
+# so resume/retry logic can distinguish a valid NULL from a parsing failure.
+PRIMARY_SPEC_EXPECTED_NULL = "_primary_spec_expected_null"
+
 # German marketing/discount labels → English (딕셔너리 방식, [수집 후 번역 필요]).
 TEXT_TRANSLATIONS = {
     "Gesponsert": "Sponsored",

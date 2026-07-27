@@ -27,6 +27,7 @@ import importlib
 
 from common.config import REFERENCES_ROOT, ensure_dirs, write_json
 from common.parsers import (
+    PRIMARY_SPEC_EXPECTED_NULL,
     parse_comparison_detail,
     parse_pdp_html,
     parse_product_reviews,
@@ -46,11 +47,17 @@ def make_session(transport: str, review_pages: int):
     return PdpBrowserSession(review_pages=review_pages)
 
 def csv_columns(cfg):
+    policy_columns = (
+        [PRIMARY_SPEC_EXPECTED_NULL]
+        if getattr(cfg, "PERSIST_PRIMARY_SPEC_EXPECTED_NULL", False)
+        else []
+    )
     return [
         "rank", "sku_id", "product_url",
         "delivery_availability", "delivery_availability_en",
         "pick_up_availability", "pick_up_availability_en",
         "sku", *cfg.SPEC_FIELDS,
+        *policy_columns,
         "star_rating", "count_of_star_ratings", "count_of_reviews",
         "summarized_review_content", "retailer_sku_name_similar", "detailed_review_content",
         "nav_status", "gql_summary", "gql_reviews", "gql_comparison",
@@ -123,17 +130,30 @@ def backfill_missing_pdp_fields(
         if row.get(field) in (None, "") and ssr_row.get(field) not in (None, ""):
             row[field] = ssr_row[field]
             recovered.append(field)
+    if primary_spec_expected_null(ssr_row):
+        row[PRIMARY_SPEC_EXPECTED_NULL] = True
     return True, recovered
+
+
+def primary_spec_expected_null(row: dict[str, Any]) -> bool:
+    value = row.get(PRIMARY_SPEC_EXPECTED_NULL)
+    return value is True or str(value or "").strip().casefold() in {"1", "true", "yes"}
+
+
+def primary_spec_satisfied(row: dict[str, Any], cfg) -> bool:
+    primary = cfg.SPEC_FIELDS[0]
+    return row.get(primary) not in (None, "") or primary_spec_expected_null(row)
 
 
 def needs_pdp_backfill(row: dict[str, Any], nav_status: Any, cfg) -> bool:
     """Backfill the reported primary-spec gap after a successful GQL response.
 
-    This intentionally uses the product's primary detail marker. Treating every
-    blank optional spec/SKU as a retry trigger would issue extra PDP requests for
-    legitimate source-null fields and increase Cloudflare pressure.
+    This intentionally uses the product's primary detail marker. An opt-in
+    policy-null marker also counts as satisfied. Treating every blank optional
+    spec/SKU as a retry trigger would issue extra PDP requests for legitimate
+    source-null fields and increase Cloudflare pressure.
     """
-    return nav_status == 200 and row.get(cfg.SPEC_FIELDS[0]) in (None, "")
+    return nav_status == 200 and not primary_spec_satisfied(row, cfg)
 
 
 def detail_attempt_is_usable(
@@ -195,7 +215,7 @@ def main() -> int:
     if args.resume and out_path.exists():
         with open(out_path, encoding="utf-8-sig") as fh:
             for r in csv.DictReader(fh):
-                if (r.get(spec0) or "").strip():
+                if primary_spec_satisfied(r, cfg):
                     kept_rows.append(r)
         good_ids = {r["sku_id"] for r in kept_rows}
         valid = [(i, t) for i, t in valid if t["sku_id"].strip() not in good_ids]
@@ -298,7 +318,7 @@ def main() -> int:
                             last_err = None
                             if ssr_attempted and not ssr_valid:
                                 last_err = f"ssr_backfill_failed status={ssr_status}"
-                            elif ssr_attempted and candidate.get(spec0) in (None, ""):
+                            elif ssr_attempted and not primary_spec_satisfied(candidate, cfg):
                                 last_err = f"field_missing_after_valid_ssr field={spec0}"
                             if last_err and not candidate.get("fetch_error"):
                                 candidate["fetch_error"] = last_err
@@ -356,9 +376,11 @@ def main() -> int:
                 if not row:
                     row = {"rank": i, "sku_id": sku_id, "product_url": url,
                            "fetch_error": last_err, "crawl_strdatetime": crawl_dt}
-                specs_ok = bool(row.get(spec0))
+                expected_null = primary_spec_expected_null(row)
+                specs_ok = primary_spec_satisfied(row, cfg)
+                specs_label = "NULL(policy)" if expected_null else ("ok" if specs_ok else "MISS")
                 line = (f"sku={sku_id} nav={row.get('nav_status')} "
-                        f"specs={'ok' if specs_ok else 'MISS'} "
+                        f"specs={specs_label} "
                         f"sim={'y' if row.get('retailer_sku_name_similar') else 'n'} "
                         f"att={row.get('attempts', '-')}"
                         + ("" if specs_ok else f" ERR={str(last_err)[:50]}"))
@@ -403,6 +425,8 @@ def main() -> int:
             writer.writerow(row)
 
     filled = sum(1 for r in rows if r.get(spec0))
+    expected_null = sum(1 for r in rows if primary_spec_expected_null(r))
+    satisfied = sum(1 for r in rows if primary_spec_satisfied(r, cfg))
     with_sim = sum(1 for r in rows if r.get("retailer_sku_name_similar"))
     with_sum = sum(1 for r in rows if r.get("summarized_review_content"))
     manifest = {
@@ -412,14 +436,17 @@ def main() -> int:
         "targets_range": [start + 1, end],
         "written_rows": len(rows),
         "rows_with_specs": filled,
+        "rows_expected_primary_spec_null": expected_null,
+        "rows_detail_satisfied": satisfied,
         "rows_with_similar": with_sim,
         "rows_with_summary": with_sum,
         "output_csv": str(out_path),
         "pages": page_log,
     }
     write_json(cfg.OUTPUT_ROOT / "mmkt_step02_pdp_detail_manifest.json", manifest)
-    print(f"[step02] DONE rows={len(rows)} specs={filled} similar={with_sim} summary={with_sum} -> {out_path}", flush=True)
-    return 0 if filled else 1
+    print(f"[step02] DONE rows={len(rows)} specs={filled} policy_null={expected_null} "
+          f"satisfied={satisfied} similar={with_sim} summary={with_sum} -> {out_path}", flush=True)
+    return 0 if satisfied else 1
 
 
 if __name__ == "__main__":
