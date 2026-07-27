@@ -22,10 +22,14 @@ browser_module = _load_browser_module()
 class Driver:
     def __init__(self) -> None:
         self.cache_commands: list[bool] = []
+        self.scripts: list[str] = []
 
     def execute_cdp_cmd(self, command: str, params: dict[str, bool]) -> None:
         if command == "Network.setCacheDisabled":
             self.cache_commands.append(params["cacheDisabled"])
+
+    def execute_script(self, script: str) -> None:
+        self.scripts.append(script)
 
 
 class CacheUnavailableDriver(Driver):
@@ -51,6 +55,19 @@ def _session(fetch_result=None, fetch_error: Exception | None = None):
 
 
 class BrowserRefetchTests(unittest.TestCase):
+    def test_normal_refetch_keeps_cache_enabled_and_stops_previous_load(self) -> None:
+        expected = {"status": 200, "text": "retry"}
+        session = _session(fetch_result=expected)
+
+        actual = session.refetch("https://www.amazon.de/dp/B0TEST", wait_range=(0, 0))
+
+        self.assertEqual(actual["status"], 200)
+        self.assertEqual(actual["retry_mode"], "normal_cache")
+        self.assertEqual(actual["retry_wait_seconds"], 0)
+        self.assertEqual(session.driver.cache_commands, [])
+        self.assertEqual(session.driver.scripts, ["window.stop();"])
+        session.fetch.assert_called_once()
+
     def test_cache_is_disabled_for_refetch_then_restored(self) -> None:
         expected = {"status": 200, "text": "retry"}
         session = _session(fetch_result=expected)

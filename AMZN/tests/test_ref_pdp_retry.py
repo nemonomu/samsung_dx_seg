@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from common import detail as detail_module
-from common.detail import _detail_quality, _ref_retry_reason
+from common.detail import _browser_retry_reason, _detail_quality, _ref_retry_reason
 from common.merge_insert import make_row
 
 
@@ -36,19 +36,38 @@ class FakeLogger:
 
 class FakeSession:
     def __init__(self, *, first_driver: Driver, retry_driver: Driver | None = None,
-                 landing_url: str | None = None, retry_landing_url: str | None = None) -> None:
+                 landing_url: str | None = None, retry_landing_url: str | None = None,
+                 first_result: dict[str, object] | None = None,
+                 normal_retry_result: dict[str, object] | None = None) -> None:
         self.driver = first_driver
         self.first_driver = first_driver
         self.retry_driver = retry_driver or first_driver
         self.landing_url = landing_url
         self.retry_landing_url = retry_landing_url
+        self.first_result = first_result
+        self.normal_retry_result = normal_retry_result
         self.fetch_count = 0
         self.refetch_count = 0
+        self.normal_refetch_count = 0
 
     def fetch(self, url: str, **_kwargs) -> dict[str, object]:
         self.fetch_count += 1
         self.driver = self.first_driver
+        if self.first_result is not None:
+            return dict(self.first_result)
         return {"url": self.landing_url or url, "status": 200, "text": "first", "error": None, "bytes": 5}
+
+    def refetch(self, url: str, **_kwargs) -> dict[str, object]:
+        self.normal_refetch_count += 1
+        self.driver = self.retry_driver
+        result = self.normal_retry_result or {
+            "url": self.retry_landing_url or url,
+            "status": 200,
+            "text": "retry",
+            "error": None,
+            "bytes": 5,
+        }
+        return {**result, "retry_mode": "normal_cache", "retry_wait_seconds": 5.0}
 
     def refetch_without_cache(self, url: str, **_kwargs) -> dict[str, object]:
         self.refetch_count += 1
@@ -104,6 +123,141 @@ def _run_detail(session: FakeSession, *, product: str, parsed_by_driver: dict[in
 
 
 class RefPdpRetryTests(unittest.TestCase):
+    def test_browser_retry_reason_excludes_amazon_interstitial(self) -> None:
+        self.assertIsNone(_browser_retry_reason({
+            "status": 429, "text": "blocked", "error": "amazon_interstitial",
+        }))
+
+    def test_browser_retry_reason_classifies_timeout_and_empty_html(self) -> None:
+        self.assertEqual(_browser_retry_reason({
+            "status": None, "text": "", "error": "TimeoutException: renderer timeout",
+        }), "timeout")
+        self.assertEqual(_browser_retry_reason({
+            "status": 200, "text": "", "error": None,
+        }), "empty_html")
+
+    def test_tv_timeout_retries_once_with_cache_and_selects_retry(self) -> None:
+        first_driver = Driver()
+        retry_driver = Driver(title="Test TV", containers=("#dp",))
+        session = FakeSession(
+            first_driver=first_driver,
+            retry_driver=retry_driver,
+            first_result={
+                "url": "https://www.amazon.de/dp/B0TEST1234",
+                "status": None,
+                "text": "",
+                "error": "TimeoutException: renderer timeout",
+                "bytes": 0,
+            },
+        )
+
+        manifest = _run_detail(
+            session,
+            product="TV",
+            parsed_by_driver={id(retry_driver): {"sku": "TV-100", "final_sku_price": "999,00€"}},
+        )
+
+        attempt = manifest["attempts"][0]
+        self.assertEqual(session.fetch_count, 1)
+        self.assertEqual(session.normal_refetch_count, 1)
+        self.assertEqual(session.refetch_count, 0)
+        self.assertEqual(manifest["rows_data"][0]["final_sku_price"], "999,00€")
+        self.assertEqual(attempt["retry_reason"], "timeout")
+        self.assertEqual(attempt["retry_mode"], "normal_cache")
+        self.assertEqual(attempt["selected_attempt"], "retry")
+        self.assertIsNone(attempt["retry_final_reason"])
+
+    def test_tv_timeout_retry_failure_is_recorded_and_collection_continues(self) -> None:
+        driver = Driver()
+        failed = {
+            "url": "https://www.amazon.de/dp/B0TEST1234",
+            "status": None,
+            "text": "",
+            "error": "TimeoutException: renderer timeout",
+            "bytes": 0,
+        }
+        session = FakeSession(
+            first_driver=driver,
+            first_result=failed,
+            normal_retry_result=failed,
+        )
+
+        manifest = _run_detail(session, product="TV", parsed_by_driver={})
+
+        attempt = manifest["attempts"][0]
+        self.assertEqual(manifest["rows"], 1)
+        self.assertEqual(session.normal_refetch_count, 1)
+        self.assertEqual(attempt["selected_attempt"], "first")
+        self.assertEqual(attempt["retry_final_reason"], "timeout")
+
+    def test_ref_timeout_uses_only_the_common_retry(self) -> None:
+        first_driver = Driver()
+        retry_driver = Driver(title="Test Refrigerator", containers=("#dp",))
+        session = FakeSession(
+            first_driver=first_driver,
+            retry_driver=retry_driver,
+            first_result={
+                "url": "https://www.amazon.de/dp/B0TEST1234",
+                "status": None,
+                "text": "",
+                "error": "TimeoutException: renderer timeout",
+                "bytes": 0,
+            },
+        )
+
+        manifest = _run_detail(
+            session,
+            product="REF",
+            parsed_by_driver={
+                id(retry_driver): {
+                    "sku": "RF-100",
+                    "ref_capacity": "199 L",
+                    "ref_refrigerator_type": "Refrigerator",
+                },
+            },
+        )
+
+        self.assertEqual(session.normal_refetch_count, 1)
+        self.assertEqual(session.refetch_count, 0)
+        self.assertEqual(manifest["attempts"][0]["selected_attempt"], "retry")
+
+    def test_interstitial_does_not_retry_immediately(self) -> None:
+        driver = Driver()
+        session = FakeSession(
+            first_driver=driver,
+            first_result={
+                "url": "https://www.amazon.de/dp/B0TEST1234",
+                "status": 429,
+                "text": "blocked",
+                "error": "amazon_interstitial",
+                "bytes": 7,
+            },
+        )
+
+        manifest = _run_detail(session, product="TV", parsed_by_driver={id(driver): {}})
+
+        self.assertEqual(session.normal_refetch_count, 0)
+        self.assertFalse(manifest["attempts"][0]["retry_attempted"])
+
+    def test_ref_interstitial_does_not_use_product_specific_retry(self) -> None:
+        driver = Driver()
+        session = FakeSession(
+            first_driver=driver,
+            first_result={
+                "url": "https://www.amazon.de/dp/B0TEST1234",
+                "status": 429,
+                "text": "blocked",
+                "error": "amazon_interstitial",
+                "bytes": 7,
+            },
+        )
+
+        manifest = _run_detail(session, product="REF", parsed_by_driver={id(driver): {}})
+
+        self.assertEqual(session.normal_refetch_count, 0)
+        self.assertEqual(session.refetch_count, 0)
+        self.assertFalse(manifest["attempts"][0]["retry_attempted"])
+
     def test_normal_ref_pdp_does_not_retry(self) -> None:
         driver = Driver(title="Bosch Refrigerator", containers=("#dp",))
         detail = {"sku": "KIR41", "ref_capacity": "199 L", "ref_refrigerator_type": "Built-in Refrigerator"}

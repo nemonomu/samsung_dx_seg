@@ -317,3 +317,28 @@ class AmazonBrowserSession:
                     self.driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": False})
                 except WebDriverException as exc:
                     siel_log.run_log(f"cache restore failed: {type(exc).__name__}: {exc}", "WARNING")
+
+    def refetch(self, url: str, *, wait_range: tuple[float, float] = (5.0, 10.0),
+                scroll_ratio: float = 1.0, scroll_pause: float | None = None,
+                scroll_max_scrolls: int | None = None,
+                post_load_sleep: float | None = None) -> dict[str, Any]:
+        """Retry one failed page load once without changing Chrome's cache policy."""
+        self.open()
+        assert self.driver is not None
+        try:
+            self.driver.execute_script("window.stop();")
+        except WebDriverException:
+            pass
+        low, high = wait_range
+        wait_seconds = random.uniform(min(low, high), max(low, high))
+        time.sleep(wait_seconds)
+        result = self.fetch(
+            url,
+            scroll_ratio=scroll_ratio,
+            scroll_pause=scroll_pause,
+            scroll_max_scrolls=scroll_max_scrolls,
+            post_load_sleep=post_load_sleep,
+        )
+        result["retry_mode"] = "normal_cache"
+        result["retry_wait_seconds"] = round(wait_seconds, 2)
+        return result
