@@ -254,7 +254,7 @@ class AmazonBrowserSession:
                 pause=0.45 if scroll_pause is None else scroll_pause,
                 max_scrolls=8 if scroll_max_scrolls is None else scroll_max_scrolls,
             )
-            self.recover(url, cycles=1)
+            recovered = self.recover(url, cycles=1)
             html = self.driver.page_source or ""
             result = {
                 "url": self.driver.current_url,
@@ -284,3 +284,36 @@ class AmazonBrowserSession:
                 "ERROR",
             )
             return result
+
+    def refetch_without_cache(self, url: str, *, wait_range: tuple[float, float] = (2.0, 4.0),
+                              scroll_ratio: float = 1.0, scroll_pause: float | None = None,
+                              scroll_max_scrolls: int | None = None,
+                              post_load_sleep: float | None = None) -> dict[str, Any]:
+        """Reload one PDP in the current session while temporarily bypassing Chrome cache."""
+        self.open()
+        assert self.driver is not None
+        low, high = wait_range
+        time.sleep(random.uniform(min(low, high), max(low, high)))
+        cache_disabled = False
+        try:
+            try:
+                self.driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
+                cache_disabled = True
+            except WebDriverException as exc:
+                siel_log.run_log(
+                    f"cache bypass unavailable; continuing with normal reload: {type(exc).__name__}: {exc}",
+                    "WARNING",
+                )
+            return self.fetch(
+                url,
+                scroll_ratio=scroll_ratio,
+                scroll_pause=scroll_pause,
+                scroll_max_scrolls=scroll_max_scrolls,
+                post_load_sleep=post_load_sleep,
+            )
+        finally:
+            if cache_disabled:
+                try:
+                    self.driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": False})
+                except WebDriverException as exc:
+                    siel_log.run_log(f"cache restore failed: {type(exc).__name__}: {exc}", "WARNING")

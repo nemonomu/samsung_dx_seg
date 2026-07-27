@@ -12,6 +12,17 @@ from common.http import save_text
 from common.io_util import category_output_root, category_reference_root, read_csv, write_csv, write_json
 
 
+REF_CORE_FIELDS = ("sku", "ref_capacity", "ref_refrigerator_type")
+NORMAL_PDP_CONTAINERS = (
+    "#dp",
+    "#ppd",
+    "#centerCol",
+    "#productOverview_feature_div",
+    "#detailBullets_feature_div",
+    "#productDetails_feature_div",
+)
+
+
 def review_url(product_url: str | None, asin: str | None) -> str | None:
     if not asin and product_url:
         asin = parsers.asin_from_url(product_url)
@@ -38,6 +49,43 @@ def _extract_landing_name(driver, selector_map: dict[str, Any]) -> str | None:
         return None
     value = selector_api.extract_single(driver, selector_map.get("retailer_sku_name"))
     return selector_api.normalize_field("retailer_sku_name", value) if value else None
+
+
+def _has_nonempty_product_title(driver: Any | None) -> bool:
+    if driver is None:
+        return False
+    try:
+        return any((element.text or "").strip() for element in driver.find_elements("css selector", "#productTitle"))
+    except Exception:  # Browser failures are treated as an incomplete PDP and retried once.
+        return False
+
+
+def _has_normal_pdp_container(driver: Any | None) -> bool:
+    if driver is None:
+        return False
+    try:
+        return any(driver.find_elements("css selector", selector) for selector in NORMAL_PDP_CONTAINERS)
+    except Exception:  # Browser failures are treated as an incomplete PDP and retried once.
+        return False
+
+
+def _ref_retry_reason(driver: Any | None, parsed_detail: dict[str, Any]) -> str | None:
+    """Return the single retry reason for an incomplete REF PDP, if applicable."""
+    reasons = []
+    if not _has_nonempty_product_title(driver):
+        reasons.append("missing_title")
+    if not _has_normal_pdp_container(driver):
+        reasons.append("missing_container")
+    if all(parsed_detail.get(field) in (None, "") for field in REF_CORE_FIELDS):
+        reasons.append("core_fields_empty")
+    return ",".join(reasons) or None
+
+
+def _detail_quality(driver: Any | None, parsed_detail: dict[str, Any]) -> tuple[int, int]:
+    """Prefer a structurally normal PDP, then the result with more REF core fields."""
+    structure_ok = int(_has_nonempty_product_title(driver) and _has_normal_pdp_container(driver))
+    core_count = sum(parsed_detail.get(field) not in (None, "") for field in REF_CORE_FIELDS)
+    return structure_ok, core_count
 
 
 def _crawl_datetime() -> str:
@@ -129,9 +177,13 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
 
             landing_url = pdp.get("url") or product_url
             landing_asin = parsers.asin_from_url(landing_url)
+            selected_pdp = pdp
             parsed_detail = {}
             use_detail = True
             redirect_decision = None
+            retry_reason = None
+            retry_pdp = None
+            retry_final_reason = None
             if _urls_differ(product_url, landing_url):
                 listing_name = target.get("retailer_sku_name")
                 landing_name = _extract_landing_name(session.driver, selector_map) if pdp.get("text") else None
@@ -155,11 +207,95 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
 
             if use_detail:
                 parsed_detail = selector_api.extract_detail(session.driver, selector_map, product=cfg.PRODUCT) if session.driver is not None and pdp.get("text") else {}
+                if str(cfg.PRODUCT).lower() == "ref" and product_url:
+                    retry_reason = _ref_retry_reason(session.driver, parsed_detail)
+                    if retry_reason:
+                        first_quality = _detail_quality(session.driver, parsed_detail)
+                        logger.warning("asin=%s pdp retry requested reason=%s", asin, retry_reason)
+                        retry_pdp = session.refetch_without_cache(
+                            product_url,
+                            wait_range=(2.0, 4.0),
+                            scroll_ratio=1.0,
+                            scroll_max_scrolls=15,
+                            post_load_sleep=max(sleep, 3.0),
+                        )
+                        retry_detail = (
+                            selector_api.extract_detail(session.driver, selector_map, product=cfg.PRODUCT)
+                            if session.driver is not None and retry_pdp.get("text") else {}
+                        )
+                        retry_landing_url = retry_pdp.get("url") or product_url
+                        retry_landing_asin = parsers.asin_from_url(retry_landing_url)
+                        retry_redirect_allowed = True
+                        retry_redirect_decision = None
+                        if _urls_differ(product_url, retry_landing_url):
+                            listing_name = target.get("retailer_sku_name")
+                            retry_landing_name = (
+                                _extract_landing_name(session.driver, selector_map)
+                                if retry_pdp.get("text") else None
+                            )
+                            detail.update({
+                                "redirect": True,
+                                "landing_url": retry_landing_url,
+                                "landing_asin": retry_landing_asin,
+                                "_original_asin": asin,
+                                "_listing_retailer_sku_name": listing_name or None,
+                                "_landing_retailer_sku_name": retry_landing_name,
+                            })
+                            if (
+                                listing_name and retry_landing_name
+                                and _norm_name(listing_name) == _norm_name(retry_landing_name)
+                            ):
+                                retry_redirect_decision = "same_name_collect_landing"
+                            else:
+                                retry_redirect_decision = "name_mismatch_listing_only"
+                                retry_redirect_allowed = False
+                                detail["_detail_skip"] = "url_mismatch_name_mismatch"
+                            redirect_decision = retry_redirect_decision
+                            detail["_redirect_decision"] = redirect_decision
+
+                        retry_incomplete_reason = _ref_retry_reason(session.driver, retry_detail)
+                        if retry_redirect_allowed and _detail_quality(session.driver, retry_detail) > first_quality:
+                            parsed_detail = retry_detail
+                            selected_pdp = retry_pdp
+                            landing_url = retry_landing_url
+                            landing_asin = retry_landing_asin
+                            detail["retry_selected_attempt"] = "retry"
+                            if retry_redirect_decision == "same_name_collect_landing":
+                                detail["_redirect_use_landing"] = True
+                            elif not _urls_differ(product_url, retry_landing_url):
+                                detail.pop("_redirect_use_landing", None)
+                        else:
+                            detail["retry_selected_attempt"] = "first"
+                            if not retry_redirect_allowed:
+                                parsed_detail = {}
+                                landing_url = retry_landing_url
+                                landing_asin = retry_landing_asin
+                                detail.pop("_redirect_use_landing", None)
+                        detail["retry_attempted"] = True
+                        detail["retry_reason"] = retry_reason
+                        if not retry_redirect_allowed:
+                            retry_final_reason = "redirect_name_mismatch"
+                        elif detail["retry_selected_attempt"] == "retry":
+                            retry_final_reason = retry_incomplete_reason
+                        else:
+                            retry_final_reason = retry_reason
+                        detail["retry_final_reason"] = retry_final_reason
+                        if retry_final_reason:
+                            logger.warning(
+                                "asin=%s pdp still incomplete after retry reason=%s",
+                                asin,
+                                retry_final_reason,
+                            )
                 detail.update({k: v for k, v in parsed_detail.items() if v not in (None, "")})
-                detail["item"] = landing_asin or asin
+                detail["item"] = asin if detail.get("_detail_skip") else landing_asin or asin
                 detail["product_url"] = product_url
                 r_url = review_url(landing_url if use_detail else product_url, landing_asin if use_detail else asin)
-                if not detail.get("detailed_review_content") and r_url and review_page_fallback:
+                if (
+                    not detail.get("_detail_skip")
+                    and not detail.get("detailed_review_content")
+                    and r_url
+                    and review_page_fallback
+                ):
                     review = session.fetch(
                         r_url,
                         scroll_ratio=1.0,
@@ -187,12 +323,24 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 "asin": asin,
                 "loaded_asin": landing_asin,
                 "pdp_status": pdp.get("status"),
+                "first_pdp_status": pdp.get("status"),
+                "retry_attempted": detail.get("retry_attempted", False),
+                "retry_reason": detail.get("retry_reason"),
+                "retry_pdp_status": retry_pdp.get("status") if retry_pdp else None,
+                "retry_final_reason": retry_final_reason,
+                "selected_attempt": detail.get("retry_selected_attempt", "first"),
+                "selected_pdp_status": selected_pdp.get("status"),
+                "final_core_field_count": (
+                    sum(parsed_detail.get(field) not in (None, "") for field in REF_CORE_FIELDS)
+                    if str(cfg.PRODUCT).lower() == "ref" else None
+                ),
                 "review_page_status": review_page_status,
                 "review_text": review_text,
                 "redirect": detail.get("redirect"),
                 "redirect_decision": redirect_decision,
                 "detail_skip": detail.get("_detail_skip"),
                 "pdp_error": pdp.get("error"),
+                "retry_pdp_error": retry_pdp.get("error") if retry_pdp else None,
                 "review_error": review.get("error"),
             })
             logger.info("rank=%d asin=%s pdp=%s review_text=%s review_page=%s redirect=%s detail_skip=%s", idx, asin, pdp.get("status"), review_text, review_page_status, redirect_decision or detail.get("redirect"), detail.get("_detail_skip"))
