@@ -53,8 +53,8 @@ class FakeSession:
 
 
 class MainListingRetryTests(unittest.TestCase):
-    def _run(self, session: FakeSession, raw_root: Path) -> dict:
-        cfg = SimpleNamespace(PRODUCT="REF", ACCOUNT_NAME="Amazon.de", MAIN_URL="https://www.amazon.de/s?k=test")
+    def _run(self, session: FakeSession, raw_root: Path, *, product: str = "REF") -> dict:
+        cfg = SimpleNamespace(PRODUCT=product, ACCOUNT_NAME="Amazon.de", MAIN_URL="https://www.amazon.de/s?k=test")
         logger = Mock()
         with (
             patch.object(listing, "ensure_dirs"),
@@ -93,6 +93,19 @@ class MainListingRetryTests(unittest.TestCase):
         self.assertEqual(session.refetch_calls, 1)
         self.assertEqual(session.restart_calls, 0)
         self.assertEqual(manifest["pages"][0]["retry_attempts"][-1]["mode"], "same_session")
+
+    def test_tv_main_uses_the_same_homepage_warmup(self) -> None:
+        session = FakeSession([
+            _response(error=None, rows=[{"item": "B0TVTEST"}], size=1_500_000),
+        ])
+        with patch.object(listing.time, "sleep"):
+            manifest = self._run(session, Path("test-output"), product="TV")
+
+        self.assertEqual(manifest["rows"], 1)
+        self.assertEqual(session.warmup_calls, 1)
+        self.assertEqual(manifest["warmup"]["status"], 200)
+        self.assertEqual(session.refetch_calls, 0)
+        self.assertEqual(session.restart_calls, 0)
 
     def test_new_session_retry_runs_after_same_session_failure(self) -> None:
         session = FakeSession([

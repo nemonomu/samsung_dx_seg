@@ -130,7 +130,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                     page_load_strategy=page_load_strategy,
                 )
                 own_session = True
-            if sort == "main" and str(cfg.PRODUCT).lower() == "ref":
+            if sort == "main":
                 logger.info("main warmup start url=https://www.amazon.de/")
                 warmup_result = session.warm_up("https://www.amazon.de/")
                 warmup_summary = {
