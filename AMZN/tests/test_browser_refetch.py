@@ -200,6 +200,29 @@ class BrowserRefetchTests(unittest.TestCase):
         session.close.assert_called_once()
         session.open.assert_called_once()
 
+    def test_warmup_uses_homepage_without_cookie_or_cache_commands(self) -> None:
+        expected = {
+            "url": "https://www.amazon.de/",
+            "status": 200,
+            "text": "homepage",
+            "bytes": 1_500_000,
+            "error": None,
+        }
+        session = browser_module.AmazonBrowserSession.__new__(browser_module.AmazonBrowserSession)
+        session.sleep = 1.5
+        session.fetch = Mock(return_value=expected)
+
+        with patch.object(browser_module.siel_log, "run_log"):
+            actual = session.warm_up()
+
+        self.assertEqual(actual, expected)
+        session.fetch.assert_called_once_with(
+            "https://www.amazon.de/",
+            scroll_ratio=0.0,
+            scroll_max_scrolls=0,
+            post_load_sleep=3.0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,6 +24,17 @@ class FakeSession:
         self.driver = SimpleNamespace(rows=[])
         self.refetch_calls = 0
         self.restart_calls = 0
+        self.warmup_calls = 0
+
+    def warm_up(self, _url: str) -> dict:
+        self.warmup_calls += 1
+        return {
+            "url": "https://www.amazon.de/",
+            "status": 200,
+            "text": "homepage",
+            "bytes": 1_500_000,
+            "error": None,
+        }
 
     def _next(self) -> dict:
         response, rows = self.attempts.pop(0)
@@ -77,6 +88,8 @@ class MainListingRetryTests(unittest.TestCase):
             manifest = self._run(session, Path("test-output"))
 
         self.assertEqual(manifest["rows"], 1)
+        self.assertEqual(session.warmup_calls, 1)
+        self.assertEqual(manifest["warmup"]["status"], 200)
         self.assertEqual(session.refetch_calls, 1)
         self.assertEqual(session.restart_calls, 0)
         self.assertEqual(manifest["pages"][0]["retry_attempts"][-1]["mode"], "same_session")

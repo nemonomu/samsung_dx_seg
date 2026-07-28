@@ -151,6 +151,21 @@ class AmazonBrowserSession:
         self.close()
         self.open()
 
+    def warm_up(self, url: str = "https://www.amazon.de/") -> dict[str, Any]:
+        """Initialize a fresh temporary Amazon session without deleting or reading cookies."""
+        siel_log.run_log(f"browser warmup start url={url}")
+        result = self.fetch(
+            url,
+            scroll_ratio=0.0,
+            scroll_max_scrolls=0,
+            post_load_sleep=max(getattr(self, "sleep", 1.5), 3.0),
+        )
+        siel_log.run_log(
+            f"browser warmup done status={result.get('status')} bytes={result.get('bytes')} "
+            f"url={result.get('url')} error={result.get('error')}"
+        )
+        return result
+
     def _click_if_present(self, by: str, selector: str, timeout_sleep: float = 0.5) -> bool:
         if self.driver is None:
             return False

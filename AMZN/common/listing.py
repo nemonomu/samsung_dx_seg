@@ -104,6 +104,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
     rows: list[dict[str, Any]] = []
     pages = []
     fatal_main_reason: str | None = None
+    warmup_summary: dict[str, Any] | None = None
     save_html = _truthy(os.getenv("AMZN_SAVE_HTML")) if save_html is None else save_html
     inter_page_sleep = _env_float("AMZN_INTER_PAGE_SLEEP", 0.0)
     own_session = False
@@ -129,6 +130,19 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                     page_load_strategy=page_load_strategy,
                 )
                 own_session = True
+            if sort == "main" and str(cfg.PRODUCT).lower() == "ref":
+                logger.info("main warmup start url=https://www.amazon.de/")
+                warmup_result = session.warm_up("https://www.amazon.de/")
+                warmup_summary = {
+                    "url": warmup_result.get("url"),
+                    "status": warmup_result.get("status"),
+                    "bytes": warmup_result.get("bytes"),
+                    "error": warmup_result.get("error"),
+                }
+                logger.info(
+                    "main warmup done status=%s bytes=%s error=%s",
+                    warmup_summary["status"], warmup_summary["bytes"], warmup_summary["error"],
+                )
             page_limit = min(max_pages, max(1, (target + 49) // 50)) if sort == "bsr" else max_pages
             for page in range(1, page_limit + 1):
                 url = page_url(cfg, sort, page)
@@ -333,6 +347,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
         "pages": pages,
         "success": fatal_main_reason is None,
         "failure_reason": fatal_main_reason,
+        "warmup": warmup_summary,
         "selector_source": "db_xpath",
     }
     write_json(out / f"step01_listing_{sort}_manifest.json", manifest)
