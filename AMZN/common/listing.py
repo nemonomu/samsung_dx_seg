@@ -261,6 +261,7 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                                 failure_reason, resp.get("status"), len(parsed), resp.get("bytes"),
                             )
                             session.restart("main_listing_recovery")
+                            restart_warmup = session.warm_up("https://www.amazon.de/")
                             resp = session.fetch(
                                 url,
                                 scroll_ratio=1.0,
@@ -282,6 +283,12 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                                 "rows": len(parsed),
                                 "error": resp.get("error"),
                                 "reason": failure_reason,
+                                "warmup": {
+                                    "url": restart_warmup.get("url"),
+                                    "status": restart_warmup.get("status"),
+                                    "bytes": restart_warmup.get("bytes"),
+                                    "error": restart_warmup.get("error"),
+                                },
                             })
                             if failure_reason:
                                 final_diagnostic = ref / "page_01_attempt_3_error.html"

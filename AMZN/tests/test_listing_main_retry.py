@@ -106,6 +106,7 @@ class MainListingRetryTests(unittest.TestCase):
         self.assertEqual(manifest["rows"], 1)
         self.assertEqual(session.refetch_calls, 1)
         self.assertEqual(session.restart_calls, 1)
+        self.assertEqual(session.warmup_calls, 2)
         self.assertEqual(manifest["pages"][0]["retry_attempts"][-1]["mode"], "new_session")
 
     def test_empty_normal_page_is_also_retried(self) -> None:
@@ -135,6 +136,7 @@ class MainListingRetryTests(unittest.TestCase):
 
         self.assertEqual(session.refetch_calls, 1)
         self.assertEqual(session.restart_calls, 1)
+        self.assertEqual(session.warmup_calls, 2)
 
 
 if __name__ == "__main__":
