@@ -86,6 +86,8 @@ def _browser_retry_reason(pdp: dict[str, Any]) -> str | None:
     error = str(pdp.get("error") or "")
     if pdp.get("status") == 429 or error == "amazon_interstitial":
         return None
+    if error == "amazon_technical_error":
+        return "amazon_technical_error"
     if "timeoutexception" in error.lower() or "timed out receiving message" in error.lower():
         return "timeout"
     if pdp.get("status") is None:

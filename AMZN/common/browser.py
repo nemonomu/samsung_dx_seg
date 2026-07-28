@@ -22,6 +22,33 @@ from common import siel_logging as siel_log
 uc.Chrome.__del__ = lambda self: None
 
 
+_AMAZON_TECHNICAL_ERROR_MARKERS = (
+    "tut uns leid",
+    "ist ein technischer fehler aufgetreten",
+    "bitte schauen sie später wieder vorbei",
+)
+
+
+def classify_amazon_page(html: str | None, title: str | None = None) -> str | None:
+    """Classify known Amazon error pages without relying on a synthetic HTTP status."""
+    source = str(html or "").lower()
+    page_title = str(title or "").lower()
+    if (
+        "robot check" in page_title
+        or "sorry, we just need to make sure" in source
+        or "/errors/validatecaptcha" in source
+        or "bm-verify" in source
+        or "_sec/verify" in source
+        or "request was throttled" in source
+        or "continue shopping" in source
+        or "click the button below to continue shopping" in source
+    ):
+        return "amazon_interstitial"
+    if sum(marker in source for marker in _AMAZON_TECHNICAL_ERROR_MARKERS) >= 2:
+        return "amazon_technical_error"
+    return None
+
+
 def _truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
@@ -118,6 +145,12 @@ class AmazonBrowserSession:
         finally:
             self.driver = None
 
+    def restart(self, reason: str = "requested") -> None:
+        """Replace the temporary WebDriver session while preserving session settings."""
+        siel_log.run_log(f"driver restart reason={reason}", "WARNING")
+        self.close()
+        self.open()
+
     def _click_if_present(self, by: str, selector: str, timeout_sleep: float = 0.5) -> bool:
         if self.driver is None:
             return False
@@ -180,16 +213,7 @@ class AmazonBrowserSession:
                 source = (self.driver.page_source or "").lower()
             except WebDriverException:
                 return False
-            blocked = (
-                "robot check" in title
-                or "sorry, we just need to make sure" in source
-                or "/errors/validatecaptcha" in source
-                or "bm-verify" in source
-                or "_sec/verify" in source
-                or "request was throttled" in source
-                or "continue shopping" in source
-                or "click the button below to continue shopping" in source
-            )
+            blocked = classify_amazon_page(source, title) == "amazon_interstitial"
             if not blocked:
                 return True
             clicked = self._click_if_present(
@@ -256,12 +280,22 @@ class AmazonBrowserSession:
             )
             recovered = self.recover(url, cycles=1)
             html = self.driver.page_source or ""
+            page_error = classify_amazon_page(html, self.driver.title or "")
+            if page_error == "amazon_technical_error":
+                status = 503
+                error = page_error
+            elif page_error == "amazon_interstitial" or not recovered:
+                status = 429
+                error = "amazon_interstitial"
+            else:
+                status = 200
+                error = None
             result = {
                 "url": self.driver.current_url,
-                "status": 200 if recovered else 429,
+                "status": status,
                 "text": html,
                 "bytes": len(html.encode("utf-8", errors="replace")),
-                "error": None if recovered else "amazon_interstitial",
+                "error": error,
                 "elapsed_seconds": round(time.perf_counter() - started, 2),
             }
             siel_log.run_log(
