@@ -12,8 +12,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--only", default="all", help="Comma list of steps to run: schema,listing,targets,full,db,notify (default all).")
     p.add_argument("--limit", type=int, default=0, help="full_output: 0 = all targets.")
     p.add_argument("--start", type=int, default=1)
-    p.add_argument("--pdp-supplement", choices=["none", "zenrows"], default="none",
-                   help="full_output: supplement PDP-only fields (e.g. LDY Bauart) via ZenRows browser.")
+    p.add_argument("--pdp-supplement", choices=["none", "zenrows"], default="zenrows",
+                   help="full_output: lazily supplement missing spec/PDP-only fields via ZenRows browser.")
     p.add_argument("--detail-sleep", type=float, default=1.0)
     p.add_argument("--save-html", action="store_true",
                    help="persist each fetched HTML page to <category>/data/output/raw_html/ for audit (also via OTTO_SAVE_HTML=1).")

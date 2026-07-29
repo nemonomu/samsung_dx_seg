@@ -63,6 +63,26 @@ def empty_to_none(value, column: str):
     return None if value in ("", None) else value
 
 
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().casefold() in {"1", "true", "yes", "y", "on"}
+
+
+def _has_value(value: Any) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _policy_null_ids(cfg) -> set[str]:
+    path = cfg.OUTPUT_ROOT / "mmkt_pdp_detail.csv"
+    if not path.exists():
+        return set()
+    rows = read_csv(path)
+    return {
+        (row.get("sku_id") or "").strip()
+        for row in rows
+        if _truthy(row.get("_primary_spec_expected_null"))
+    }
+
+
 def table_columns(cur, schema: str, table: str) -> list[str]:
     cur.execute(
         "SELECT column_name FROM information_schema.columns "
@@ -100,6 +120,23 @@ def main() -> int:
         print(f"[step14] no rows in {input_path}; nothing to load.")
         return 1
 
+    spec_fields = list(getattr(cfg, "SPEC_FIELDS", []) or [])
+    policy_null_ids = _policy_null_ids(cfg)
+    spec_missing_counts = {field: sum(1 for row in rows if not _has_value(row.get(field))) for field in spec_fields}
+    primary = spec_fields[0] if spec_fields else None
+    rows_missing_primary_spec = sum(
+        1 for row in rows
+        if primary and not _has_value(row.get(primary)) and (row.get("item") or "").strip() not in policy_null_ids
+    )
+    weak_detail_rows = sum(
+        1 for row in rows
+        if not any(_has_value(row.get(field)) for field in ["sku", "delivery_availability", "pick_up_availability", *spec_fields])
+    )
+    manifest.update(
+        spec_missing_counts=spec_missing_counts,
+        rows_missing_primary_spec=rows_missing_primary_spec,
+        weak_detail_rows=weak_detail_rows,
+    )
     if args.dry_run:
         manifest["success"] = True
         manifest["skipped"] = True
@@ -107,6 +144,19 @@ def main() -> int:
         print(f"[step14] dry_run rows={len(rows)} target={schema}.{table} "
               f"account={ACCOUNT_NAME} batch_ids={batch_ids}")
         return 0
+    if (rows_missing_primary_spec or weak_detail_rows) and not _truthy(os.getenv("MMKT_ALLOW_NULL_DETAIL_DB")):
+        manifest.update(
+            success=False,
+            skipped=True,
+            reason=(
+                f"missing primary spec rows={rows_missing_primary_spec}, "
+                f"weak detail rows={weak_detail_rows}"
+            ),
+        )
+        write_json(cfg.OUTPUT_ROOT / "step14_db_save_manifest.json", manifest)
+        print(f"[step14] BLOCKED missing primary spec rows={rows_missing_primary_spec} "
+              f"weak_detail={weak_detail_rows} counts={spec_missing_counts}")
+        return 1
 
     config = db_config()
     if not config:

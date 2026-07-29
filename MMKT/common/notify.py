@@ -59,6 +59,8 @@ def _detail_present(r: dict, spec_fields: list[str]) -> bool:
 
 def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     out = cfg.OUTPUT_ROOT
+    step02 = _read_json(out / "mmkt_step02_pdp_detail_manifest.json")
+    full = _read_json(out / "step09_full_output_manifest.json")
     db = _read_json(out / "step14_db_save_manifest.json")
     total = len(rows)
     main_expected = cfg.MAIN_TARGET_UNIQUE
@@ -69,7 +71,6 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     spec_fields = list(cfg.SPEC_FIELDS)
     detail_present = sum(1 for r in rows if _detail_present(r, spec_fields))
     detail_ratio = (detail_present / total) if total else 0.0
-    # Below this, the detail step was largely blocked (default 0.90; env-tunable).
     min_ratio = float(env_value("SEG_DETAIL_MIN_RATIO", "0.90") or "0.90")
 
     null_fields_check = NULL_BASE + spec_fields + NULL_TAIL
@@ -81,26 +82,36 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     if bsr_present != bsr_expected:
         issues.append(f"bsr_rank {bsr_present}/{bsr_expected}")
     if total and detail_ratio < min_ratio:
-        issues.append(f"detail 수집 저조 {detail_present}/{total} ({detail_ratio:.0%}) — "
-                      f"차단 의심(Chrome 버전 미스매치/IP/GraphQL 변경)")
+        issues.append(f"detail collection low {detail_present}/{total} ({detail_ratio:.0%})")
+    for source, mf in (("step02", step02), ("full", full)):
+        missing_primary = int(mf.get("rows_missing_primary_spec") or 0)
+        if missing_primary:
+            issues.append(f"{source} primary spec NULL {missing_primary}/{total}")
+        fetch_errors = int(mf.get("rows_with_fetch_error") or 0)
+        if fetch_errors:
+            issues.append(f"{source} fetch_error {fetch_errors}/{total}")
+    for field, count in (full.get("spec_missing_counts") or {}).items():
+        if count:
+            issues.append(f"{field} NULL {count}/{total}")
+    if db.get("success") is False:
+        issues.append(f"DB blocked: {db.get('reason') or 'unknown'}")
     if db.get("dry_run") is False and db.get("inserted", 0) != total:
-        issues.append(f"DB 적재 {db.get('inserted', 0)}/{total}")
+        issues.append(f"DB inserted {db.get('inserted', 0)}/{total}")
     elif db.get("dry_run"):
-        issues.append("DB 미적재(dry-run/테이블 없음)")
+        issues.append("DB dry-run/skipped")
 
-    # ⚠ marker in the subject so a blocked run is visible without opening the mail.
     base_subject = f"[SEG] MediaMarkt {cfg.PRODUCT} crawled"
-    subject = base_subject if not issues else f"[⚠ 확인필요] {base_subject}"
+    subject = base_subject if not issues else f"[CHECK] {base_subject}"
     lines = [
         subject, "",
-        f"총 수집 {total} sku", "",
-        "랭크 수집 현황",
+        f"Total collected: {total} sku", "",
+        "Rank coverage",
         f"  main_rank - {main_present}/{main_expected}",
         f"  bsr_rank - {bsr_present}/{bsr_expected}",
         f"  detail(PDP) - {detail_present}/{total} ({detail_ratio:.0%})", "",
-        "전체 null 현황",
-        *([f"  {f}" for f in null_fields] if null_fields else ["  없음"]), "",
-        ("특이사항 없음" if not issues else "특이사항\n" + "\n".join(f"  - {i}" for i in issues)),
+        "All-null fields",
+        *([f"  {f}" for f in null_fields] if null_fields else ["  none"]), "",
+        ("Issues: none" if not issues else "Issues\n" + "\n".join(f"  - {i}" for i in issues)),
     ]
     return subject, "\n".join(lines) + "\n"
 

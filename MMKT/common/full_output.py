@@ -26,6 +26,16 @@ import importlib
 
 from common.config import ACCOUNT_NAME, COUNTRY, PAGE_TYPE, ensure_dirs, read_csv, write_json
 
+PRIMARY_SPEC_EXPECTED_NULL = "_primary_spec_expected_null"
+
+
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().casefold() in {"1", "true", "yes", "y", "on"}
+
+
+def _has_value(value: Any) -> bool:
+    return bool(str(value or "").strip())
+
 
 def load_cfg(product: str):
     return importlib.import_module(f"{product}.config")
@@ -114,6 +124,16 @@ def main() -> int:
         return 1
 
     detail_by_id = {(d.get("sku_id") or "").strip(): d for d in detail if d.get("sku_id")}
+    policy_null_ids = {
+        (d.get("sku_id") or "").strip()
+        for d in detail
+        if _truthy(d.get(PRIMARY_SPEC_EXPECTED_NULL))
+    }
+    detail_fetch_error_ids = {
+        (d.get("sku_id") or "").strip()
+        for d in detail
+        if (d.get("fetch_error") or "").strip()
+    }
     main_by_id = {(l.get("sku_id") or "").strip(): l for l in listing if l.get("sku_id")}
     bsr_by_id = {(b.get("sku_id") or "").strip(): b for b in bsr if b.get("sku_id")}
 
@@ -183,6 +203,14 @@ def main() -> int:
     with_bsr = sum(1 for r in rows if r.get("bsr_rank"))
     spec0 = cfg.SPEC_FIELDS[0]
     with_specs = sum(1 for r in rows if r.get(spec0))
+    spec_missing_counts = {field: sum(1 for r in rows if not _has_value(r.get(field))) for field in cfg.SPEC_FIELDS}
+    rows_with_missing_specs = sum(
+        1 for r in rows if any(not _has_value(r.get(field)) for field in cfg.SPEC_FIELDS)
+    )
+    rows_missing_primary_spec = sum(
+        1 for r in rows
+        if not _has_value(r.get(spec0)) and str(r.get("item") or "").strip() not in policy_null_ids
+    )
     manifest = {
         "run_type": "mmkt_step09_full_output",
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -193,6 +221,10 @@ def main() -> int:
         "rows_with_specs": with_specs,
         "rows_bsr_only": bsr_only,
         "rows_missing_detail": missing_detail,
+        "rows_with_missing_specs": rows_with_missing_specs,
+        "rows_missing_primary_spec": rows_missing_primary_spec,
+        "spec_missing_counts": spec_missing_counts,
+        "rows_with_fetch_error": len(detail_fetch_error_ids),
         "output_csv": str(out_path),
     }
     write_json(cfg.OUTPUT_ROOT / "step09_full_output_manifest.json", manifest)

@@ -34,6 +34,18 @@ def _empty_to_none(value, column: str):
     return None if value in ("", None) else value
 
 
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _has_value(value) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _missing_spec_counts(rows: list[dict[str, Any]], fields: list[str]) -> dict[str, int]:
+    return {field: sum(1 for row in rows if not _has_value(row.get(field))) for field in fields}
+
+
 def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
     out = category_output_root(cfg.PRODUCT.lower())
     input_csv = out / "otto_full_output.csv"
@@ -53,10 +65,29 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
         write_json(out / "step14_db_save_manifest.json", manifest)
         print(f"[db/{cfg.PRODUCT}] no rows; skip")
         return manifest
+    spec_fields = list(getattr(cfg, "SPEC_FIELDS", []) or [])
+    missing_spec_counts = _missing_spec_counts(rows, spec_fields)
+    rows_with_missing_specs = sum(
+        1 for row in rows if any(not _has_value(row.get(field)) for field in spec_fields)
+    )
+    manifest.update(
+        missing_spec_counts=missing_spec_counts,
+        rows_with_missing_specs=rows_with_missing_specs,
+    )
     if dry_run:
         manifest.update(success=True, dry_run=True, skipped=True)
         write_json(out / "step14_db_save_manifest.json", manifest)
         print(f"[db/{cfg.PRODUCT}] dry_run rows={len(rows)} target={schema}.{table}")
+        return manifest
+    if rows_with_missing_specs and not _truthy(os.getenv("OTTO_ALLOW_NULL_SPEC_DB")):
+        manifest.update(
+            success=False,
+            dry_run=False,
+            skipped=True,
+            reason=f"missing required spec fields in {rows_with_missing_specs} row(s)",
+        )
+        write_json(out / "step14_db_save_manifest.json", manifest)
+        print(f"[db/{cfg.PRODUCT}] BLOCKED missing specs rows={rows_with_missing_specs} counts={missing_spec_counts}")
         return manifest
 
     config = db_config()

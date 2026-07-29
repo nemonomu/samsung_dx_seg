@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import os
 import sys
 import threading
 import time
@@ -87,6 +88,11 @@ def parse_args() -> argparse.Namespace:
                    help="reconnect+retry attempts per PDP when the session drops")
     p.add_argument("--resume", action="store_true",
                    help="keep rows already collected (specs present) and re-fetch only the rest")
+    missing_retry_default = os.getenv("MMKT_MISSING_RETRY", "zenrows").strip().lower() or "zenrows"
+    if missing_retry_default not in {"none", "zenrows"}:
+        missing_retry_default = "zenrows"
+    p.add_argument("--missing-retry", choices=["none", "zenrows"], default=missing_retry_default,
+                   help="after the main pass, retry rows whose primary spec is still missing; zenrows = Universal API DE premium proxy/no JS")
     return p.parse_args()
 
 
@@ -134,6 +140,85 @@ def backfill_missing_pdp_fields(
         row[PRIMARY_SPEC_EXPECTED_NULL] = True
     return True, recovered
 
+
+
+
+def _has_value(value: Any) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _merge_missing_values(row: dict[str, Any], parsed: dict[str, Any], cfg) -> list[str]:
+    recovered: list[str] = []
+    for field in csv_columns(cfg):
+        if not _has_value(row.get(field)) and _has_value(parsed.get(field)):
+            row[field] = parsed[field]
+            recovered.append(field)
+    if primary_spec_expected_null(parsed):
+        row[PRIMARY_SPEC_EXPECTED_NULL] = True
+    return recovered
+
+
+def recover_missing_rows_via_zenrows(
+    rows: list[dict[str, Any]],
+    valid_targets: list[tuple[int, dict]],
+    cfg,
+    crawl_dt: str,
+) -> list[dict[str, Any]]:
+    missing = [row for row in rows if not primary_spec_satisfied(row, cfg)]
+    if not missing:
+        return []
+    from common.zenrows import fetch_via_universal
+
+    target_by_id = {
+        str(t.get("sku_id") or "").strip(): (i, t)
+        for i, t in valid_targets
+        if (t.get("sku_id") or "").strip()
+    }
+    logs: list[dict[str, Any]] = []
+    print(f"[step02][missing-retry] zenrows universal no-js rows={len(missing)}", flush=True)
+    for row in missing:
+        sku_id = str(row.get("sku_id") or "").strip()
+        target_pair = target_by_id.get(sku_id)
+        if not target_pair:
+            logs.append({"sku_id": sku_id, "status": None, "ok": False, "error": "target_not_found"})
+            continue
+        _, target = target_pair
+        url = (target.get("product_url") or row.get("product_url") or "").strip()
+        if not url:
+            logs.append({"sku_id": sku_id, "status": None, "ok": False, "error": "missing_url"})
+            continue
+        try:
+            resp = fetch_via_universal(url, timeout=90, proxy_country="de", premium_proxy=True, js_render=False)
+        except Exception as exc:  # noqa: BLE001
+            error = type(exc).__name__ + ": " + str(exc)
+            row["fetch_error"] = row.get("fetch_error") or error
+            logs.append({"sku_id": sku_id, "status": None, "ok": False, "error": error})
+            print(f"[step02][missing-retry] sku={sku_id} error={error}", flush=True)
+            continue
+        status = resp.get("status")
+        body = resp.get("body") or b""
+        html = body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body or "")
+        recovered: list[str] = []
+        parsed = parse_pdp_html(html, sku_id, cfg) if status == 200 and html else None
+        if parsed:
+            recovered = _merge_missing_values(row, parsed, cfg)
+            row["nav_status"] = row.get("nav_status") or status
+            row["crawl_strdatetime"] = row.get("crawl_strdatetime") or crawl_dt
+        ok = primary_spec_satisfied(row, cfg)
+        if ok:
+            row["fetch_error"] = ""
+        else:
+            row["fetch_error"] = row.get("fetch_error") or f"zenrows_universal_failed status={status}"
+        logs.append({
+            "sku_id": sku_id,
+            "status": status,
+            "ok": ok,
+            "recovered": recovered,
+            "elapsed": resp.get("elapsed"),
+            "error": None if ok else row.get("fetch_error"),
+        })
+        print(f"[step02][missing-retry] sku={sku_id} status={status} ok={ok} recovered={','.join(recovered) or '-'}", flush=True)
+    return logs
 
 def primary_spec_expected_null(row: dict[str, Any]) -> bool:
     value = row.get(PRIMARY_SPEC_EXPECTED_NULL)
@@ -414,6 +499,24 @@ def main() -> int:
     finally:
         inc_fh.close()
 
+    collected_ids = {str(r.get("sku_id") or "").strip() for r in rows if r.get("sku_id")}
+    for i, t in valid:
+        sku_id = str(t.get("sku_id") or "").strip()
+        if sku_id and sku_id not in collected_ids:
+            rows.append({
+                "rank": t.get("rank") or t.get("position") or i,
+                "sku_id": sku_id,
+                "product_url": t.get("product_url"),
+                "fetch_error": "not_collected_after_worker",
+                "crawl_strdatetime": crawl_dt,
+            })
+            page_log.append({"sku_id": sku_id, "nav_status": None, "specs_ok": False,
+                             "error": "not_collected_after_worker"})
+    missing_retry_log: list[dict[str, Any]] = []
+    missing_retry = getattr(args, "missing_retry", "zenrows")
+    if missing_retry == "zenrows":
+        missing_retry_log = recover_missing_rows_via_zenrows(rows, valid, cfg, crawl_dt)
+
     # Final clean pass: re-sort the full set by rank and rewrite tidily.
     rows.extend(kept_rows)  # resume: fold in previously good rows
     rows.sort(key=lambda r: int(r.get("rank") or 0))
@@ -429,6 +532,8 @@ def main() -> int:
     satisfied = sum(1 for r in rows if primary_spec_satisfied(r, cfg))
     with_sim = sum(1 for r in rows if r.get("retailer_sku_name_similar"))
     with_sum = sum(1 for r in rows if r.get("summarized_review_content"))
+    rows_missing_primary_spec = sum(1 for r in rows if not primary_spec_satisfied(r, cfg))
+    rows_with_fetch_error = sum(1 for r in rows if (r.get("fetch_error") or "").strip())
     manifest = {
         "run_type": "mmkt_step02_pdp_detail",
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -440,13 +545,18 @@ def main() -> int:
         "rows_detail_satisfied": satisfied,
         "rows_with_similar": with_sim,
         "rows_with_summary": with_sum,
+        "rows_missing_primary_spec": rows_missing_primary_spec,
+        "rows_with_fetch_error": rows_with_fetch_error,
+        "missing_retry": missing_retry,
+        "missing_retry_log": missing_retry_log,
         "output_csv": str(out_path),
         "pages": page_log,
     }
     write_json(cfg.OUTPUT_ROOT / "mmkt_step02_pdp_detail_manifest.json", manifest)
     print(f"[step02] DONE rows={len(rows)} specs={filled} policy_null={expected_null} "
-          f"satisfied={satisfied} similar={with_sim} summary={with_sum} -> {out_path}", flush=True)
-    return 0 if satisfied else 1
+          f"satisfied={satisfied} missing_primary={rows_missing_primary_spec} "
+          f"fetch_error={rows_with_fetch_error} similar={with_sim} summary={with_sum} -> {out_path}", flush=True)
+    return 0 if rows and satisfied == len(rows) else 1
 
 
 if __name__ == "__main__":
