@@ -42,6 +42,44 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
         spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
         self.assertEqual(spec["ref_capacity"], "349 l")
 
+    def test_refrigerator_cooling_only_is_total_capacity(self) -> None:
+        target = {
+            "product_id": "CS05AV06C",
+            "retailer_sku_name": "PKM K\u00fchlschrank KS93EB",
+            "top_infos": '{"Rauminhalte der K\u00fchlf\u00e4cher": "94 l"}',
+        }
+        spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+        self.assertEqual(spec["ref_refrigerator_type"], "Refrigerator")
+        self.assertEqual(spec["ref_capacity"], "94 l")
+
+    def test_cooling_only_is_not_total_for_multi_compartment_ref(self) -> None:
+        target = {
+            "product_id": "example",
+            "retailer_sku_name": "PKM Side-by-Side SBS480NFWDBJ",
+            "top_infos": '{"Rauminhalte der K\u00fchlf\u00e4cher": "276 l"}',
+        }
+        spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+        self.assertEqual(spec["ref_refrigerator_type"], "Side by Side")
+        self.assertIsNone(spec["ref_capacity"])
+
+    def test_standalone_nutzinhalt_is_total_capacity(self) -> None:
+        target = {
+            "product_id": "S09230AI",
+            "retailer_sku_name": "Stillstern Table Top K\u00fchlschrank KB-46-2",
+            "top_infos": '{"Nutzinhalt": "45 L"}',
+        }
+        spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+        self.assertEqual(spec["ref_capacity"], "45 l")
+
+    def test_standalone_nutzinhalt_requires_numeric_liters(self) -> None:
+        target = {
+            "product_id": "example",
+            "retailer_sku_name": "Stillstern Table Top K\u00fchlschrank KB-46-2",
+            "top_infos": '{"Nutzinhalt": "nicht zutreffend"}',
+        }
+        with patch.object(ref_config.eprel, "fridge_total_volume", return_value=None):
+            spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+        self.assertIsNone(spec["ref_capacity"])
     def test_chest_freezer_type_is_preserved(self) -> None:
         self.assertEqual(ref_config.translate_ref_type("Hanseatic Gefriertruhe"), "Chest Freezer")
 
@@ -63,6 +101,35 @@ class OttoTvSpecFallbackTests(unittest.TestCase):
             spec = tv_config.extract_spec(target, {}, {"model": {}}, sku="55R5G")
         self.assertEqual(spec["estimated_annual_electricity_use"], "110 W")
         self.assertEqual(spec["screen_size"], "55")
+
+    def test_url_cm_fallback_used_when_no_zoll_sources(self) -> None:
+        cases = [
+            (
+                "HISENSE 136MXQ Mini-LED-Fernseher",
+                "https://www.otto.de/p/hisense-hisense-136mxq-mini-led-fernseher-345-cm-S00FF0SA/",
+                "345 cm",
+            ),
+            (
+                "Coocaa 40CRTG30Z DLED-Fernseher",
+                "https://www.otto.de/p/coocaa-40crtg30z-dled-fernseher-100-cm-full-hd-smart-tv-hdr-S01GL0HJ/",
+                "100 cm",
+            ),
+        ]
+        with patch.object(tv_config.eprel, "display_on_mode_power", return_value=None):
+            for name, url, expected in cases:
+                with self.subTest(url=url):
+                    target = {"retailer_sku_name": name, "product_url": url}
+                    spec = tv_config.extract_spec(target, {}, {"model": {}}, sku=None)
+                    self.assertEqual(spec["screen_size"], expected)
+
+    def test_url_cm_fallback_ignores_variant_urls_with_zoll(self) -> None:
+        target = {
+            "retailer_sku_name": "Sony K-55S3 DLED-Fernseher",
+            "product_url": "https://www.otto.de/p/sony-k-85s3-85-bravia-3-dled-fernseher-215-cm-85-zoll-C1970862261/",
+        }
+        with patch.object(tv_config.eprel, "display_on_mode_power", return_value=None):
+            spec = tv_config.extract_spec(target, {}, {"model": {}}, sku="K-55S3")
+        self.assertIsNone(spec["screen_size"])
 
 
 if __name__ == "__main__":

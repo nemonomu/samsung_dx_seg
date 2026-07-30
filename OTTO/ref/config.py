@@ -110,6 +110,8 @@ _TOTAL_KEYS = (
     "gesamtrauminhalt", "gesamtnutzinhalt", "nutzinhaltgesamt",
     "gesamtinhalt", "gesamtvolumen", "totalvolume", "totalcapacity",
 )
+_STANDALONE_TOTAL_KEYS = ("nutzinhalt",)
+_SINGLE_COMPARTMENT_REF_TYPES = {"Refrigerator", "Built-in Refrigerator"}
 _COOLING_KEYS = (
     "rauminhaltederkuehlfaecher", "rauminhaltderkuehlfaecher",
     "kapazitaetkuehlen", "kuehlteil", "kuehlfach", "kuehlfaecher", "cooling",
@@ -122,6 +124,7 @@ REF_CONTEXT_LABELS = (
     "Modellbezeichnung",
     "Gesamtrauminhalt",
     "Gesamtnutzinhalt",
+    "Nutzinhalt",
     "Rauminhalte der K\u00fchlf\u00e4cher",
     "Rauminhalt der K\u00fchlf\u00e4cher",
     "Rauminhalte der Tiefk\u00fchlf\u00e4cher",
@@ -246,8 +249,23 @@ def _value_by_label(values: dict[str, Any], keys: tuple[str, ...]) -> str | None
     return None
 
 
+def _value_by_exact_label(values: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    for label, value in values.items():
+        if _label_key(str(label)) in keys and model_sku.has_value(value):
+            return _format_liters(_liter_number(str(value)))
+    return None
+
 def _capacity_sum_by_labels(values: dict[str, Any]) -> str | None:
     return _sum_liters(_value_by_label(values, _COOLING_KEYS), _value_by_label(values, _FREEZER_KEYS))
+
+
+
+def _single_compartment_capacity(values: dict[str, Any], ref_type: str | None) -> str | None:
+    if ref_type not in _SINGLE_COMPARTMENT_REF_TYPES:
+        return None
+    if _value_by_label(values, _FREEZER_KEYS):
+        return None
+    return _value_by_label(values, _COOLING_KEYS)
 
 
 def _datasheet_sum_capacity(ds: dict[str, Any]) -> str | None:
@@ -272,9 +290,11 @@ def _eprel_capacity(sku: str | None) -> str | None:
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
     # ref_capacity is total volume. If OTTO exposes only compartment values,
-    # collect cooling + freezer together; never store the cooling value alone.
+    # collect cooling + freezer together. For pure refrigerators, a lone cooling
+    # compartment is the total usable volume; do not apply that to fridge-freezers.
     top_infos = _top_info_map(target)
     ctx_values = _ctx_values(target, ctx)
+    ref_type = translate_ref_type(target.get("retailer_sku_name"))
     capacity = next((v for v in (
         _capacity_from_name(target.get("retailer_sku_name")),
         datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l"),
@@ -282,11 +302,14 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
         _datasheet_sum_capacity(ds),
         _value_by_label(top_infos, _TOTAL_KEYS),
         _value_by_label(ctx_values, _TOTAL_KEYS),
+        _value_by_exact_label(top_infos, _STANDALONE_TOTAL_KEYS),
+        _value_by_exact_label(ctx_values, _STANDALONE_TOTAL_KEYS),
         _capacity_sum_by_labels(top_infos),
         _capacity_sum_by_labels(ctx_values),
+        _single_compartment_capacity(top_infos, ref_type),
+        _single_compartment_capacity(ctx_values, ref_type),
         _eprel_capacity(sku),
     ) if model_sku.has_value(v)), None)
-    ref_type = translate_ref_type(target.get("retailer_sku_name"))
     return {"ref_refrigerator_type": ref_type, "ref_capacity": capacity}
 
 
@@ -315,7 +338,13 @@ def extract_pdp_spec(soup) -> dict[str, Any]:
     out: dict[str, Any] = {}
     if raw:
         out["ref_refrigerator_type"] = translate_ref_type(raw)
-    capacity = _value_by_label(rows, _TOTAL_KEYS) or _capacity_sum_by_labels(rows)
+    ref_type = out.get("ref_refrigerator_type")
+    capacity = (
+        _value_by_label(rows, _TOTAL_KEYS)
+        or _value_by_exact_label(rows, _STANDALONE_TOTAL_KEYS)
+        or _capacity_sum_by_labels(rows)
+        or _single_compartment_capacity(rows, ref_type)
+    )
     if capacity:
         out["ref_capacity"] = capacity
     return out

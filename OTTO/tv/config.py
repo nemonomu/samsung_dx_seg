@@ -94,6 +94,21 @@ def _screen_from_name(name: str | None) -> str | None:
 
 
 
+def _screen_cm_from_url_without_zoll(url: str | None) -> str | None:
+    """Fallback for OTTO TV URLs that expose only a centimeter diagonal."""
+    raw = url or ""
+    if re.search(r"(?:^|[-_/])zoll(?:[-_/]|$)", raw, re.I):
+        return None
+    m = re.search(r"(?:^|[-_/])(\d{2,3})(?:[-,.](\d+))?-cm(?:[-_/]|$)", raw, re.I)
+    if not m:
+        return None
+    value = f"{m.group(1)}.{m.group(2)}" if m.group(2) else m.group(1)
+    try:
+        return f"{value} cm" if 25 <= float(value) <= 400 else None
+    except ValueError:
+        return None
+
+
 def _screen_from_detail_value(value: str | None) -> str | None:
     raw = value or ""
     m = re.search(r"(\d{2,3}(?:[.,]\d+)?)", raw)
@@ -118,7 +133,8 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     # top-info/datasheet are fallbacks for titles without one.
     screen = (_screen_from_name(target.get("retailer_sku_name"))
               or _screen_from_topinfo(target)
-              or datasheet.screen_inches(ds))
+              or datasheet.screen_inches(ds)
+              or _screen_cm_from_url_without_zoll(target.get("product_url")))
     # HDR on-mode power only (SDR is not a collection target). Prefer the linked PDF;
     # some OTTO PDFs are generic manufacturer brochures with no HDR power row, so use
     # the already-batched /vergleich/ characteristics as the current OTTO fallback.

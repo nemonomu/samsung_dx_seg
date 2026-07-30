@@ -53,22 +53,19 @@ class OttoDbSavePolicyTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "DB_CONFIG"):
                     db_save.run(FakeTvConfig())
 
-    def test_missing_specs_can_still_be_blocked_by_env(self) -> None:
+    def test_missing_specs_are_not_blocked_by_legacy_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             out = Path(tmpdir)
             write_full_output(out / "otto_full_output.csv")
             with patch.object(db_save, "category_output_root", return_value=out), \
-                    patch.object(db_save, "db_config", side_effect=AssertionError("should not connect")), \
+                    patch.object(db_save, "db_config", return_value=None), \
                     patch.dict(os.environ, {
                         "OTTO_BLOCK_NULL_SPEC_DB": "1",
                         "OTTO_ALLOW_NULL_SPEC_DB": "0",
                         "OTTO_DB_DRY_RUN": "0",
                     }, clear=False):
-                result = db_save.run(FakeTvConfig())
-            self.assertFalse(result["success"])
-            self.assertTrue(result["skipped"])
-            self.assertEqual(result["missing_spec_policy"], "block")
-            self.assertIn("missing required spec fields", result["reason"])
+                with self.assertRaisesRegex(RuntimeError, "DB_CONFIG"):
+                    db_save.run(FakeTvConfig())
 
 
 if __name__ == "__main__":
