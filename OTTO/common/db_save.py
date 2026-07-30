@@ -70,16 +70,18 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
     rows_with_missing_specs = sum(
         1 for row in rows if any(not _has_value(row.get(field)) for field in spec_fields)
     )
+    block_null_specs = _truthy(os.getenv("OTTO_BLOCK_NULL_SPEC_DB")) and not _truthy(os.getenv("OTTO_ALLOW_NULL_SPEC_DB"))
     manifest.update(
         missing_spec_counts=missing_spec_counts,
         rows_with_missing_specs=rows_with_missing_specs,
+        missing_spec_policy="block" if block_null_specs else "warn_only",
     )
     if dry_run:
         manifest.update(success=True, dry_run=True, skipped=True)
         write_json(out / "step14_db_save_manifest.json", manifest)
         print(f"[db/{cfg.PRODUCT}] dry_run rows={len(rows)} target={schema}.{table}")
         return manifest
-    if rows_with_missing_specs and not _truthy(os.getenv("OTTO_ALLOW_NULL_SPEC_DB")):
+    if rows_with_missing_specs and block_null_specs:
         manifest.update(
             success=False,
             dry_run=False,
@@ -89,6 +91,8 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
         write_json(out / "step14_db_save_manifest.json", manifest)
         print(f"[db/{cfg.PRODUCT}] BLOCKED missing specs rows={rows_with_missing_specs} counts={missing_spec_counts}")
         return manifest
+    if rows_with_missing_specs:
+        print(f"[db/{cfg.PRODUCT}][WARN] missing specs rows={rows_with_missing_specs} counts={missing_spec_counts}; continuing DB insert")
 
     config = db_config()
     if not config:
