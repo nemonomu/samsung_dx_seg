@@ -111,7 +111,8 @@ _TOTAL_KEYS = (
     "gesamtinhalt", "gesamtvolumen", "totalvolume", "totalcapacity",
 )
 _STANDALONE_TOTAL_KEYS = ("nutzinhalt",)
-_SINGLE_COMPARTMENT_REF_TYPES = {"Refrigerator", "Built-in Refrigerator"}
+_SINGLE_COOLING_REF_TYPES = {"Refrigerator", "Built-in Refrigerator", "Wine Cooler"}
+_SINGLE_FREEZER_REF_TYPES = {"Freezer", "Chest Freezer"}
 _COOLING_KEYS = (
     "rauminhaltederkuehlfaecher", "rauminhaltderkuehlfaecher",
     "kapazitaetkuehlen", "kuehlteil", "kuehlfach", "kuehlfaecher", "cooling",
@@ -139,8 +140,10 @@ def _label_key(value: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", "", text)
 
 
-def _label_matches(value: str | None, keys: tuple[str, ...]) -> bool:
+def _label_matches(value: str | None, keys: tuple[str, ...], reject_keys: tuple[str, ...] = ()) -> bool:
     key = _label_key(value)
+    if any(k in key for k in reject_keys):
+        return False
     return any(k in key for k in keys)
 
 
@@ -241,9 +244,10 @@ def _ctx_values(target: dict[str, Any], ctx: dict[str, Any] | None) -> dict[str,
     return values if isinstance(values, dict) else {}
 
 
-def _value_by_label(values: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+def _value_by_label(values: dict[str, Any], keys: tuple[str, ...],
+                    reject_keys: tuple[str, ...] = ()) -> str | None:
     for label, value in values.items():
-        if _label_matches(str(label), keys) and model_sku.has_value(value):
+        if _label_matches(str(label), keys, reject_keys) and model_sku.has_value(value):
             formatted = _format_liters(_liter_number(str(value)))
             return formatted or str(value)
     return None
@@ -256,16 +260,20 @@ def _value_by_exact_label(values: dict[str, Any], keys: tuple[str, ...]) -> str 
     return None
 
 def _capacity_sum_by_labels(values: dict[str, Any]) -> str | None:
-    return _sum_liters(_value_by_label(values, _COOLING_KEYS), _value_by_label(values, _FREEZER_KEYS))
+    cooling = _value_by_label(values, _COOLING_KEYS, reject_keys=_FREEZER_KEYS)
+    freezer = _value_by_label(values, _FREEZER_KEYS)
+    return _sum_liters(cooling, freezer)
 
 
 
 def _single_compartment_capacity(values: dict[str, Any], ref_type: str | None) -> str | None:
-    if ref_type not in _SINGLE_COMPARTMENT_REF_TYPES:
-        return None
-    if _value_by_label(values, _FREEZER_KEYS):
-        return None
-    return _value_by_label(values, _COOLING_KEYS)
+    cooling = _value_by_label(values, _COOLING_KEYS, reject_keys=_FREEZER_KEYS)
+    freezer = _value_by_label(values, _FREEZER_KEYS)
+    if ref_type in _SINGLE_COOLING_REF_TYPES:
+        return None if freezer else cooling
+    if ref_type in _SINGLE_FREEZER_REF_TYPES:
+        return None if cooling else freezer
+    return None
 
 
 def _datasheet_sum_capacity(ds: dict[str, Any]) -> str | None:
@@ -297,6 +305,7 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     ref_type = translate_ref_type(target.get("retailer_sku_name"))
     capacity = next((v for v in (
         _capacity_from_name(target.get("retailer_sku_name")),
+        _capacity_from_name(target.get("product_url")),
         datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l"),
         datasheet.value_with_unit(ds, "Gesamtnutzinhalt", "l"),
         _datasheet_sum_capacity(ds),

@@ -62,6 +62,40 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
         self.assertEqual(spec["ref_refrigerator_type"], "Side by Side")
         self.assertIsNone(spec["ref_capacity"])
 
+    def test_freezer_label_is_not_reused_as_cooling_capacity(self) -> None:
+        target = {
+            "product_id": "example",
+            "retailer_sku_name": "Royal Catering Getraenkekuehlschrank RC-BC004",
+            "top_infos": {"Rauminhalte der Tiefkuehlfaecher": "458 l"},
+        }
+        with patch.object(ref_config.eprel, "fridge_total_volume", return_value=None):
+            spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+        self.assertIsNone(spec["ref_capacity"])
+
+    def test_product_url_liter_capacity_wins_over_ambiguous_compartment_label(self) -> None:
+        target = {
+            "product_id": "S03EZ0KJ",
+            "retailer_sku_name": "Royal Catering Getraenkekuehlschrank RC-BC004",
+            "product_url": (
+                "https://www.otto.de/p/royal-catering-getraenkekuehlschrank-rc-bc004-"
+                "180-cm-hoch-90-5-cm-breit-458-l-kuehlschrank-fuer-getraenke-"
+                "mit-glastuer-led-beleuchtung-schwarz-S03EZ0KJ/"
+            ),
+            "top_infos": {"Rauminhalte der Tiefkuehlfaecher": "458 l"},
+        }
+        spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+        self.assertEqual(spec["ref_capacity"], "458 l")
+
+    def test_freezer_only_capacity_is_total_for_freezer(self) -> None:
+        target = {
+            "product_id": "freezer-example",
+            "retailer_sku_name": "Hanseatic Gefrierschrank HGS17060CNFI",
+            "top_infos": {"Rauminhalte der Tiefkuehlfaecher": "168 l"},
+        }
+        spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+        self.assertEqual(spec["ref_refrigerator_type"], "Freezer")
+        self.assertEqual(spec["ref_capacity"], "168 l")
+
     def test_standalone_nutzinhalt_is_total_capacity(self) -> None:
         target = {
             "product_id": "S09230AI",
