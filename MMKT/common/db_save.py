@@ -144,20 +144,11 @@ def main() -> int:
         print(f"[step14] dry_run rows={len(rows)} target={schema}.{table} "
               f"account={ACCOUNT_NAME} batch_ids={batch_ids}")
         return 0
-    if (rows_missing_primary_spec or weak_detail_rows) and not _truthy(os.getenv("MMKT_ALLOW_NULL_DETAIL_DB")):
-        manifest.update(
-            success=False,
-            skipped=True,
-            reason=(
-                f"missing primary spec rows={rows_missing_primary_spec}, "
-                f"weak detail rows={weak_detail_rows}"
-            ),
+    if rows_missing_primary_spec or weak_detail_rows:
+        print(
+            f"[step14][WARN] missing primary spec rows={rows_missing_primary_spec} "
+            f"weak_detail={weak_detail_rows} counts={spec_missing_counts}; continuing DB insert"
         )
-        write_json(cfg.OUTPUT_ROOT / "step14_db_save_manifest.json", manifest)
-        print(f"[step14] BLOCKED missing primary spec rows={rows_missing_primary_spec} "
-              f"weak_detail={weak_detail_rows} counts={spec_missing_counts}")
-        return 1
-
     config = db_config()
     if not config:
         raise RuntimeError("DB_CONFIG is missing from .env")

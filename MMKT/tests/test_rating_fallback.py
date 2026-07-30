@@ -160,6 +160,48 @@ class RatingFallbackTests(unittest.TestCase):
             self.assertEqual(manifest["csv_rows"], 1)
             self.assertEqual(manifest["batch_ids"], ["m_test"])
 
+    def test_db_save_missing_detail_warns_without_blocking(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_path = root / "mmkt_full_output.csv"
+            with output_path.open("w", encoding="utf-8-sig", newline="") as fh:
+                writer = csv.DictWriter(
+                    fh,
+                    fieldnames=[
+                        "batch_id", "item", "sku", "delivery_availability",
+                        "pick_up_availability", "screen_size",
+                        "estimated_annual_electricity_use", "model_year",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "batch_id": "m_test",
+                        "item": "123",
+                        "sku": "",
+                        "delivery_availability": "",
+                        "pick_up_availability": "",
+                        "screen_size": "",
+                        "estimated_annual_electricity_use": "",
+                        "model_year": "",
+                    }
+                )
+            cfg = SimpleNamespace(
+                OUTPUT_ROOT=root,
+                PRODUCT="TV",
+                SPEC_FIELDS=list(tv_config.SPEC_FIELDS),
+                DB_TABLE=("dx_seg", "dx_seg_tv_retail_com"),
+            )
+            db_args = SimpleNamespace(product="tv", input=str(output_path), dry_run=False)
+            with (
+                patch.object(db_save_module, "parse_args", return_value=db_args),
+                patch.object(db_save_module, "load_cfg", return_value=cfg),
+                patch.object(db_save_module, "db_config", return_value=None),
+                patch("builtins.print"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "DB_CONFIG"):
+                    db_save_module.main()
+
     def test_saved_capture_distribution_reproduces_average_and_counts(self):
         parsed = parse_product_reviews(
             review_response(CAPTURE_DISTRIBUTION, total_results=67)

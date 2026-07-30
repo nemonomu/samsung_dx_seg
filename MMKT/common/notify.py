@@ -94,7 +94,7 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         if count:
             issues.append(f"{field} NULL {count}/{total}")
     if db.get("success") is False:
-        issues.append(f"DB blocked: {db.get('reason') or 'unknown'}")
+        issues.append(f"DB issue: {db.get('reason') or 'unknown'}")
     if db.get("dry_run") is False and db.get("inserted", 0) != total:
         issues.append(f"DB inserted {db.get('inserted', 0)}/{total}")
     elif db.get("dry_run"):
