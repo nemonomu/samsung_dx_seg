@@ -185,13 +185,26 @@ _REF_TYPE_EXCLUDES = (
 _REF_TYPE_PATTERNS = (
     (r"\bfrench[-\s]*door\b", "French Door"),
     (r"\bside[-\s]*by[-\s]*side\b", "Side-by-Side"),
+    (r"\bmulti[-\s]*door\b", "Multi-Door"),
     (
         r"\bkuehl[-/\s]*(?:und\s+)?gefrier[-/\s]*(?:kombination|kombi|schrank)\b|"
         r"\b(?:fridge|refrigerator)[-/\s]+freezer(?:\s+combination)?\b",
         "Fridge-freezer Combination",
     ),
-    (r"\bfreezer[-\s]*on[-\s]*bottom\b|\bgefrier(?:fach|teil)\s+unten\b", "Freezer-on-bottom"),
-    (r"\bfreezer[-\s]*on[-\s]*top\b|\bgefrier(?:fach|teil)\s+oben\b", "Freezer-on-top"),
+    (
+        r"\bfreezer[-\s]*on[-\s]*bottom\b|"
+        r"\bgefrier(?:fach|teil|schrank)\s+(?:unten|unterhalb)\b|"
+        r"\b(?:unten|unterhalb)\s+gefrier(?:fach|teil|schrank)\b",
+        "Freezer-on-bottom",
+    ),
+    (
+        r"\bfreezer[-\s]*on[-\s]*top\b|"
+        r"\bgefrier(?:fach|teil|schrank)\s+(?:oben|oberhalb)\b|"
+        r"\b(?:oben|oberhalb)\s+gefrier(?:fach|teil|schrank)\b",
+        "Freezer-on-top",
+    ),
+    (r"\b(?:gefrierfach\s+innen|interner?\s+gefrier(?:fach|schrank)|internal\s+freezer(?:\s+compartment)?)\b", "Internal freezer compartment"),
+    (r"\b(?:ohne\s+gefrierfach|without\s+freezer(?:\s+compartment)?)\b", "No freezer compartment"),
     (r"\b(?:single[-\s]*door|kuehlschrank\s+mit\s+(?:einer|1)\s+tuer)\b", "Single Door"),
 )
 
@@ -220,7 +233,10 @@ def classify_ref_refrigerator_type(value: Any, *, allow_weak_fact: bool = False)
     valid_freezer_form = re.search(
         r"\bfreezer[-\s]*on[-\s]*(?:top|bottom)\b|"
         r"\b(?:fridge|refrigerator)[-/\s]+freezer\b|"
-        r"\bkuehl[-/\s]*(?:und\s+)?gefrier[-/\s]*(?:kombination|kombi|schrank)\b",
+        r"\bkuehl[-/\s]*(?:und\s+)?gefrier[-/\s]*(?:kombination|kombi|schrank)\b|"
+        r"\bgefrier(?:fach|teil|schrank)\s+(?:unten|unterhalb|oben|oberhalb|innen)\b|"
+        r"\b(?:unten|unterhalb|oben|oberhalb)\s+gefrier(?:fach|teil|schrank)\b|"
+        r"\binterner?\s+gefrier(?:fach|schrank)\b",
         key,
     )
     if re.search(r"\b(?:freezer|gefrierschrank|gefriertruhe|tiefkuehlschrank|tiefkuehltruhe|gefriergeraet)\b", key) and not valid_freezer_form:

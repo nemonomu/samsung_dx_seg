@@ -151,6 +151,8 @@ def _translate_type(value: str | None) -> str | None:
         return "French Door"
     if "sidebyside" in key:
         return "Side-by-Side"
+    if "multidoor" in key:
+        return "Multi-Door"
 
     if any(token in key for token in (
         "kuehlgefrierkombination",

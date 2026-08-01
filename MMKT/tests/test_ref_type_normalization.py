@@ -42,6 +42,7 @@ class RefTypeNormalizationTests(unittest.TestCase):
             "Side by Side Kuehl- und Gefrierkombination": "Side-by-Side",
             "Side-by-Side Kuehlkombination": "Side-by-Side",
             "Side-by-Side Kuehlkombinationen": "Side-by-Side",
+            "Multi-Door": "Multi-Door",
         }
         for value, expected in cases.items():
             with self.subTest(value=value):

@@ -68,6 +68,27 @@ class RefFieldSelectionTests(unittest.TestCase):
 
         self.assertIsNone(parsed["ref_refrigerator_type"])
 
+    def test_valid_freezer_position_forms_are_preserved(self) -> None:
+        cases = {
+            "Ohne Gefrierfach": "No freezer compartment",
+            "Kompakt ohne Gefrierfach": "No freezer compartment",
+            "Gefrierfach Innen": "Internal freezer compartment",
+            "Kompakt Interner Gefrierschrank": "Internal freezer compartment",
+            "Vollformat (Gefrierfach unterhalb)": "Freezer-on-bottom",
+            "Vollformat (Gefrierfach oberhalb)": "Freezer-on-top",
+            "Full-Sized Side-by-Side": "Side-by-Side",
+            "Full-Sized French Door": "French Door",
+            "Multi-Door": "Multi-Door",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                parsed = parse_product_detail_html(
+                    _pdp("Brand Model", ("Aufbau", raw)),
+                    product="REF",
+                )
+                self.assertEqual(parsed["ref_refrigerator_type"], expected)
+
+
     def test_requested_excluded_product_categories_are_not_types(self) -> None:
         titles = (
             "Gefrierschrank",
