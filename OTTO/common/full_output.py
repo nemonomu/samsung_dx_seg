@@ -92,6 +92,14 @@ def first(*values):
     return None
 
 
+def has_value(value: Any) -> bool:
+    return bool(str(value or "").strip())
+
+
+def missing_spec_fields(spec: dict[str, Any], cfg) -> list[str]:
+    return [f for f in cfg.SPEC_FIELDS if not has_value(spec.get(f))]
+
+
 def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int = 45) -> dict[str, Any]:
     """Fetch the review page and follow ?page=N until REVIEW_DETAIL_LIMIT written reviews
     are gathered (OTTO paginates reviews). Rating summary / recommendation come from page 1.
@@ -158,7 +166,7 @@ def write_output(path: Path, fields: list[str], rows: list[dict[str, Any]]) -> N
         w.writerows(rows)
 
 
-def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "none", timeout: int = 45,
+def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows", timeout: int = 45,
         detail_sleep: float = 1.0, proxy_country: str = "de") -> dict[str, Any]:
     from common.io_util import write_json
 
@@ -187,16 +195,22 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "none", ti
             ctx = cfg.prepare_context()
 
     session = None
-    if pdp_supplement == "zenrows" and getattr(cfg, "PDP_SUPPLEMENT_FIELDS", None):
-        from common.browser import BrowserSession
-        # bounded fast-fail settings: PDP supplement is best-effort (Kasada), so cap
-        # waits/retries to keep per-item time predictable instead of hanging on 429.
-        session = BrowserSession(
-            mode="zenrows", proxy_country=proxy_country, warmup_listing_url=cfg.WARMUP_LISTING_URL,
-            nav_timeout_ms=30000, detail_wait_ms=8000, settle_ms=2000, max_attempts=2, retry_backoff_ms=3000,
-        )
-        session.open()
-        print(f"[full/{cfg.PRODUCT}] pdp supplement warmup={session.warmup_status}", flush=True)
+
+    def ensure_pdp_session():
+        nonlocal session
+        if pdp_supplement != "zenrows":
+            return None
+        if session is None:
+            from common.browser import BrowserSession
+            # Lazy and bounded: only rows with missing spec/PDP supplement fields pay the
+            # ZenRows browser cost. One warmed browser is then reused for the run.
+            session = BrowserSession(
+                mode="zenrows", proxy_country=proxy_country, warmup_listing_url=cfg.WARMUP_LISTING_URL,
+                nav_timeout_ms=90000, detail_wait_ms=20000, settle_ms=3000, max_attempts=2, retry_backoff_ms=4000,
+            )
+            session.open()
+            print(f"[full/{cfg.PRODUCT}] pdp supplement warmup={session.warmup_status}", flush=True)
+        return session
 
     rows: list[dict[str, Any]] = []
     attempts: list[dict[str, Any]] = []
@@ -219,17 +233,37 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "none", ti
             review = collect_review(review_url_for(target), out, pid, timeout=timeout)
             review_resp = {"status": 200 if review else None}
 
-            # optional PDP-only fields (e.g. LDY Bauart) via ZenRows
-            if session is not None:
-                from bs4 import BeautifulSoup
-                pdp = session.fetch_pdp(target.get("product_url"))
-                pdp_body = pdp.get("body", b"")
-                if pdp_body:
-                    pid = (target.get("product_id") or "").strip() or product_id_from_url(target.get("product_url")) or str(target.get("main_rank"))
-                    raw_html.save(f"pdp_{pid}", pdp_body)  # opt-in audit copy (OTTO_SAVE_HTML)
-                if pdp.get("detail_present"):
-                    soup = BeautifulSoup(pdp_body.decode("utf-8", errors="replace"), "lxml")
-                    spec.update({k: v for k, v in cfg.extract_pdp_spec(soup).items() if v})
+            missing_before_pdp = missing_spec_fields(spec, cfg)
+            missing_after_pdp = list(missing_before_pdp)
+            pdp_status = None
+            pdp_error = None
+            supplement_fields = list(getattr(cfg, "PDP_SUPPLEMENT_FIELDS", []) or [])
+            needs_pdp = pdp_supplement == "zenrows" and (
+                missing_before_pdp or any(not has_value(spec.get(f)) for f in supplement_fields)
+            )
+            if needs_pdp:
+                try:
+                    active_session = ensure_pdp_session()
+                    if active_session is not None:
+                        from bs4 import BeautifulSoup
+                        pdp = active_session.fetch_pdp(target.get("product_url"))
+                        pdp_status = pdp.get("status")
+                        pdp_error = pdp.get("error")
+                        pdp_body = pdp.get("body", b"")
+                        if pdp_body:
+                            pid = (target.get("product_id") or "").strip() or product_id_from_url(target.get("product_url")) or str(target.get("main_rank"))
+                            raw_html.save(f"pdp_{pid}", pdp_body)  # opt-in audit copy (OTTO_SAVE_HTML)
+                        if pdp.get("detail_present"):
+                            soup = BeautifulSoup(pdp_body.decode("utf-8", errors="replace"), "lxml")
+                            for key, value in cfg.extract_pdp_spec(soup).items():
+                                if not value:
+                                    continue
+                                if key in supplement_fields or not has_value(spec.get(key)):
+                                    spec[key] = value
+                except Exception as exc:  # noqa: BLE001
+                    pdp_error = type(exc).__name__ + ": " + str(exc)
+                    print(f"[full/{cfg.PRODUCT}][WARN] pdp supplement failed rank={target.get('main_rank')} error={pdp_error}", flush=True)
+                missing_after_pdp = missing_spec_fields(spec, cfg)
 
             # star rating: per-variation, from the review page ONLY (Kasada-free, matches
             # the actual product page). The crocotile listing aggregate over-counts (it is a
@@ -260,7 +294,11 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "none", ti
             rows.append(row)
             attempts.append({"rank": target.get("main_rank"), "datasheet_status": ds_status,
                              "reco": reco.get("similar_count"), "review_status": review_resp.get("status"),
-                             "spec": {f: spec.get(f) for f in cfg.SPEC_FIELDS}})
+                             "spec": {f: spec.get(f) for f in cfg.SPEC_FIELDS},
+                             "missing_spec_before_pdp": missing_before_pdp,
+                             "missing_spec_after_pdp": missing_after_pdp,
+                             "pdp_supplement_status": pdp_status,
+                             "pdp_supplement_error": pdp_error})
             print(f"[full/{cfg.PRODUCT}] rank={target.get('main_rank')} sku={sku} spec={ {f: spec.get(f) for f in cfg.SPEC_FIELDS} } reco={reco.get('similar_count')} review={review_resp.get('status')}", flush=True)
             if detail_sleep > 0:
                 time.sleep(detail_sleep)
@@ -283,7 +321,11 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "none", ti
     if low:
         print(f"[full/{cfg.PRODUCT}][QA][WARN] low coverage (<{QA_FILL_WARN:.0%}): " +
               ", ".join(f"{f}={fill_rate[f]:.1%}" for f in low) +
-              " - check /vergleich/ or category throttling before trusting this batch", flush=True)
+              " - check /vergleich/, EPREL, PDP fallback or category throttling before trusting this batch", flush=True)
+    missing_spec_counts = {f: sum(1 for r in rows if not has_value(r.get(f))) for f in cfg.SPEC_FIELDS}
+    rows_with_missing_specs = sum(
+        1 for r in rows if any(not has_value(r.get(f)) for f in cfg.SPEC_FIELDS)
+    )
 
     manifest = {
         "run_type": "full_output", "product": cfg.PRODUCT,
@@ -292,6 +334,8 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "none", ti
         "spec_fields": list(cfg.SPEC_FIELDS), "use_datasheet": cfg.USE_DATASHEET,
         "pdp_supplement": pdp_supplement, "output": str(output_csv), "attempts": attempts,
         "fill_rate": fill_rate,
+        "missing_spec_counts": missing_spec_counts,
+        "rows_with_missing_specs": rows_with_missing_specs,
     }
     write_json(out / "step09_full_output_manifest.json", manifest)
     print(f"[full/{cfg.PRODUCT}] output={output_csv} rows={len(rows)}")

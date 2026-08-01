@@ -17,7 +17,7 @@ import re
 from typing import Any
 
 from common import config as base
-from common.parsers import text_clean
+from common.parsers import PRIMARY_SPEC_EXPECTED_NULL, text_clean
 
 PRODUCT = "REF"
 ACCOUNT_NAME = base.ACCOUNT_NAME
@@ -35,24 +35,7 @@ OUTPUT_ROOT = base.product_output_root("ref")
 DB_TABLE = base.seg_final_table("SEG_REF_DB_FINAL_TABLE", "dx_seg.dx_seg_ref_retail_com")
 
 SPEC_FIELDS = ["ref_refrigerator_type", "ref_capacity"]
-
-# ref_refrigerator_type [수집 후 번역 필요] — refrigerator form by freezer position.
-REF_TYPE_TRANSLATIONS = {
-    "Kühlschrank": "Refrigerator",
-    "Kühlgefrierkombination": "Fridge-freezer combination",   # MediaMarkt's actual value (no hyphen)
-    "Kühl-Gefrierkombination": "Fridge-freezer combination",
-    "Kühl-Gefrierkombinationen": "Fridge-freezer combination",
-    "Side-by-Side": "Side-by-Side",
-    "Side by Side": "Side-by-Side",
-    "Side-by-Side-Kühlschrank": "Side-by-Side",
-    "French Door": "French Door",
-    "French-Door-Kühlschrank": "French Door",
-    "Gefrierschrank": "Freezer",
-    "Gefriertruhe": "Chest freezer",
-    "Mini-Kühlschrank": "Mini fridge",
-    "Weinkühlschrank": "Wine fridge",
-    "Einbaukühlschrank": "Built-in refrigerator",
-}
+PERSIST_PRIMARY_SPEC_EXPECTED_NULL = True
 
 
 def _norm_liters(raw: str) -> str | None:
@@ -114,33 +97,69 @@ def _capacity_from_name(name: str | None) -> str | None:
     return f"{matches[0].group(1)}L"
 
 
+_TYPE_CHAR_TRANSLATION = str.maketrans({
+    "\u00e4": "ae", "\u00f6": "oe", "\u00fc": "ue", "\u00df": "ss",
+})
+
+
 def _type_key(value: str | None) -> str:
-    text = text_clean(value) or ""
-    text = re.sub(r"\s*[-/]\s*", "-", text.casefold())
-    text = re.sub(r"-und\s+|\s+und\s+", "-", text)
-    return re.sub(r"-+", "-", re.sub(r"\s+", " ", text))
+    """Comparison key insensitive to German umlauts, spaces and punctuation."""
+    text = (text_clean(value) or "").casefold()
+    text = text.translate(_TYPE_CHAR_TRANSLATION)
+    return re.sub(r"[^a-z0-9]+", "", text)
 
 
-_REF_TYPE_EXCLUDES = (
-    "gefrierschrank", "gefriertruhe", "getränkekühlschrank", "getraenkekuehlschrank",
-    "getränkekühler", "getraenkekuehler", "fleischreifeschrank", "kühlvitrine",
-    "kuehlvitrine", "kühlbox", "kuehlbox", "beverage cooler", "meat aging cabinet",
-    "display refrigerator", "cooler box",
+_REF_TYPE_EXCLUDE_TOKENS = (
+    "gefrierschrank", "gefriertruhe",
+    "getraenkekuehlschrank", "getraenkekuehler",
+    "beveragecooler", "beveragerefrigerator",
+    "fleischreifeschrank", "meatagingcabinet",
+    "kuehlvitrine", "displayrefrigerator", "refrigerateddisplaycase",
+    "kuehlbox", "coolerbox", "coolbox",
 )
+_REF_TYPE_EXCLUDE_EXACT = {"freezer", "chestfreezer", "uprightfreezer"}
 
 
 def _excluded_type(value: str | None) -> bool:
     key = _type_key(value)
-    return bool(key) and any(token in key for token in _REF_TYPE_EXCLUDES)
+    if not key:
+        return False
+    if key in _REF_TYPE_EXCLUDE_EXACT:
+        return True
+    if any(token in key for token in _REF_TYPE_EXCLUDE_TOKENS):
+        return True
+    # A branded/title-form standalone freezer is still a freezer. Preserve the
+    # two accepted refrigerator expressions that legitimately contain the word.
+    return "freezer" in key and not any(
+        token in key for token in ("fridgefreezer", "freezercompartment")
+    )
 
 
 def _translate_type(value: str | None) -> str | None:
+    """Return only refrigerator layout/freezer-position values.
+
+    Product category or installation terms (plain Refrigerator, Built-in,
+    refrigerator-with-compartment, Wine fridge, Freezer, etc.) are policy NULL
+    for ref_refrigerator_type.
+    """
     key = _type_key(value)
     if not key or _excluded_type(value):
         return None
-    for german, english in sorted(REF_TYPE_TRANSLATIONS.items(), key=lambda item: len(item[0]), reverse=True):
-        if _type_key(german) in key:
-            return english
+
+    # Door/layout forms outrank generic fridge-freezer words in compound values.
+    if "frenchdoor" in key:
+        return "French Door"
+    if "sidebyside" in key:
+        return "Side-by-Side"
+    if "multidoor" in key:
+        return "Multi-Door"
+
+    if any(token in key for token in (
+        "kuehlgefrierkombination",
+        "kuehlundgefrierkombination",
+        "fridgefreezercombination",
+    )):
+        return "Fridge-freezer combination"
     return None
 
 
@@ -203,13 +222,19 @@ def recover_missing_from_description(row: dict[str, Any], fetch_text) -> None:
 
 def extract_pdp_spec(features: dict[str, str], name: str | None = None) -> dict[str, Any]:
     raw_feature_type = text_clean(features.get("Produkttyp"))
-    if _excluded_type(name) or _excluded_type(raw_feature_type):
+    excluded = _excluded_type(name) or _excluded_type(raw_feature_type)
+    if excluded:
         typ = None
     else:
         typ = (_translate_type(name)
-               or _translate_type(raw_feature_type)
-               or raw_feature_type)
-    return {
+               or _translate_type(raw_feature_type))
+    result = {
         "ref_refrigerator_type": typ,
         "ref_capacity": _capacity_from_name(name) or _ref_capacity(features),
     }
+    # A non-empty but excluded/unknown source type is a deliberate policy NULL,
+    # not a failed parse. Keep that distinction in the internal detail row so
+    # step02 does not issue an unnecessary SSR request or refetch it on resume.
+    if typ is None and (excluded or raw_feature_type):
+        result[PRIMARY_SPEC_EXPECTED_NULL] = True
+    return result

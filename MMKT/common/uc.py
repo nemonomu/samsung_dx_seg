@@ -27,6 +27,7 @@ from common.pdp_browser import (
     _comparison_vars,
     _reviews_vars,
     _summary_vars,
+    should_fetch_more_review_pages,
 )
 
 MMKT_HOME = "https://www.mediamarkt.de/"
@@ -166,6 +167,7 @@ class UcSession:
         settle_s: float = 1.2,
         warmup_s: float = 3.0,
         review_pages: int = 4,
+        review_max_pages: int | None = 8,
         performance_logging: bool = False,
         block_images: bool = True,
     ) -> None:
@@ -174,7 +176,8 @@ class UcSession:
         self.script_timeout_s = script_timeout_s
         self.settle_s = settle_s
         self.warmup_s = warmup_s
-        self.review_pages = review_pages
+        self.review_pages = max(1, int(review_pages))
+        self.review_max_pages = max(self.review_pages, int(review_max_pages or self.review_pages))
         self.performance_logging = performance_logging
         self.block_images = block_images
         self.driver = None
@@ -378,6 +381,19 @@ class UcSession:
         comparison = results[0]
         summary = results[1]
         reviews = results[2:2 + review_pages]
+        while should_fetch_more_review_pages(
+            [r.get("data") for r in reviews],
+            fetched_pages=len(reviews),
+            max_pages=self.review_max_pages,
+        ):
+            page_no = len(reviews) + 1
+            extra_specs = [("GetProductReviews", _reviews_vars(sku_id, page_no))]
+            extra_results = self._gql_many(extra_specs)
+            specs.extend(extra_specs)
+            results.extend(extra_results)
+            reviews.extend(extra_results)
+            if not extra_results or extra_results[0].get("status") != 200:
+                break
         failed_statuses: dict[str, list[str]] = {}
         first_failure: dict[str, Any] | None = None
         for (operation, _), result in zip(specs, results):

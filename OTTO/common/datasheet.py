@@ -50,13 +50,63 @@ def _num(value: str | None) -> str | None:
     return m.group(1).replace(",", ".") if m else None
 
 
+_MODEL_LABEL_RE = re.compile(
+    r"Modellkennung(?: des Lieferanten)?|Model identifier|Modellbezeichnung",
+    re.I,
+)
+_MODEL_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9/_.+\-]*")
+_MODEL_STOP_WORDS = {
+    "address", "adresse", "anschrift", "supplier", "lieferant", "lieferanten",
+    "energieeffizienzklasse", "energy", "class", "bildschirmdiagonale",
+    "screen", "leistungsaufnahme", "power", "name",
+}
+
+
 def _valid_model(value: str | None) -> str | None:
+    """Return a model identifier, preserving short space-separated suffixes.
+
+    PDF table extraction sometimes merges neighbouring rows. Only caller-selected
+    text after the Modellkennung label should be passed here; then a value like
+    "75E7S PRO" must stay whole, while later label text stops the candidate.
+    """
     if not value:
         return None
-    for tok in [value.strip()] + value.split():
-        tok = tok.strip()
-        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9/_.\-]{3,}", tok) and any(c.isdigit() for c in tok) and any(c.isalpha() for c in tok):
-            return tok
+    raw = re.sub(r"\s+", " ", str(value)).strip(" :;,.|\t\r\n")
+    if not raw:
+        return None
+    raw = _MODEL_LABEL_RE.sub(" ", raw, count=1).strip(" :;,.|\t\r\n")
+    tokens = _MODEL_TOKEN_RE.findall(raw)
+    picked: list[str] = []
+    for token in tokens:
+        folded = token.casefold()
+        if folded in _MODEL_STOP_WORDS:
+            break
+        if not picked:
+            if len(token) < 4 or not (any(c.isdigit() for c in token) and any(c.isalpha() for c in token)):
+                continue
+        else:
+            # Keep compact model suffixes such as "PRO" or "WPS", but stop on prose.
+            if len(picked) >= 4:
+                break
+            if not (any(c.isdigit() for c in token) or token.isupper()):
+                break
+            if len(token) < 2:
+                break
+        picked.append(token)
+    if not picked:
+        return None
+    model = " ".join(picked).strip()
+    return model if any(c.isdigit() for c in model) and any(c.isalpha() for c in model) else None
+
+
+def _model_after_label(cells: list[str]) -> str | None:
+    for idx, cell in enumerate(cells):
+        for match in _MODEL_LABEL_RE.finditer(cell or ""):
+            candidates = [(cell or "")[match.end():], *cells[idx + 1:idx + 4]]
+            for candidate in candidates:
+                model = _valid_model(candidate)
+                if model:
+                    return model
     return None
 
 
@@ -110,15 +160,15 @@ def parse(pdf_bytes: bytes) -> dict[str, Any]:
 
 def _sku(items: dict[int, list[str]], text: str) -> str | None:
     for rest in items.values():
-        low = " ".join(rest).lower()
-        if "modellkennung" in low or "model identifier" in low or "modellbezeichnung" in low:
-            for cell in rest:
-                m = _valid_model(cell)
-                if m:
-                    return m
+        model = _model_after_label(rest)
+        if model:
+            return model
     flat = re.sub(r"\s+", " ", text)
-    m = re.search(r"(?:Modellkennung(?: des Lieferanten)?|Model identifier|Modellbezeichnung)\s*:?\s*([A-Za-z0-9][A-Za-z0-9/_.\-]{3,})", flat)
-    return _valid_model(m.group(1)) if m else None
+    for match in _MODEL_LABEL_RE.finditer(flat):
+        model = _valid_model(flat[match.end():match.end() + 90])
+        if model:
+            return model
+    return None
 
 
 def power_by_label(parsed: dict[str, Any], *, hdr: bool):

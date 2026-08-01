@@ -33,17 +33,30 @@ def _search(group: str, model: str, timeout: int, retries: int = 1) -> list[dict
     return []
 
 
+def _model_key(value: str | None) -> str:
+    return "".join(str(value or "").strip().lower().split())
+
+
 def _best_hit(hits: list[dict[str, Any]], model: str) -> dict[str, Any] | None:
+    """Return only high-confidence EPREL model matches.
+
+    EPREL search is fuzzy: a query like a retailer article number can return an
+    unrelated modelIdentifier. Do not use the first hit as a fallback; accept
+    exact modelIdentifier or a clear variant prefix only.
+    """
     if not hits:
         return None
-    key = (model or "").strip().lower()
+    key = _model_key(model)
+    if not key:
+        return None
     for h in hits:
-        if str(h.get("modelIdentifier", "")).strip().lower() == key:
+        if _model_key(h.get("modelIdentifier")) == key:
             return h
     for h in hits:
-        if str(h.get("modelIdentifier", "")).strip().lower().startswith(key):
+        hit_key = _model_key(h.get("modelIdentifier"))
+        if hit_key.startswith(key) and len(hit_key) > len(key):
             return h
-    return hits[0]
+    return None
 
 
 def _fmt(value: Any) -> str | None:

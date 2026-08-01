@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from common import datasheet, model_sku
+from common import datasheet, eprel, model_sku, parsers
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, top_info, transliterate
 
 PRODUCT = "TV"
@@ -17,7 +17,7 @@ DB_TABLE = env_value("SEG_TV_DB_FINAL_TABLE", "dx_seg.dx_seg_tv_retail_com")
 
 SPEC_FIELDS = ["screen_size", "estimated_annual_electricity_use"]
 USE_DATASHEET = True
-PDP_SUPPLEMENT_FIELDS: list[str] = []  # summarized_review_content is PDP-only; left blank by default
+PDP_SUPPLEMENT_FIELDS = ["screen_size", "estimated_annual_electricity_use"]
 HDR_POWER_LABEL = "Leistungsaufnahme im Ein-Zustand bei hohem Dynamikumfang (HDR)"
 MODEL_CONTEXT_LABELS = ("Modellbezeichnung", HDR_POWER_LABEL)
 
@@ -93,19 +93,54 @@ def _screen_from_name(name: str | None) -> str | None:
         return None
 
 
+
+def _screen_cm_from_url_without_zoll(url: str | None) -> str | None:
+    """Fallback for OTTO TV URLs that expose only a centimeter diagonal."""
+    raw = url or ""
+    if re.search(r"(?:^|[-_/])zoll(?:[-_/]|$)", raw, re.I):
+        return None
+    m = re.search(r"(?:^|[-_/])(\d{2,3})(?:[-,.](\d+))?-cm(?:[-_/]|$)", raw, re.I)
+    if not m:
+        return None
+    value = f"{m.group(1)}.{m.group(2)}" if m.group(2) else m.group(1)
+    try:
+        return f"{value} cm" if 25 <= float(value) <= 400 else None
+    except ValueError:
+        return None
+
+
+def _screen_from_detail_value(value: str | None) -> str | None:
+    raw = value or ""
+    m = re.search(r"(\d{2,3}(?:[.,]\d+)?)", raw)
+    if not m:
+        return None
+    number = m.group(1).replace(",", ".")
+    try:
+        return number if 10 <= float(number) <= 150 else None
+    except ValueError:
+        return None
+
+
+def _eprel_hdr_power(sku: str | None) -> str | None:
+    try:
+        return _watt(eprel.display_on_mode_power(sku, timeout=30))
+    except Exception:
+        return None
+
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
     # The listing title is the preferred source when it contains an explicit diagonal;
     # top-info/datasheet are fallbacks for titles without one.
     screen = (_screen_from_name(target.get("retailer_sku_name"))
               or _screen_from_topinfo(target)
-              or datasheet.screen_inches(ds))
+              or datasheet.screen_inches(ds)
+              or _screen_cm_from_url_without_zoll(target.get("product_url")))
     # HDR on-mode power only (SDR is not a collection target). Prefer the linked PDF;
     # some OTTO PDFs are generic manufacturer brochures with no HDR power row, so use
     # the already-batched /vergleich/ characteristics as the current OTTO fallback.
     pdf_hdr = _watt(datasheet.power_by_label(ds, hdr=True))
     compare_hdr = _watt(model_sku.characteristic(target, ctx, HDR_POWER_LABEL))
-    electricity = pdf_hdr or compare_hdr
+    electricity = pdf_hdr or compare_hdr or _eprel_hdr_power(sku)
     return {"screen_size": screen, "estimated_annual_electricity_use": electricity}
 
 
@@ -120,4 +155,13 @@ def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] 
 
 
 def extract_pdp_spec(soup) -> dict[str, Any]:
-    return {}
+    screen_raw = parsers.characteristic_by_label(soup, "Bildschirmdiagonale in Zoll")
+    hdr_raw = parsers.characteristic_by_label(soup, HDR_POWER_LABEL)
+    out: dict[str, Any] = {}
+    screen = _screen_from_detail_value(screen_raw)
+    power = _watt(hdr_raw)
+    if screen:
+        out["screen_size"] = screen
+    if power:
+        out["estimated_annual_electricity_use"] = power
+    return out

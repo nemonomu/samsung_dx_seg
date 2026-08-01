@@ -26,8 +26,10 @@ def _truthy(v) -> bool:
 def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     out = category_output_root(cfg.PRODUCT.lower())
     targets_mf = out / "step02_final_targets_manifest.json"
+    full_mf = out / "step09_full_output_manifest.json"
     db_mf = out / "step14_db_save_manifest.json"
     targets = read_json(targets_mf) if targets_mf.exists() else {}
+    full = read_json(full_mf) if full_mf.exists() else {}
     db = read_json(db_mf) if db_mf.exists() else {}
     total = len(rows)
     main_expected = targets.get("main_target_unique", 300)
@@ -40,26 +42,35 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
 
     issues = []
     if targets.get("main_target_shortfall"):
-        issues.append(f"타깃 {targets.get('main_target_shortfall')}건 부족")
+        issues.append(f"main target shortfall {targets.get('main_target_shortfall')}")
     if main_present != main_expected:
         issues.append(f"main_rank {main_present}/{main_expected}")
     if bsr_present != bsr_expected:
         issues.append(f"bsr_rank {bsr_present}/{bsr_expected}")
+    spec_missing_counts = full.get("missing_spec_counts") or {
+        f: sum(1 for r in rows if not (r.get(f) or "").strip()) for f in cfg.SPEC_FIELDS
+    }
+    for field, count in spec_missing_counts.items():
+        if count:
+            issues.append(f"{field} NULL {count}/{total}")
+    if db.get("success") is False:
+        issues.append(f"DB issue: {db.get('reason') or db.get('blocked_reason') or 'unknown'}")
     if db.get("dry_run") is False and db.get("inserted", 0) != total:
-        issues.append(f"DB 적재 {db.get('inserted', 0)}/{total}")
+        issues.append(f"DB inserted {db.get('inserted', 0)}/{total}")
     elif db.get("dry_run"):
-        issues.append("DB 미적재(dry-run/테이블 없음)")
+        issues.append("DB dry-run/skipped")
 
-    subject = f"[SEG] OTTO {cfg.PRODUCT} crawled"
+    base_subject = f"[SEG] OTTO {cfg.PRODUCT} crawled"
+    subject = base_subject if not issues else f"[CHECK] {base_subject}"
     lines = [
         subject, "",
-        f"총 수집 {total} sku", "",
-        "랭크 수집 현황",
+        f"Total collected: {total} sku", "",
+        "Rank coverage",
         f"  main_rank - {main_present}/{main_expected}",
         f"  bsr_rank - {bsr_present}/{bsr_expected}", "",
-        "전체 null 현황",
-        *([f"  {f}" for f in null_fields] if null_fields else ["  없음"]), "",
-        ("특이사항 없음" if not issues else "특이사항\n" + "\n".join(f"  - {i}" for i in issues)),
+        "All-null fields",
+        *([f"  {f}" for f in null_fields] if null_fields else ["  none"]), "",
+        ("Issues: none" if not issues else "Issues\n" + "\n".join(f"  - {i}" for i in issues)),
     ]
     return subject, "\n".join(lines) + "\n"
 

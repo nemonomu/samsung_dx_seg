@@ -14,7 +14,12 @@ MMKT_ROOT = Path(__file__).resolve().parents[1]
 if str(MMKT_ROOT) not in sys.path:
     sys.path.insert(0, str(MMKT_ROOT))
 
-from common.parsers import parse_comparison_detail, parse_pdp_html
+from common.parsers import (
+    PRIMARY_SPEC_EXPECTED_NULL,
+    parse_comparison_detail,
+    parse_pdp_html,
+)
+from common.full_output import full_columns
 import common.pdp_detail as pdp_detail_module
 from common.pdp_detail import (
     backfill_missing_pdp_fields,
@@ -22,8 +27,10 @@ from common.pdp_detail import (
     detail_attempt_is_usable,
     merge_detail,
     needs_pdp_backfill,
+    primary_spec_satisfied,
 )
 from ldy import config as ldy_config
+from ref import config as ref_config
 from tv import config as tv_config
 
 
@@ -60,11 +67,13 @@ def comparison_response(product_id: str, features):
     }
 
 
-def pdp_html(product_id: str, features):
+def pdp_html(product_id: str, features, title: str | None = None):
     apollo = {
         f"GraphqlProduct:Media:de-DE:{product_id}": {
             "__typename": "GraphqlProduct",
             "id": product_id,
+            "title": title,
+            "name": title,
             "featureGroups": [
                 {
                     "features": [
@@ -82,6 +91,112 @@ def pdp_html(product_id: str, features):
 
 
 class DetailFallbackTests(unittest.TestCase):
+    def test_ref_policy_null_skips_ssr_and_is_kept_on_resume(self):
+        class FakeSession:
+            def __init__(self):
+                self.fetch_calls = 0
+                self.page_calls = 0
+
+            def open(self):
+                return None
+
+            def fetch_pdp_detail(self, url, sku_id):
+                self.fetch_calls += 1
+                return {
+                    "html": "",
+                    "nav_status": 200,
+                    "comparison_resp": comparison_response(
+                        sku_id,
+                        [
+                            {"name": "Produkttyp", "value": "Getraenkekuehlschrank"},
+                            {"name": "Gesamtrauminhalt", "value": "118"},
+                        ],
+                    ),
+                    "summary_resp": None,
+                    "review_resps": [],
+                    "gql_status": {
+                        "comparison": 200,
+                        "summary": 200,
+                        "reviews": [200],
+                    },
+                    "error": None,
+                }
+
+            def fetch_page_response(self, url):
+                self.page_calls += 1
+                raise AssertionError("policy NULL must not trigger SSR backfill")
+
+            def reconnect(self):
+                raise AssertionError("policy NULL must not trigger reconnect")
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_path = root / "listing.csv"
+            output_path = root / "detail.csv"
+            with input_path.open("w", encoding="utf-8-sig", newline="") as fh:
+                writer = csv.DictWriter(
+                    fh, fieldnames=["rank", "sku_id", "product_url"]
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {"rank": "1", "sku_id": "123", "product_url": "https://example.test/123"}
+                )
+
+            cfg = SimpleNamespace(
+                OUTPUT_ROOT=root,
+                SPEC_FIELDS=list(ref_config.SPEC_FIELDS),
+                PRODUCT="ref",
+                PERSIST_PRIMARY_SPEC_EXPECTED_NULL=True,
+                extract_pdp_spec=ref_config.extract_pdp_spec,
+            )
+            args = SimpleNamespace(
+                product="ref",
+                input=str(input_path),
+                bsr=str(root / "missing-bsr.csv"),
+                output=str(output_path),
+                start=1,
+                limit=1,
+                sleep=0,
+                review_pages=1,
+                review_max_pages=1,
+                transport="uc",
+                concurrency=1,
+                max_retries=1,
+                resume=False,
+            )
+            session = FakeSession()
+            with (
+                patch.object(pdp_detail_module, "parse_args", return_value=args),
+                patch.object(pdp_detail_module, "load_cfg", return_value=cfg),
+                patch.object(pdp_detail_module, "make_session", return_value=session),
+                patch.object(pdp_detail_module.sys, "stdout", io.StringIO()),
+            ):
+                self.assertEqual(pdp_detail_module.main(), 0)
+
+            with output_path.open(encoding="utf-8-sig") as fh:
+                row = next(csv.DictReader(fh))
+            self.assertEqual(session.fetch_calls, 1)
+            self.assertEqual(session.page_calls, 0)
+            self.assertEqual(row["ref_refrigerator_type"], "")
+            self.assertEqual(row[PRIMARY_SPEC_EXPECTED_NULL], "True")
+            self.assertEqual(row["fetch_error"], "")
+
+            args.resume = True
+            with (
+                patch.object(pdp_detail_module, "parse_args", return_value=args),
+                patch.object(pdp_detail_module, "load_cfg", return_value=cfg),
+                patch.object(
+                    pdp_detail_module,
+                    "make_session",
+                    side_effect=AssertionError("resume must keep policy NULL rows"),
+                ),
+                patch.object(pdp_detail_module.sys, "stdout", io.StringIO()),
+            ):
+                self.assertEqual(pdp_detail_module.main(), 0)
+
     def test_ssr_429_retries_same_session_without_stale_error(self):
         class FakeSession:
             def __init__(self):
@@ -157,6 +272,7 @@ class DetailFallbackTests(unittest.TestCase):
                 limit=1,
                 sleep=0,
                 review_pages=1,
+                review_max_pages=1,
                 transport="uc",
                 concurrency=1,
                 max_retries=1,
@@ -189,6 +305,52 @@ class DetailFallbackTests(unittest.TestCase):
         product["cofrProductAggregate"]["productId"] = "123"
         row = parse_comparison_detail(response, "123", tv_config)
         self.assertEqual(row["screen_size"], "43 inches")
+
+    def test_missing_modelkennung_uses_ref_model_from_product_name(self):
+        html = pdp_html(
+            "148688272",
+            [("Produkttyp", "Kuehl-Gefrierkombination")],
+            title="Candy Fresco CNCQ2T518EW Kuehl- und Gefrierkombinationen",
+        )
+        row = parse_pdp_html(html, "148688272", ref_config)
+        self.assertEqual(row["sku"], "CNCQ2T518EW")
+
+    def test_missing_modelkennung_uses_tv_model_from_product_name(self):
+        html = pdp_html(
+            "174874055",
+            [("Bildschirmdiagonale (Zoll)", "32")],
+            title="JTC 24 JTCSQ32H39330G QLED TV 32 Zoll",
+        )
+        row = parse_pdp_html(html, "174874055", tv_config)
+        self.assertEqual(row["sku"], "JTCSQ32H39330G")
+
+    def test_missing_modelkennung_uses_ldy_model_from_product_name(self):
+        html = pdp_html(
+            "175270862",
+            [("Beladung", "Frontlader"), ("Fuellmenge Baumwolle (Waschen)", "6")],
+            title="Exquisit WA56110-021A Waschmaschine 6.0 kg A",
+        )
+        row = parse_pdp_html(html, "175270862", ldy_config)
+        self.assertEqual(row["sku"], "WA56110-021A")
+
+    def test_missing_modelkennung_preserves_spaced_ldy_model_from_product_name(self):
+        html = pdp_html(
+            "2592813",
+            [("Beladung", "Frontlader"), ("Fuellmenge Baumwolle (Waschen)", "9")],
+            title="Miele WWG760 WPS TDOS 9KG Waschmaschine",
+        )
+        row = parse_pdp_html(html, "2592813", ldy_config)
+        self.assertEqual(row["sku"], "WWG760 WPS TDOS 9KG")
+
+    def test_ldy_installation_terms_are_not_loading_type(self):
+        for value in ("Einbau", "freistehend", "Freistehend", "Standgeraet", "stehend", "Unterbau"):
+            with self.subTest(value=value):
+                row = ldy_config.extract_pdp_spec({"Beladung": value}, "Example Waschmaschine")
+                self.assertIsNone(row["ldy_loading_type"])
+        self.assertEqual(
+            ldy_config.extract_pdp_spec({"Beladung": "Frontlader"}, "Example Waschmaschine")["ldy_loading_type"],
+            "Front load",
+        )
 
     def test_target_absent_does_not_use_first_alternative(self):
         response = comparison_response(
@@ -282,6 +444,32 @@ class DetailFallbackTests(unittest.TestCase):
         self.assertFalse(needs_pdp_backfill(missing, 403, tv_config))
         self.assertFalse(needs_pdp_backfill(complete, 200, tv_config))
         self.assertFalse(needs_pdp_backfill(optional_only, 200, tv_config))
+
+    def test_ref_policy_null_is_complete_and_survives_csv_serialization(self):
+        row = ref_config.extract_pdp_spec(
+            {"Produkttyp": "Getraenkekuehlschrank"},
+            "Example Getraenkekuehlschrank",
+        )
+        self.assertIsNone(row["ref_refrigerator_type"])
+        self.assertTrue(row[PRIMARY_SPEC_EXPECTED_NULL])
+        self.assertTrue(primary_spec_satisfied(row, ref_config))
+        self.assertFalse(needs_pdp_backfill(row, 200, ref_config))
+
+        serialized = dict(row)
+        serialized[PRIMARY_SPEC_EXPECTED_NULL] = "True"
+        self.assertTrue(primary_spec_satisfied(serialized, ref_config))
+        self.assertIn(PRIMARY_SPEC_EXPECTED_NULL, pdp_detail_module.csv_columns(ref_config))
+        self.assertNotIn(PRIMARY_SPEC_EXPECTED_NULL, pdp_detail_module.csv_columns(tv_config))
+        self.assertNotIn(PRIMARY_SPEC_EXPECTED_NULL, full_columns(ref_config))
+
+    def test_ref_ssr_backfill_propagates_policy_null_marker(self):
+        html = pdp_html("123", [("Produkttyp", "Getraenkekuehlschrank")])
+        row = {"sku_id": "123", "ref_refrigerator_type": None, "ref_capacity": None}
+        valid, recovered = backfill_missing_pdp_fields(row, html, "123", ref_config)
+        self.assertTrue(valid)
+        self.assertEqual(recovered, [])
+        self.assertTrue(row[PRIMARY_SPEC_EXPECTED_NULL])
+        self.assertTrue(primary_spec_satisfied(row, ref_config))
 
     def test_semantic_empty_200_requires_valid_target_ssr(self):
         self.assertFalse(detail_attempt_is_usable(200, False, True, False))

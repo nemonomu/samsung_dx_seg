@@ -33,6 +33,13 @@ def _empty_to_none(value, column: str):
         return _as_int(value)
     return None if value in ("", None) else value
 
+def _has_value(value) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _missing_spec_counts(rows: list[dict[str, Any]], fields: list[str]) -> dict[str, int]:
+    return {field: sum(1 for row in rows if not _has_value(row.get(field))) for field in fields}
+
 
 def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
     out = category_output_root(cfg.PRODUCT.lower())
@@ -53,11 +60,23 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
         write_json(out / "step14_db_save_manifest.json", manifest)
         print(f"[db/{cfg.PRODUCT}] no rows; skip")
         return manifest
+    spec_fields = list(getattr(cfg, "SPEC_FIELDS", []) or [])
+    missing_spec_counts = _missing_spec_counts(rows, spec_fields)
+    rows_with_missing_specs = sum(
+        1 for row in rows if any(not _has_value(row.get(field)) for field in spec_fields)
+    )
+    manifest.update(
+        missing_spec_counts=missing_spec_counts,
+        rows_with_missing_specs=rows_with_missing_specs,
+        missing_spec_policy="warn_only",
+    )
     if dry_run:
         manifest.update(success=True, dry_run=True, skipped=True)
         write_json(out / "step14_db_save_manifest.json", manifest)
         print(f"[db/{cfg.PRODUCT}] dry_run rows={len(rows)} target={schema}.{table}")
         return manifest
+    if rows_with_missing_specs:
+        print(f"[db/{cfg.PRODUCT}][WARN] missing specs rows={rows_with_missing_specs} counts={missing_spec_counts}; continuing DB insert")
 
     config = db_config()
     if not config:

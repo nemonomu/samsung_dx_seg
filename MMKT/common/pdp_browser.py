@@ -104,6 +104,69 @@ def _comparison_vars(sku_id: str) -> dict[str, Any]:
     }
 
 
+REVIEW_TOP_WRITTEN_TARGET = 20
+
+
+def _review_root(page: Any) -> dict[str, Any]:
+    if not isinstance(page, dict):
+        return {}
+    data = page.get("data", page)
+    if not isinstance(data, dict):
+        return {}
+    reviews = data.get("reviews") or {}
+    return reviews if isinstance(reviews, dict) else {}
+
+
+def review_written_count(resp_pages: Any) -> int:
+    pages = resp_pages if isinstance(resp_pages, list) else [resp_pages]
+    seen: set[str] = set()
+    count = 0
+    for page_idx, page in enumerate(pages):
+        for idx, review in enumerate(_review_root(page).get("reviews") or []):
+            if not isinstance(review, dict):
+                continue
+            text = str(((review.get("feedback") or {}).get("full") or "")).strip()
+            if not text:
+                continue
+            rid = str(review.get("id") or review.get("cid") or f"{page_idx}:{idx}")
+            if rid in seen:
+                continue
+            seen.add(rid)
+            count += 1
+    return count
+
+
+def review_total_results(resp_pages: Any) -> int | None:
+    pages = resp_pages if isinstance(resp_pages, list) else [resp_pages]
+    for page in pages:
+        total = _review_root(page).get("totalResults")
+        if total is None:
+            continue
+        try:
+            return int(total)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def should_fetch_more_review_pages(
+    resp_pages: Any,
+    *,
+    fetched_pages: int,
+    max_pages: int,
+    target: int = REVIEW_TOP_WRITTEN_TARGET,
+) -> bool:
+    if fetched_pages >= max_pages:
+        return False
+    written = review_written_count(resp_pages)
+    if written >= target:
+        return False
+    total = review_total_results(resp_pages)
+    if total is not None and total <= written:
+        return False
+    return True
+
+
 # The PWA app appends this "pwa" context block to every GraphQL extensions param;
 # the server returns 500 (INTERNAL_SERVER_ERROR) without it.
 _PWA_EXT = {
@@ -141,13 +204,15 @@ class PdpBrowserSession:
         settle_ms: int = 1200,
         warmup_wait_ms: int = 3000,
         review_pages: int = 4,
+        review_max_pages: int | None = 8,
         block_resources: bool = True,
     ) -> None:
         self.proxy_country = proxy_country
         self.nav_timeout_ms = nav_timeout_ms
         self.settle_ms = settle_ms
         self.warmup_wait_ms = warmup_wait_ms
-        self.review_pages = review_pages
+        self.review_pages = max(1, int(review_pages))
+        self.review_max_pages = max(self.review_pages, int(review_max_pages or self.review_pages))
         self.block_resources = block_resources
         self._pw = None
         self._browser = None
@@ -303,6 +368,44 @@ class PdpBrowserSession:
         def _body(r: dict[str, Any] | None) -> Any:
             return r.get("body") if isinstance(r, dict) else None
 
+        review_bodies = [_body(r) for r in review_pages]
+        while should_fetch_more_review_pages(
+            review_bodies,
+            fetched_pages=len(review_pages),
+            max_pages=self.review_max_pages,
+        ):
+            page_no = len(review_pages) + 1
+            extra = self._gql_fetch_many([
+                self._build_call("GetProductReviews", _reviews_vars(sku_id, page_no))
+            ])
+            result = extra[0] if extra else {"status": None, "body": None}
+            review_pages.append(result)
+            review_bodies.append(_body(result))
+            if (result or {}).get("status") != 200:
+                break
+
+        failed_statuses: dict[str, list[str]] = {}
+        first_failure: dict[str, Any] | None = None
+        operations = ["GetComparisonTableRecommendations", "GetReviewsSummary"] + [
+            "GetProductReviews"
+            for _ in review_pages
+        ]
+        for operation, result in zip(operations, [comparison, summary, *review_pages]):
+            if (result or {}).get("status") == 200:
+                continue
+            failed_statuses.setdefault(operation, []).append(str((result or {}).get("status")))
+            if first_failure is None:
+                first_failure = result or {}
+        error = None
+        if failed_statuses:
+            statuses = " ".join(
+                f"{operation}={','.join(values)}"
+                for operation, values in failed_statuses.items()
+            )
+            error = "gql_failed " + statuses
+            if (first_failure or {}).get("error"):
+                error += f" transport={(first_failure or {}).get('error')}"
+
         return {
             "sku_id": sku_id,
             "url": url,
@@ -310,14 +413,14 @@ class PdpBrowserSession:
             "detail_present": (comparison or {}).get("status") == 200,
             "html": "",
             "summary_resp": _body(summary),
-            "review_resps": [_body(r) for r in review_pages],
+            "review_resps": review_bodies,
             "comparison_resp": _body(comparison),
             "gql_status": {
                 "comparison": (comparison or {}).get("status"),
                 "summary": (summary or {}).get("status"),
                 "reviews": [(r or {}).get("status") for r in review_pages],
             },
-            "error": None,
+            "error": error,
             "elapsed_seconds": round(time.perf_counter() - started, 2),
         }
 
