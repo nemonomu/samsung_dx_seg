@@ -18,6 +18,7 @@ import common.full_output as full_output_module
 from common.full_output import resolve_rating_fields
 from common.notify import _detail_present
 from common.parsers import parse_product_reviews
+from common.pdp_browser import review_written_count, should_fetch_more_review_pages
 from common.pdp_detail import merge_detail
 from tv import config as tv_config
 
@@ -33,6 +34,15 @@ def review_response(distribution, *, total_results=67):
         }
     }
 
+
+
+
+def review_page(written: int, *, total_results: int = 652, start: int = 0):
+    reviews = []
+    for idx in range(10):
+        full = f"review text {start + idx}" if idx < written else ""
+        reviews.append({"id": f"r{start + idx}", "feedback": {"full": full}})
+    return {"data": {"reviews": {"totalResults": total_results, "reviews": reviews}}}
 
 def comparison_response(*, average=None, total=None):
     stats = {}
@@ -73,6 +83,24 @@ CAPTURE_DISTRIBUTION = [
 
 
 class RatingFallbackTests(unittest.TestCase):
+
+    def test_review_pagination_continues_until_twenty_written_reviews(self):
+        pages = [
+            review_page(5, start=0),
+            review_page(5, start=10),
+            review_page(5, start=20),
+            review_page(4, start=30),
+        ]
+        self.assertEqual(review_written_count(pages), 19)
+        self.assertTrue(
+            should_fetch_more_review_pages(pages, fetched_pages=4, max_pages=8)
+        )
+        pages.append(review_page(1, start=40))
+        self.assertEqual(review_written_count(pages), 20)
+        self.assertFalse(
+            should_fetch_more_review_pages(pages, fetched_pages=5, max_pages=8)
+        )
+
     def test_full_output_to_db_dry_run_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -38,14 +38,14 @@ def load_cfg(product: str):
     return importlib.import_module(f"{product}.config")
 
 
-def make_session(transport: str, review_pages: int):
+def make_session(transport: str, review_pages: int, review_max_pages: int):
     """Build a PDP session for the chosen transport (both share the same API:
     open / fetch_pdp_detail / reconnect / close)."""
     if transport == "uc":
         from common.uc import UcSession
-        return UcSession(review_pages=review_pages)
+        return UcSession(review_pages=review_pages, review_max_pages=review_max_pages)
     from common.pdp_browser import PdpBrowserSession
-    return PdpBrowserSession(review_pages=review_pages)
+    return PdpBrowserSession(review_pages=review_pages, review_max_pages=review_max_pages)
 
 def csv_columns(cfg):
     policy_columns = (
@@ -78,8 +78,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sleep", type=float, default=0.5,
                    help="throttle between SKUs to stay under Cloudflare's GraphQL rate limit")
     p.add_argument("--review-pages", type=int, default=4,
-                   help="review API pages to fetch (10/page); 4 → up to 40 fetched so the "
-                        "written-only top-20 fills even when some pages have few written reviews")
+                   help="initial review API pages to fetch (10/page)")
+    p.add_argument("--review-max-pages", type=int, default=8,
+                   help="fetch additional review pages up to this cap only when written reviews stay below 20")
     p.add_argument("--transport", choices=["uc", "zenrows"], default="uc",
                    help="uc = local undetected-chromedriver (no ZenRows); zenrows = legacy")
     p.add_argument("--concurrency", type=int, default=2,
@@ -323,7 +324,7 @@ def main() -> int:
         with lock:
             print(f"[step02][w{worker_id}] warming up session ({len(shard)} items)...", flush=True)
         try:
-            session = make_session(args.transport, args.review_pages)
+            session = make_session(args.transport, args.review_pages, args.review_max_pages)
             session.open()
         except Exception as exc:
             with lock:
@@ -346,7 +347,7 @@ def main() -> int:
                     ssr_status: Any = None
                     try:
                         if session is None:
-                            session = make_session(args.transport, args.review_pages)
+                            session = make_session(args.transport, args.review_pages, args.review_max_pages)
                             session.open()
                         detail = session.fetch_pdp_detail(url, sku_id)
                         nav = detail["nav_status"]
