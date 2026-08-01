@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import sys
 import unittest
+from pathlib import Path
+
+AMZN_ROOT = Path(__file__).resolve().parents[1]
+if str(AMZN_ROOT) not in sys.path:
+    sys.path.insert(0, str(AMZN_ROOT))
 
 from common.parsers import parse_product_detail_html
 from common.selectors import extract_detail
@@ -29,7 +35,7 @@ class RefFieldSelectionTests(unittest.TestCase):
             product="REF",
         )
 
-        self.assertEqual(parsed["ref_refrigerator_type"], "Built-in Refrigerator")
+        self.assertIsNone(parsed["ref_refrigerator_type"])
         self.assertEqual(parsed["ref_capacity"], "199 L")
 
     def test_exact_aufbautyp_then_aufbau_fallback(self) -> None:
@@ -42,8 +48,8 @@ class RefFieldSelectionTests(unittest.TestCase):
             product="REF",
         )
 
-        self.assertEqual(built_in["ref_refrigerator_type"], "Built-in Refrigerator")
-        self.assertEqual(counter_depth["ref_refrigerator_type"], "Counter Depth")
+        self.assertIsNone(built_in["ref_refrigerator_type"])
+        self.assertIsNone(counter_depth["ref_refrigerator_type"])
 
     def test_konfiguration_is_never_a_type_or_capacity_source(self) -> None:
         parsed = parse_product_detail_html(
@@ -53,6 +59,14 @@ class RefFieldSelectionTests(unittest.TestCase):
 
         self.assertIsNone(parsed["ref_refrigerator_type"])
         self.assertIsNone(parsed["ref_capacity"])
+
+    def test_refrigerator_with_freezer_compartment_is_not_type(self) -> None:
+        parsed = parse_product_detail_html(
+            _pdp("OK Kuehlschrank mit Gefrierfach", ("Aufbautyp", "Eingebaut")),
+            product="REF",
+        )
+
+        self.assertIsNone(parsed["ref_refrigerator_type"])
 
     def test_requested_excluded_product_categories_are_not_types(self) -> None:
         titles = (
@@ -122,7 +136,7 @@ class RefFieldSelectionTests(unittest.TestCase):
             product="REF",
         )
 
-        self.assertEqual(result["ref_refrigerator_type"], "Built-in Refrigerator")
+        self.assertIsNone(result["ref_refrigerator_type"])
         self.assertEqual(result["ref_capacity"], "204 L")
 
 

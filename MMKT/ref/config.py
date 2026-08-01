@@ -136,7 +136,12 @@ def _excluded_type(value: str | None) -> bool:
 
 
 def _translate_type(value: str | None) -> str | None:
-    """Return one English refrigerator form, with specific forms taking priority."""
+    """Return only refrigerator layout/freezer-position values.
+
+    Product category or installation terms (plain Refrigerator, Built-in,
+    refrigerator-with-compartment, Wine fridge, Freezer, etc.) are policy NULL
+    for ref_refrigerator_type.
+    """
     key = _type_key(value)
     if not key or _excluded_type(value):
         return None
@@ -147,28 +152,12 @@ def _translate_type(value: str | None) -> str | None:
     if "sidebyside" in key:
         return "Side-by-Side"
 
-    if "minikuehlschrank" in key or "minifridge" in key:
-        return "Mini fridge"
-    if "kuehlschrankmitgefrierfach" in key or "refrigeratorwithfreezercompartment" in key:
-        return "Refrigerator with freezer compartment"
-    if "kuehlschrankmitkaltlagerfach" in key or "refrigeratorwithchillcompartment" in key:
-        return "Refrigerator with chill compartment"
-    if "einbaukuehlschrank" in key or "builtinrefrigerator" in key or "integratedrefrigerator" in key:
-        return "Built-in refrigerator"
-    if "weinkuehlschrank" in key or "winefridge" in key or "winerefrigerator" in key:
-        return "Wine fridge"
-
     if any(token in key for token in (
         "kuehlgefrierkombination",
         "kuehlundgefrierkombination",
         "fridgefreezercombination",
     )):
         return "Fridge-freezer combination"
-
-    if "vollraumkuehlschrank" in key or "stehendervorratsschrank" in key:
-        return "Refrigerator"
-    if "kuehlschrank" in key or "refrigerator" in key:
-        return "Refrigerator"
     return None
 
 

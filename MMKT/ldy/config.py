@@ -56,9 +56,13 @@ def _loading_from_name(name: str | None) -> str | None:
     return None
 
 
+def _translate_loading(raw: str | None) -> str | None:
+    load = text_clean(raw)
+    return LDY_LOADING_TRANSLATIONS.get(load) if load else None
+
+
 def extract_pdp_spec(features: dict[str, str], name: str | None = None) -> dict[str, Any]:
-    load = text_clean(features.get("Beladung"))
     return {
-        "ldy_loading_type": _loading_from_name(name) or (LDY_LOADING_TRANSLATIONS.get(load, load) if load else None),
+        "ldy_loading_type": _loading_from_name(name) or _translate_loading(features.get("Beladung")),
         "ldy_capacity": _norm_kg(features.get(CAPACITY_FEATURE)),
     }

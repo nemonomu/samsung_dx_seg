@@ -23,22 +23,30 @@ USE_DATASHEET = True
 # supplement (when enabled) overrides it.
 PDP_SUPPLEMENT_FIELDS = ["ref_refrigerator_type", "ref_capacity"]
 
-# German fridge type -> English (longest first so combos match before plain Kühlschrank)
+# German refrigerator layout/freezer-position -> English. Product category and
+# installation terms (e.g. plain Kuehlschrank, Einbau, Wine Cooler, Freezer) are
+# policy NULL for ref_refrigerator_type; they can still guide capacity fallback.
 REF_TYPE_MAP = [
-    ("kühl-/gefrierkombination", "Fridge-freezer Combination"),
-    ("kühl-gefrierkombination", "Fridge-freezer Combination"),
-    ("kühl-gefrierkombi", "Fridge-freezer Combination"),
-    ("gefrier-/kühlkombination", "Fridge-freezer Combination"),
+    ("k\u00fchl-/gefrierkombination", "Fridge-freezer Combination"),
+    ("k\u00fchl-gefrierkombination", "Fridge-freezer Combination"),
+    ("k\u00fchl-gefrierkombi", "Fridge-freezer Combination"),
+    ("gefrier-/k\u00fchlkombination", "Fridge-freezer Combination"),
+    ("kuehl-/gefrierkombination", "Fridge-freezer Combination"),
+    ("kuehl-gefrierkombination", "Fridge-freezer Combination"),
+    ("kuehl-gefrierkombi", "Fridge-freezer Combination"),
+    ("gefrier-/kuehlkombination", "Fridge-freezer Combination"),
     ("side-by-side", "Side by Side"),
     ("french door", "French Door"),
     ("multi door", "Multi Door"),
     ("multidoor", "Multi Door"),
-    ("einbaukühlschrank", "Built-in Refrigerator"),
-    ("weinkühlschrank", "Wine Cooler"),
-    ("gefriertruhe", "Chest Freezer"),
-    ("gefrierschrank", "Freezer"),
-    ("kühlschrank", "Refrigerator"),
 ]
+_REF_TYPE_POLICY_NULL = (
+    "einbauk\u00fchlschrank", "einbaukuehlschrank",
+    "built-in refrigerator", "integrated refrigerator",
+    "weink\u00fchlschrank", "weinkuehlschrank", "wine cooler", "wine fridge",
+    "gefriertruhe", "chest freezer", "gefrierschrank", "freezer",
+    "k\u00fchlschrank", "kuehlschrank", "refrigerator",
+)
 
 
 _REF_TYPE_EXCLUDES = (
@@ -63,10 +71,35 @@ def translate_ref_type(value: str | None) -> str | None:
     for german, english in REF_TYPE_MAP:
         if _type_key(german) in key:
             return english
-    return value  # unknown type -> keep raw
+    if any(_type_key(token) in key for token in _REF_TYPE_POLICY_NULL):
+        return None
+    return None
 
 
-POSITIVE_KEYWORDS = tuple(k for k, _ in REF_TYPE_MAP)
+def _single_compartment_kind(value: str | None) -> str | None:
+    key = _type_key(value)
+    if not key or any(token in key for token in _REF_TYPE_EXCLUDES):
+        return None
+    if any(_type_key(token) in key for token in ("gefriertruhe", "gefrierschrank", "chest freezer", "freezer")):
+        return "freezer"
+    if any(_type_key(layout) in key for layout, _english in REF_TYPE_MAP):
+        return None
+    if any(_type_key(token) in key for token in (
+        "einbaukühlschrank", "einbaukuehlschrank",
+        "weinkühlschrank", "weinkuehlschrank",
+        "kühlschrank", "kuehlschrank",
+        "built-in refrigerator", "integrated refrigerator", "wine cooler", "refrigerator",
+    )):
+        return "cooling"
+    return None
+
+
+POSITIVE_KEYWORDS = tuple(k for k, _ in REF_TYPE_MAP) + (
+    "einbauk\u00fchlschrank", "einbaukuehlschrank",
+    "weink\u00fchlschrank", "weinkuehlschrank",
+    "gefriertruhe", "gefrierschrank",
+    "k\u00fchlschrank", "kuehlschrank",
+)
 EXCLUDE_KEYWORDS = (
     "wasserfilter", "filter", "ersatzteil", "einlegeboden", "abdeckung", "zubehör",
     "schublade", "türgriff", "scharnier", "halterung", "untergestell",
@@ -111,8 +144,6 @@ _TOTAL_KEYS = (
     "gesamtinhalt", "gesamtvolumen", "totalvolume", "totalcapacity",
 )
 _STANDALONE_TOTAL_KEYS = ("nutzinhalt",)
-_SINGLE_COOLING_REF_TYPES = {"Refrigerator", "Built-in Refrigerator", "Wine Cooler"}
-_SINGLE_FREEZER_REF_TYPES = {"Freezer", "Chest Freezer"}
 _COOLING_KEYS = (
     "rauminhaltederkuehlfaecher", "rauminhaltderkuehlfaecher",
     "kapazitaetkuehlen", "kuehlteil", "kuehlfach", "kuehlfaecher", "cooling",
@@ -266,12 +297,12 @@ def _capacity_sum_by_labels(values: dict[str, Any]) -> str | None:
 
 
 
-def _single_compartment_capacity(values: dict[str, Any], ref_type: str | None) -> str | None:
+def _single_compartment_capacity(values: dict[str, Any], compartment_kind: str | None) -> str | None:
     cooling = _value_by_label(values, _COOLING_KEYS, reject_keys=_FREEZER_KEYS)
     freezer = _value_by_label(values, _FREEZER_KEYS)
-    if ref_type in _SINGLE_COOLING_REF_TYPES:
+    if compartment_kind == "cooling":
         return None if freezer else cooling
-    if ref_type in _SINGLE_FREEZER_REF_TYPES:
+    if compartment_kind == "freezer":
         return None if cooling else freezer
     return None
 
@@ -302,7 +333,9 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     # compartment is the total usable volume; do not apply that to fridge-freezers.
     top_infos = _top_info_map(target)
     ctx_values = _ctx_values(target, ctx)
-    ref_type = translate_ref_type(target.get("retailer_sku_name"))
+    raw_type_hint = target.get("retailer_sku_name")
+    ref_type = translate_ref_type(raw_type_hint)
+    compartment_kind = _single_compartment_kind(raw_type_hint)
     capacity = next((v for v in (
         _capacity_from_name(target.get("retailer_sku_name")),
         _capacity_from_name(target.get("product_url")),
@@ -315,8 +348,8 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
         _value_by_exact_label(ctx_values, _STANDALONE_TOTAL_KEYS),
         _capacity_sum_by_labels(top_infos),
         _capacity_sum_by_labels(ctx_values),
-        _single_compartment_capacity(top_infos, ref_type),
-        _single_compartment_capacity(ctx_values, ref_type),
+        _single_compartment_capacity(top_infos, compartment_kind),
+        _single_compartment_capacity(ctx_values, compartment_kind),
         _eprel_capacity(sku),
     ) if model_sku.has_value(v)), None)
     return {"ref_refrigerator_type": ref_type, "ref_capacity": capacity}
@@ -347,12 +380,12 @@ def extract_pdp_spec(soup) -> dict[str, Any]:
     out: dict[str, Any] = {}
     if raw:
         out["ref_refrigerator_type"] = translate_ref_type(raw)
-    ref_type = out.get("ref_refrigerator_type")
+    compartment_kind = _single_compartment_kind(raw)
     capacity = (
         _value_by_label(rows, _TOTAL_KEYS)
         or _value_by_exact_label(rows, _STANDALONE_TOTAL_KEYS)
         or _capacity_sum_by_labels(rows)
-        or _single_compartment_capacity(rows, ref_type)
+        or _single_compartment_capacity(rows, compartment_kind)
     )
     if capacity:
         out["ref_capacity"] = capacity

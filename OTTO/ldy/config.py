@@ -349,14 +349,6 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
             loading = LOADING_MAP["toplader"]
         elif ctx.get("is_front", {}).get(pid):
             loading = LOADING_MAP["frontlader"]
-    if loading is None:
-        # Built-in (Einbau) and washer-dryer (Waschtrockner) washers are front-loading by
-        # construction: OTTO lists them OUTSIDE the waschmaschinen>frontlader subcategory and
-        # ships no Bauart/Beladung on /vergleich/, so neither the field nor the category
-        # fallback catches them — yet a top-loading built-in or washer-dryer does not exist.
-        nm = f"{name or ''} {target.get('retailer_sku_name') or ''}"
-        if re.search(r"einbau|waschtrockner", nm, re.I):
-            loading = LOADING_MAP["frontlader"]
     # capacity = WASH capacity. For a washer-dryer, use only "(Waschen)"-explicit sources so
     # the drying capacity is never picked. top_info "Kapazität Waschen" and the name's first
     # "N kg" (wash is listed first) are wash-safe; generic /vergleich/ labels only for plain

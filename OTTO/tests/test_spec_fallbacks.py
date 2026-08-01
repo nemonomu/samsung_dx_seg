@@ -10,7 +10,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ref import config as ref_config  # noqa: E402
-from common import eprel  # noqa: E402
+from ldy import config as ldy_config  # noqa: E402
+from common import datasheet, eprel  # noqa: E402
 from tv import config as tv_config  # noqa: E402
 
 
@@ -49,7 +50,7 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
             "top_infos": '{"Rauminhalte der K\u00fchlf\u00e4cher": "94 l"}',
         }
         spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
-        self.assertEqual(spec["ref_refrigerator_type"], "Refrigerator")
+        self.assertIsNone(spec["ref_refrigerator_type"])
         self.assertEqual(spec["ref_capacity"], "94 l")
 
     def test_cooling_only_is_not_total_for_multi_compartment_ref(self) -> None:
@@ -93,7 +94,7 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
             "top_infos": {"Rauminhalte der Tiefkuehlfaecher": "168 l"},
         }
         spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
-        self.assertEqual(spec["ref_refrigerator_type"], "Freezer")
+        self.assertIsNone(spec["ref_refrigerator_type"])
         self.assertEqual(spec["ref_capacity"], "168 l")
 
     def test_standalone_nutzinhalt_is_total_capacity(self) -> None:
@@ -114,8 +115,49 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
         with patch.object(ref_config.eprel, "fridge_total_volume", return_value=None):
             spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
         self.assertIsNone(spec["ref_capacity"])
-    def test_chest_freezer_type_is_preserved(self) -> None:
-        self.assertEqual(ref_config.translate_ref_type("Hanseatic Gefriertruhe"), "Chest Freezer")
+    def test_product_category_or_installation_values_are_policy_null(self) -> None:
+        invalid_values = (
+            "Hanseatic Einbaukuehlschrank",
+            "Gorenje Kuehlschrank",
+            "Kuehlschrank mit Gefrierfach",
+            "Kuehlschrank mit Kaltlagerfach",
+            "Oyajia Weinkuehlschrank",
+            "Hanseatic Gefriertruhe",
+            "CHiQ Gefrierschrank",
+        )
+        for value in invalid_values:
+            with self.subTest(value=value):
+                self.assertIsNone(ref_config.translate_ref_type(value))
+
+
+class OttoLdyLoadingPolicyTests(unittest.TestCase):
+    def test_installation_terms_are_not_loading_type(self) -> None:
+        for value in ("Einbau", "freistehend", "Freistehend", "Standgeraet", "stehend", "Unterbau"):
+            with self.subTest(value=value):
+                self.assertIsNone(ldy_config.resolve_loading(None, value, None))
+
+    def test_einbau_name_is_not_inferred_as_front_loader(self) -> None:
+        target = {"product_id": "S0EBO09T", "retailer_sku_name": "Grundig Einbau Waschmaschine"}
+        spec = ldy_config.extract_spec(target, {}, {"chars": {}, "bauart": {}, "name": {}, "is_front": {}, "is_top": {}})
+        self.assertIsNone(spec["ldy_loading_type"])
+
+    def test_explicit_front_top_mentions_are_still_collected(self) -> None:
+        self.assertEqual(ldy_config.resolve_loading("Frontlader", "Einbau", None), "Front loader")
+        self.assertEqual(ldy_config.resolve_loading("Toplader", "freistehend", None), "Top-loading")
+
+
+class OttoDatasheetSkuTests(unittest.TestCase):
+    def test_modelkennung_after_merged_address_wins_over_postcode(self) -> None:
+        items = {
+            1: ["Name und Anschrift des Lieferanten Samsung Electronics GU46 6GG", "Modellkennung", "GQ32LS03CBU"],
+        }
+        self.assertEqual(datasheet._sku(items, ""), "GQ32LS03CBU")
+
+    def test_space_separated_model_identifier_is_preserved(self) -> None:
+        self.assertEqual(datasheet._sku({2: ["Modellkennung", "75E7S PRO"]}, ""), "75E7S PRO")
+
+    def test_ref_slash_model_identifier_is_preserved(self) -> None:
+        self.assertEqual(datasheet._sku({2: ["Modellkennung", "FM052.4AA/KB15150W"]}, ""), "FM052.4AA/KB15150W")
 
 
 class EprelMatchConfidenceTests(unittest.TestCase):

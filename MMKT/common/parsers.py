@@ -309,9 +309,51 @@ SPEC_POWER_HDR = "Leistungsaufnahme in Ein-Zustand (HDR)"
 SPEC_POWER_SDR = "Leistungsaufnahme in Ein-Zustand (SDR)"
 # SKU target per the dev spec = "Modelkennung" (model identifier, e.g. "32HV02V",
 # "MF110W90B-14A10"). NOT "Hersteller Artikelnummer" (a manufacturer/internal id
-# like 10002386) and NOT the EAN barcode — both are wrong sources. If Modelkennung
-# is absent the product has no SKU → leave it NULL (no fallback).
+# like 10002386) and NOT the EAN barcode. If Modelkennung is absent, fall back
+# only to an explicit model-like token in the product title.
 SPEC_SKU = "Modelkennung"
+
+_MODEL_STOP_WORDS = {
+    "tv", "qled", "oled", "led", "lcd", "uhd", "full", "hd", "ready",
+    "smart", "fire", "fernseher", "zoll", "cm", "kuhl", "kuehl",
+    "gefrierkombinationen", "gefrierkombination", "waschmaschine", "waschvollautomat",
+    "waschtrockner", "kg", "mm", "hoch", "weiss", "schwarz", "edelstahl",
+    "inox", "frontlader", "toplader",
+}
+_MODEL_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9/_.+\-]*")
+
+
+def _model_token_from_name(name: str | None) -> str | None:
+    """Fallback SKU from title when PDP has no Modelkennung.
+
+    The dev-spec source remains Modelkennung. This only recovers titles where the
+    model itself is explicit, e.g. CNCQ2T518EW, JTCSQ32H39330G, WA56110-021A, or
+    a short spaced model such as WWG760 WPS TDOS 9KG.
+    """
+    tokens = _MODEL_TOKEN_RE.findall(text_clean(name) or "")
+    for idx, token in enumerate(tokens):
+        folded = token.casefold()
+        if folded in _MODEL_STOP_WORDS:
+            continue
+        if len(token) < 5 or not (any(c.isdigit() for c in token) and any(c.isalpha() for c in token)):
+            continue
+        picked = [token]
+        for tail in tokens[idx + 1:idx + 4]:
+            tail_folded = tail.casefold()
+            if tail_folded in _MODEL_STOP_WORDS:
+                break
+            if len(tail) < 2:
+                break
+            if any(c.isdigit() for c in tail) or tail.isupper():
+                picked.append(tail)
+                continue
+            break
+        return " ".join(picked)
+    return None
+
+
+def _sku_from_features_or_name(features: dict[str, str], name: str | None) -> str | None:
+    return text_clean(features.get(SPEC_SKU)) or _model_token_from_name(name)
 
 
 def _find_main_product(apollo: dict[str, Any], sku_id: str) -> dict[str, Any]:
@@ -495,7 +537,7 @@ def parse_pdp_html(html: str, sku_id: str, cfg: Any = None) -> dict[str, Any] | 
         # No.39 similar — needs Alternativen/reco source
         "retailer_sku_name_similar": None,
         # sku is common; product-specific specs come from cfg.extract_pdp_spec
-        "sku": text_clean(features.get(SPEC_SKU)),
+        "sku": _sku_from_features_or_name(features, product_name),
         **spec,
         # No.44-46 ratings
         "star_rating": round(avg, 1) if avg is not None else None,
@@ -711,7 +753,7 @@ def parse_comparison_detail(resp: Any, sku_id: str, cfg: Any = None) -> dict[str
         "sku_id": sku_id,
         "delivery_availability": d_de, "delivery_availability_en": d_en,
         "pick_up_availability": p_de, "pick_up_availability_en": p_en,
-        "sku": text_clean(feats.get(SPEC_SKU)),
+        "sku": _sku_from_features_or_name(feats, product_name),
         **spec,
         "retailer_sku_name_similar": MULTI_VALUE_DELIMITER.join(similar_titles) or None,
         "star_rating": round(avg, 1) if avg is not None else None,

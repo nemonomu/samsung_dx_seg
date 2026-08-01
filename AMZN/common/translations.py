@@ -187,25 +187,15 @@ _REF_TYPE_PATTERNS = (
     (r"\bside[-\s]*by[-\s]*side\b", "Side-by-Side"),
     (
         r"\bkuehl[-/\s]*(?:und\s+)?gefrier[-/\s]*(?:kombination|kombi|schrank)\b|"
-        r"\b(?:fridge|refrigerator)[-/\s]+freezer(?:\s+combination)?\b|"
-        r"\bkuehlschrank\s+mit\s+gefrierfach\b",
+        r"\b(?:fridge|refrigerator)[-/\s]+freezer(?:\s+combination)?\b",
         "Fridge-freezer Combination",
     ),
     (r"\bfreezer[-\s]*on[-\s]*bottom\b|\bgefrier(?:fach|teil)\s+unten\b", "Freezer-on-bottom"),
     (r"\bfreezer[-\s]*on[-\s]*top\b|\bgefrier(?:fach|teil)\s+oben\b", "Freezer-on-top"),
-    (
-        r"\b(?:einbau[-\s]*kuehlschrank|built[-\s]*in\s+refrigerator|integrated\s+refrigerator)\b",
-        "Built-in Refrigerator",
-    ),
     (r"\b(?:single[-\s]*door|kuehlschrank\s+mit\s+(?:einer|1)\s+tuer)\b", "Single Door"),
-    (r"\b(?:counter[-\s]*depth|thekentiefe)\b", "Counter Depth"),
-    (r"\b(?:tisch|vollraum|unterbau|stand|mini|kompakt)?[-\s]*kuehlschrank\b|\b(?:refrigerator|fridge)\b", "Refrigerator"),
 )
 
-_REF_TYPE_WEAK_FACT_PATTERNS = (
-    (r"^(?:eingebaut|einbau|eingebettet|built[-\s]*in|integrated)$", "Built-in Refrigerator"),
-    (r"^(?:zaehler\s+tie|counter[-\s]*depth|thekentiefe)$", "Counter Depth"),
-)
+_REF_TYPE_WEAK_FACT_PATTERNS: tuple[tuple[str, str], ...] = ()
 
 def _translate_common(text: str) -> str:
     out = text.translate(_GERMAN_ASCII_MAP)
@@ -230,8 +220,7 @@ def classify_ref_refrigerator_type(value: Any, *, allow_weak_fact: bool = False)
     valid_freezer_form = re.search(
         r"\bfreezer[-\s]*on[-\s]*(?:top|bottom)\b|"
         r"\b(?:fridge|refrigerator)[-/\s]+freezer\b|"
-        r"\bkuehl[-/\s]*(?:und\s+)?gefrier[-/\s]*(?:kombination|kombi|schrank)\b|"
-        r"\bkuehlschrank\s+mit\s+gefrierfach\b",
+        r"\bkuehl[-/\s]*(?:und\s+)?gefrier[-/\s]*(?:kombination|kombi|schrank)\b",
         key,
     )
     if re.search(r"\b(?:freezer|gefrierschrank|gefriertruhe|tiefkuehlschrank|tiefkuehltruhe|gefriergeraet)\b", key) and not valid_freezer_form:

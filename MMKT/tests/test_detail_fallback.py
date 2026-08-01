@@ -67,11 +67,13 @@ def comparison_response(product_id: str, features):
     }
 
 
-def pdp_html(product_id: str, features):
+def pdp_html(product_id: str, features, title: str | None = None):
     apollo = {
         f"GraphqlProduct:Media:de-DE:{product_id}": {
             "__typename": "GraphqlProduct",
             "id": product_id,
+            "title": title,
+            "name": title,
             "featureGroups": [
                 {
                     "features": [
@@ -301,6 +303,52 @@ class DetailFallbackTests(unittest.TestCase):
         product["cofrProductAggregate"]["productId"] = "123"
         row = parse_comparison_detail(response, "123", tv_config)
         self.assertEqual(row["screen_size"], "43 inches")
+
+    def test_missing_modelkennung_uses_ref_model_from_product_name(self):
+        html = pdp_html(
+            "148688272",
+            [("Produkttyp", "Kuehl-Gefrierkombination")],
+            title="Candy Fresco CNCQ2T518EW Kuehl- und Gefrierkombinationen",
+        )
+        row = parse_pdp_html(html, "148688272", ref_config)
+        self.assertEqual(row["sku"], "CNCQ2T518EW")
+
+    def test_missing_modelkennung_uses_tv_model_from_product_name(self):
+        html = pdp_html(
+            "174874055",
+            [("Bildschirmdiagonale (Zoll)", "32")],
+            title="JTC 24 JTCSQ32H39330G QLED TV 32 Zoll",
+        )
+        row = parse_pdp_html(html, "174874055", tv_config)
+        self.assertEqual(row["sku"], "JTCSQ32H39330G")
+
+    def test_missing_modelkennung_uses_ldy_model_from_product_name(self):
+        html = pdp_html(
+            "175270862",
+            [("Beladung", "Frontlader"), ("Fuellmenge Baumwolle (Waschen)", "6")],
+            title="Exquisit WA56110-021A Waschmaschine 6.0 kg A",
+        )
+        row = parse_pdp_html(html, "175270862", ldy_config)
+        self.assertEqual(row["sku"], "WA56110-021A")
+
+    def test_missing_modelkennung_preserves_spaced_ldy_model_from_product_name(self):
+        html = pdp_html(
+            "2592813",
+            [("Beladung", "Frontlader"), ("Fuellmenge Baumwolle (Waschen)", "9")],
+            title="Miele WWG760 WPS TDOS 9KG Waschmaschine",
+        )
+        row = parse_pdp_html(html, "2592813", ldy_config)
+        self.assertEqual(row["sku"], "WWG760 WPS TDOS 9KG")
+
+    def test_ldy_installation_terms_are_not_loading_type(self):
+        for value in ("Einbau", "freistehend", "Freistehend", "Standgeraet", "stehend", "Unterbau"):
+            with self.subTest(value=value):
+                row = ldy_config.extract_pdp_spec({"Beladung": value}, "Example Waschmaschine")
+                self.assertIsNone(row["ldy_loading_type"])
+        self.assertEqual(
+            ldy_config.extract_pdp_spec({"Beladung": "Frontlader"}, "Example Waschmaschine")["ldy_loading_type"],
+            "Front load",
+        )
 
     def test_target_absent_does_not_use_first_alternative(self):
         response = comparison_response(

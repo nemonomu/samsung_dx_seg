@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import sys
 import unittest
+from pathlib import Path
+
+MMKT_ROOT = Path(__file__).resolve().parents[1]
+if str(MMKT_ROOT) not in sys.path:
+    sys.path.insert(0, str(MMKT_ROOT))
 
 from common.parsers import PRIMARY_SPEC_EXPECTED_NULL
 from ref import config as ref_config
@@ -15,13 +21,13 @@ class RefTypeNormalizationTests(unittest.TestCase):
 
     def test_fridge_freezer_punctuation_variants_share_one_value(self):
         variants = (
-            "Kühlgefrierkombination",
-            "Kühl-Gefrierkombination",
-            "Kühl-Gefrier-Kombination",
-            "Kühl- Gefrierkombination",
-            "Kühl-/Gefrierkombination",
-            "Kühl- und Gefrierkombination",
-            "Kühl- und Gefrierkombinationen",
+            "Kuehlgefrierkombination",
+            "Kuehl-Gefrierkombination",
+            "Kuehl-Gefrier-Kombination",
+            "Kuehl- Gefrierkombination",
+            "Kuehl-/Gefrierkombination",
+            "Kuehl- und Gefrierkombination",
+            "Kuehl- und Gefrierkombinationen",
             "Fridge-freezer combination",
         )
         for value in variants:
@@ -31,30 +37,34 @@ class RefTypeNormalizationTests(unittest.TestCase):
     def test_specific_door_form_outranks_fridge_freezer_words(self):
         cases = {
             "French-Door": "French Door",
-            "French Door Kühlgefrierkombination": "French Door",
-            "Side by Side Kühlgefrierkombination": "Side-by-Side",
-            "Side by Side Kühl- und Gefrierkombination": "Side-by-Side",
-            "Side-by-Side Kühlkombination": "Side-by-Side",
-            "Side-by-Side Kühlkombinationen": "Side-by-Side",
+            "French Door Kuehlgefrierkombination": "French Door",
+            "Side by Side Kuehlgefrierkombination": "Side-by-Side",
+            "Side by Side Kuehl- und Gefrierkombination": "Side-by-Side",
+            "Side-by-Side Kuehlkombination": "Side-by-Side",
+            "Side-by-Side Kuehlkombinationen": "Side-by-Side",
         }
         for value, expected in cases.items():
             with self.subTest(value=value):
                 self.assertEqual(expected, self._type(value))
 
-    def test_refrigerator_variants_are_english_and_semantic(self):
-        cases = {
-            "Mini Kühlschrank": "Mini fridge",
-            "Vollraumkühlschrank": "Refrigerator",
-            "Stehender Vorratsschrank": "Refrigerator",
-            "Kühlschrank mit Gefrierfach": "Refrigerator with freezer compartment",
-            "Kühlschrank mit Kaltlagerfach": "Refrigerator with chill compartment",
-            "Einbaukühlschrank": "Built-in refrigerator",
-            "Weinkühlschrank": "Wine fridge",
-            "Refrigerator": "Refrigerator",
-        }
-        for value, expected in cases.items():
+    def test_product_category_and_installation_values_are_policy_null(self):
+        values = (
+            "Mini Kuehlschrank",
+            "Vollraumkuehlschrank",
+            "Stehender Vorratsschrank",
+            "Kuehlschrank mit Gefrierfach",
+            "Kuehlschrank mit Kaltlagerfach",
+            "Einbaukuehlschrank",
+            "Weinkuehlschrank",
+            "Refrigerator",
+            "Refrigerator with freezer compartment",
+            "Refrigerator with chill compartment",
+            "Built-in refrigerator",
+            "Wine fridge",
+        )
+        for value in values:
             with self.subTest(value=value):
-                self.assertEqual(expected, self._type(value))
+                self.assertIsNone(self._type(value))
 
     def test_non_refrigerator_product_types_are_excluded(self):
         excluded = (
@@ -62,15 +72,15 @@ class RefTypeNormalizationTests(unittest.TestCase):
             "Gefriertruhe",
             "Freezer",
             "Chest freezer",
-            "Getränkekühlschrank",
-            "Getränkekühler",
+            "Getraenkekuehlschrank",
+            "Getraenkekuehler",
             "Beverage cooler",
             "Fleischreifeschrank",
             "Meat aging cabinet",
-            "Kühlvitrine",
+            "Kuehlvitrine",
             "Display refrigerator",
-            "Kühlbox",
-            "Party-Kühlbox",
+            "Kuehlbox",
+            "Party-Kuehlbox",
             "Cooler box",
         )
         for value in excluded:
@@ -81,7 +91,7 @@ class RefTypeNormalizationTests(unittest.TestCase):
         self.assertIsNone(
             self._type(
                 "Refrigerator",
-                "HENDI Aufsatz Kühlvitrine 78 Liter Kühlschrank",
+                "HENDI Aufsatz Kuehlvitrine 78 Liter Kuehlschrank",
             )
         )
 
@@ -94,15 +104,9 @@ class RefTypeNormalizationTests(unittest.TestCase):
             with self.subTest(title=title):
                 self.assertIsNone(self._type("Refrigerator", title))
 
-    def test_valid_freezer_compounds_are_not_excluded(self):
-        self.assertEqual(
-            "Fridge-freezer combination",
-            self._type("Fridge-freezer combination"),
-        )
-        self.assertEqual(
-            "Refrigerator with freezer compartment",
-            self._type("Refrigerator with freezer compartment"),
-        )
+    def test_refrigerator_with_freezer_compartment_is_not_layout(self):
+        self.assertIsNone(self._type("Refrigerator with freezer compartment"))
+        self.assertIsNone(self._type("Kuehlschrank mit Gefrierfach"))
 
     def test_unknown_type_does_not_leak_raw_source_text(self):
         result = ref_config.extract_pdp_spec(
@@ -114,10 +118,10 @@ class RefTypeNormalizationTests(unittest.TestCase):
     def test_type_normalization_does_not_change_capacity_extraction(self):
         result = ref_config.extract_pdp_spec(
             {
-                "Produkttyp": "Kühl-Gefrier-Kombination",
-                "Rauminhalt der Kühlfächer": "249",
+                "Produkttyp": "Kuehl-Gefrier-Kombination",
+                "Rauminhalt der K\u00fchlf\u00e4cher": "249",
             },
-            "Beispiel Kühl-Gefrier-Kombination",
+            "Beispiel Kuehl-Gefrier-Kombination",
         )
         self.assertEqual("Fridge-freezer combination", result["ref_refrigerator_type"])
         self.assertEqual("249L", result["ref_capacity"])
