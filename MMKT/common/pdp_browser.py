@@ -384,6 +384,28 @@ class PdpBrowserSession:
             if (result or {}).get("status") != 200:
                 break
 
+        failed_statuses: dict[str, list[str]] = {}
+        first_failure: dict[str, Any] | None = None
+        operations = ["GetComparisonTableRecommendations", "GetReviewsSummary"] + [
+            "GetProductReviews"
+            for _ in review_pages
+        ]
+        for operation, result in zip(operations, [comparison, summary, *review_pages]):
+            if (result or {}).get("status") == 200:
+                continue
+            failed_statuses.setdefault(operation, []).append(str((result or {}).get("status")))
+            if first_failure is None:
+                first_failure = result or {}
+        error = None
+        if failed_statuses:
+            statuses = " ".join(
+                f"{operation}={','.join(values)}"
+                for operation, values in failed_statuses.items()
+            )
+            error = "gql_failed " + statuses
+            if (first_failure or {}).get("error"):
+                error += f" transport={(first_failure or {}).get('error')}"
+
         return {
             "sku_id": sku_id,
             "url": url,
@@ -398,7 +420,7 @@ class PdpBrowserSession:
                 "summary": (summary or {}).get("status"),
                 "reviews": [(r or {}).get("status") for r in review_pages],
             },
-            "error": None,
+            "error": error,
             "elapsed_seconds": round(time.perf_counter() - started, 2),
         }
 
