@@ -604,6 +604,14 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
         parsed_screen = parsed_fallback.get("screen_size")
         if parsed_screen not in (None, ""):
             data["screen_size"] = normalize_field("screen_size", parsed_screen)
+        if (
+            "final_sku_price" in selector_fields
+            and data.get("final_sku_price") in (None, "")
+            and parsed_fallback.get("final_sku_price") not in (None, "")
+        ):
+            data["final_sku_price"] = normalize_field(
+                "final_sku_price", parsed_fallback.get("final_sku_price")
+            )
         for field in ("sku", "screen_size", "model_year", "estimated_annual_electricity_use", "retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity", "number_of_units_purchased_past_month"):
             if is_ref and field in {"retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity"}:
                 continue

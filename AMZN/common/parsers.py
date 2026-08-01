@@ -54,6 +54,15 @@ def _price_text(root) -> str | None:
     return None
 
 
+def _unavailable_price_text(root) -> str | None:
+    """Return Amazon.de's visible unavailable sentinel from the buy box."""
+    for node in root.select("#outOfStock span.a-color-base.a-text-bold, #outOfStock span"):
+        text = clean_text(node.get_text(" "))
+        if text and text.casefold() == "derzeit nicht verfügbar.":
+            return text
+    return None
+
+
 def _original_price(root) -> str | None:
     for selector in (".a-price.a-text-price .a-offscreen", ".a-text-price .a-offscreen"):
         node = root.select_one(selector)
@@ -493,7 +502,15 @@ def parse_product_detail_html(html: str, *, product: str | None = None) -> dict[
     title = soup.select_one("#productTitle")
     if title:
         data["retailer_sku_name"] = clean_text(title.get_text(" "))
-    data["final_sku_price"] = _price_text(soup) or data.get("final_sku_price")
+    # ``#outOfStock`` belongs to the current buy box, while an unscoped
+    # ``.a-price`` can belong to a recommendation farther down the page.
+    # Preserve the current-product sentinel before considering numeric HTML
+    # fallbacks.
+    data["final_sku_price"] = (
+        _unavailable_price_text(soup)
+        or _price_text(soup)
+        or data.get("final_sku_price")
+    )
     data["original_sku_price"] = _original_price(soup)
     data["star_rating"] = _rating_text(soup)
     rating_count = soup.select_one("#acrCustomerReviewText")
