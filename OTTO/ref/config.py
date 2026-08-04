@@ -18,10 +18,10 @@ DB_TABLE = env_value("SEG_REF_DB_FINAL_TABLE", "dx_seg.dx_seg_ref_retail_com")
 
 SPEC_FIELDS = ["ref_refrigerator_type", "ref_capacity"]
 USE_DATASHEET = True
-# ref_refrigerator_type is authoritatively a PDP "Kühlschranktyp" characteristic; the
-# listing name carries the same value Kasada-free, so it is the default and the PDP
-# supplement (when enabled) overrides it.
-PDP_SUPPLEMENT_FIELDS = ["ref_refrigerator_type", "ref_capacity"]
+# PDP supplement is reserved for explicitly recoverable missing fields. A missing
+# ref_refrigerator_type can be a policy NULL, so do not spend ZenRows PDP calls
+# trying to fill it.
+PDP_SUPPLEMENT_FIELDS = ["ref_capacity"]
 
 # German refrigerator layout/freezer-position -> English. Product category and
 # installation terms (e.g. plain Kuehlschrank, Einbau, Wine Cooler, Freezer) are
@@ -74,6 +74,16 @@ def translate_ref_type(value: str | None) -> str | None:
     if any(_type_key(token) in key for token in _REF_TYPE_POLICY_NULL):
         return None
     return None
+
+
+def _is_policy_null_ref_type(value: str | None) -> bool:
+    key = _type_key(value)
+    if not key:
+        return False
+    if any(_type_key(layout) in key for layout, _english in REF_TYPE_MAP):
+        return False
+    policy_tokens = tuple(_REF_TYPE_POLICY_NULL) + tuple(_REF_TYPE_EXCLUDES)
+    return any(_type_key(token) in key for token in policy_tokens)
 
 
 def _single_compartment_kind(value: str | None) -> str | None:
@@ -336,23 +346,31 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     raw_type_hint = target.get("retailer_sku_name")
     ref_type = translate_ref_type(raw_type_hint)
     compartment_kind = _single_compartment_kind(raw_type_hint)
-    capacity = next((v for v in (
-        _capacity_from_name(target.get("retailer_sku_name")),
-        _capacity_from_name(target.get("product_url")),
-        datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l"),
-        datasheet.value_with_unit(ds, "Gesamtnutzinhalt", "l"),
-        _datasheet_sum_capacity(ds),
-        _value_by_label(top_infos, _TOTAL_KEYS),
-        _value_by_label(ctx_values, _TOTAL_KEYS),
-        _value_by_exact_label(top_infos, _STANDALONE_TOTAL_KEYS),
-        _value_by_exact_label(ctx_values, _STANDALONE_TOTAL_KEYS),
-        _capacity_sum_by_labels(top_infos),
-        _capacity_sum_by_labels(ctx_values),
-        _single_compartment_capacity(top_infos, compartment_kind),
-        _single_compartment_capacity(ctx_values, compartment_kind),
-        _eprel_capacity(sku),
-    ) if model_sku.has_value(v)), None)
-    return {"ref_refrigerator_type": ref_type, "ref_capacity": capacity}
+    capacity = None
+    for source in (
+        lambda: _capacity_from_name(target.get("retailer_sku_name")),
+        lambda: _capacity_from_name(target.get("product_url")),
+        lambda: datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l"),
+        lambda: datasheet.value_with_unit(ds, "Gesamtnutzinhalt", "l"),
+        lambda: _datasheet_sum_capacity(ds),
+        lambda: _value_by_label(top_infos, _TOTAL_KEYS),
+        lambda: _value_by_label(ctx_values, _TOTAL_KEYS),
+        lambda: _value_by_exact_label(top_infos, _STANDALONE_TOTAL_KEYS),
+        lambda: _value_by_exact_label(ctx_values, _STANDALONE_TOTAL_KEYS),
+        lambda: _capacity_sum_by_labels(top_infos),
+        lambda: _capacity_sum_by_labels(ctx_values),
+        lambda: _single_compartment_capacity(top_infos, compartment_kind),
+        lambda: _single_compartment_capacity(ctx_values, compartment_kind),
+        lambda: _eprel_capacity(sku),
+    ):
+        value = source()
+        if model_sku.has_value(value):
+            capacity = value
+            break
+    spec = {"ref_refrigerator_type": ref_type, "ref_capacity": capacity}
+    if ref_type is None and _is_policy_null_ref_type(raw_type_hint):
+        spec["_policy_null_fields"] = ["ref_refrigerator_type"]
+    return spec
 
 
 def prepare_context(targets=None) -> dict[str, Any]:

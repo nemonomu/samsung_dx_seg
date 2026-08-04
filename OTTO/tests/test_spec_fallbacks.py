@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 from ref import config as ref_config  # noqa: E402
 from ldy import config as ldy_config  # noqa: E402
 from common import datasheet, eprel  # noqa: E402
+from common import full_output  # noqa: E402
 from tv import config as tv_config  # noqa: E402
 
 
@@ -52,6 +53,7 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
         spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
         self.assertIsNone(spec["ref_refrigerator_type"])
         self.assertEqual(spec["ref_capacity"], "94 l")
+        self.assertEqual(spec.get("_policy_null_fields"), ["ref_refrigerator_type"])
 
     def test_cooling_only_is_not_total_for_multi_compartment_ref(self) -> None:
         target = {
@@ -106,6 +108,17 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
         spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
         self.assertEqual(spec["ref_capacity"], "45 l")
 
+    def test_eprel_capacity_is_lazy_fallback_only(self) -> None:
+        target = {
+            "product_id": "C1121663679",
+            "retailer_sku_name": "SIEMENS Kuehl-/Gefrierkombination iQ500 KG36EALCA",
+            "top_infos": '{"Gesamtrauminhalt": "308 l"}',
+        }
+        with patch.object(ref_config.eprel, "fridge_total_volume", return_value="999 l") as mocked:
+            spec = ref_config.extract_spec(target, {}, {"model": {}}, sku="KG36EALCA")
+        self.assertEqual(spec["ref_capacity"], "308 l")
+        mocked.assert_not_called()
+
     def test_standalone_nutzinhalt_requires_numeric_liters(self) -> None:
         target = {
             "product_id": "example",
@@ -128,6 +141,35 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
         for value in invalid_values:
             with self.subTest(value=value):
                 self.assertIsNone(ref_config.translate_ref_type(value))
+
+
+class OttoPdpSupplementPolicyTests(unittest.TestCase):
+    class RefCfg:
+        SPEC_FIELDS = ["ref_refrigerator_type", "ref_capacity"]
+        PDP_SUPPLEMENT_FIELDS = ["ref_capacity"]
+
+    def test_policy_null_type_does_not_trigger_pdp(self) -> None:
+        spec = {
+            "ref_refrigerator_type": None,
+            "ref_capacity": "94 l",
+            "_policy_null_fields": ["ref_refrigerator_type"],
+        }
+        missing = full_output.missing_spec_fields(spec, self.RefCfg)
+        plan = full_output.pdp_supplement_plan(spec, self.RefCfg, "zenrows", missing)
+        self.assertEqual(missing, ["ref_refrigerator_type"])
+        self.assertEqual(plan["target_fields"], [])
+        self.assertEqual(plan["skipped_reason"], "policy_null_only")
+
+    def test_allowed_missing_capacity_triggers_pdp(self) -> None:
+        spec = {
+            "ref_refrigerator_type": None,
+            "ref_capacity": None,
+            "_policy_null_fields": ["ref_refrigerator_type"],
+        }
+        missing = full_output.missing_spec_fields(spec, self.RefCfg)
+        plan = full_output.pdp_supplement_plan(spec, self.RefCfg, "zenrows", missing)
+        self.assertEqual(plan["target_fields"], ["ref_capacity"])
+        self.assertIsNone(plan["skipped_reason"])
 
 
 class OttoLdyLoadingPolicyTests(unittest.TestCase):

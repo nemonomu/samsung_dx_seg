@@ -100,6 +100,44 @@ def missing_spec_fields(spec: dict[str, Any], cfg) -> list[str]:
     return [f for f in cfg.SPEC_FIELDS if not has_value(spec.get(f))]
 
 
+def _policy_null_fields(spec: dict[str, Any]) -> set[str]:
+    raw = spec.get("_policy_null_fields") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    return {str(field) for field in raw if str(field).strip()}
+
+
+def pdp_supplement_plan(spec: dict[str, Any], cfg, pdp_supplement: str,
+                        missing_fields: list[str]) -> dict[str, Any]:
+    policy_null = _policy_null_fields(spec)
+    allowed = [
+        str(field)
+        for field in (getattr(cfg, "PDP_SUPPLEMENT_FIELDS", []) or [])
+        if str(field) in cfg.SPEC_FIELDS
+    ]
+    target = [
+        field for field in allowed
+        if field not in policy_null and not has_value(spec.get(field))
+    ]
+    skipped_reason = None
+    if pdp_supplement != "zenrows":
+        skipped_reason = "disabled"
+    elif not allowed:
+        skipped_reason = "no_allowed_fields"
+    elif not target:
+        skipped_reason = (
+            "policy_null_only"
+            if missing_fields and all(field in policy_null for field in missing_fields)
+            else "no_allowed_missing_fields"
+        )
+    return {
+        "policy_null_fields": sorted(policy_null),
+        "allowed_fields": allowed,
+        "target_fields": target,
+        "skipped_reason": skipped_reason,
+    }
+
+
 def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int = 45) -> dict[str, Any]:
     """Fetch the review page and follow ?page=N until REVIEW_DETAIL_LIMIT written reviews
     are gathered (OTTO paginates reviews). Rating summary / recommendation come from page 1.
@@ -236,11 +274,21 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             missing_before_pdp = missing_spec_fields(spec, cfg)
             missing_after_pdp = list(missing_before_pdp)
             pdp_status = None
+            pdp_nav_status = None
             pdp_error = None
-            supplement_fields = list(getattr(cfg, "PDP_SUPPLEMENT_FIELDS", []) or [])
-            needs_pdp = pdp_supplement == "zenrows" and (
-                missing_before_pdp or any(not has_value(spec.get(f)) for f in supplement_fields)
-            )
+            pdp_attempts = 0
+            pdp_elapsed_seconds = None
+            pdp_final_url = None
+            pdp_wait_state = None
+            pdp_detail_present = None
+            pdp_recovered_fields: list[str] = []
+            pdp_failure_reason = None
+            plan = pdp_supplement_plan(spec, cfg, pdp_supplement, missing_before_pdp)
+            policy_null_fields = plan["policy_null_fields"]
+            supplement_fields = plan["allowed_fields"]
+            pdp_target_fields = plan["target_fields"]
+            pdp_skipped_reason = plan["skipped_reason"]
+            needs_pdp = pdp_supplement == "zenrows" and bool(pdp_target_fields)
             if needs_pdp:
                 try:
                     active_session = ensure_pdp_session()
@@ -248,22 +296,44 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                         from bs4 import BeautifulSoup
                         pdp = active_session.fetch_pdp(target.get("product_url"))
                         pdp_status = pdp.get("status")
+                        pdp_nav_status = pdp.get("nav_status")
                         pdp_error = pdp.get("error")
+                        pdp_attempts = pdp.get("attempts") or 0
+                        pdp_elapsed_seconds = pdp.get("elapsed_seconds")
+                        pdp_final_url = pdp.get("final_url")
+                        pdp_wait_state = pdp.get("wait_state")
+                        pdp_detail_present = pdp.get("detail_present")
                         pdp_body = pdp.get("body", b"")
                         if pdp_body:
                             pid = (target.get("product_id") or "").strip() or product_id_from_url(target.get("product_url")) or str(target.get("main_rank"))
                             raw_html.save(f"pdp_{pid}", pdp_body)  # opt-in audit copy (OTTO_SAVE_HTML)
                         if pdp.get("detail_present"):
                             soup = BeautifulSoup(pdp_body.decode("utf-8", errors="replace"), "lxml")
-                            for key, value in cfg.extract_pdp_spec(soup).items():
-                                if not value:
+                            pdp_spec = cfg.extract_pdp_spec(soup)
+                            for key in pdp_target_fields:
+                                value = pdp_spec.get(key)
+                                if not has_value(value):
                                     continue
-                                if key in supplement_fields or not has_value(spec.get(key)):
-                                    spec[key] = value
+                                if not has_value(spec.get(key)):
+                                    pdp_recovered_fields.append(key)
+                                spec[key] = value
                 except Exception as exc:  # noqa: BLE001
                     pdp_error = type(exc).__name__ + ": " + str(exc)
                     print(f"[full/{cfg.PRODUCT}][WARN] pdp supplement failed rank={target.get('main_rank')} error={pdp_error}", flush=True)
                 missing_after_pdp = missing_spec_fields(spec, cfg)
+                remaining_pdp_fields = [
+                    field for field in pdp_target_fields
+                    if not has_value(spec.get(field))
+                ]
+                if remaining_pdp_fields:
+                    if pdp_error:
+                        pdp_failure_reason = pdp_error
+                    elif pdp_status != 200:
+                        pdp_failure_reason = f"http_status={pdp_status}"
+                    elif not pdp_detail_present:
+                        pdp_failure_reason = "detail_not_present"
+                    else:
+                        pdp_failure_reason = "no_allowed_fields_recovered"
 
             # star rating: per-variation, from the review page ONLY (Kasada-free, matches
             # the actual product page). The crocotile listing aggregate over-counts (it is a
@@ -297,7 +367,19 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                              "spec": {f: spec.get(f) for f in cfg.SPEC_FIELDS},
                              "missing_spec_before_pdp": missing_before_pdp,
                              "missing_spec_after_pdp": missing_after_pdp,
+                             "policy_null_fields": policy_null_fields,
+                             "pdp_supplement_allowed_fields": supplement_fields,
+                             "pdp_supplement_target_fields": pdp_target_fields,
+                             "pdp_supplement_skipped_reason": pdp_skipped_reason,
                              "pdp_supplement_status": pdp_status,
+                             "pdp_supplement_nav_status": pdp_nav_status,
+                             "pdp_supplement_detail_present": pdp_detail_present,
+                             "pdp_supplement_attempts": pdp_attempts,
+                             "pdp_supplement_elapsed_seconds": pdp_elapsed_seconds,
+                             "pdp_supplement_wait_state": pdp_wait_state,
+                             "pdp_supplement_final_url": pdp_final_url,
+                             "pdp_supplement_recovered_fields": pdp_recovered_fields,
+                             "pdp_supplement_failure_reason": pdp_failure_reason,
                              "pdp_supplement_error": pdp_error})
             print(f"[full/{cfg.PRODUCT}] rank={target.get('main_rank')} sku={sku} spec={ {f: spec.get(f) for f in cfg.SPEC_FIELDS} } reco={reco.get('similar_count')} review={review_resp.get('status')}", flush=True)
             if detail_sleep > 0:

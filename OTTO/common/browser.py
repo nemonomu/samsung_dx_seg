@@ -219,6 +219,10 @@ class BrowserSession:
                     url, wait_until="domcontentloaded", timeout=self.nav_timeout_ms, referer=self.warmup_listing_url
                 )
                 nav_status = response.status if response else None
+                if nav_status in (400, 404):
+                    wait_state = f"http_{nav_status}_no_retry"
+                    error = f"http_status={nav_status}"
+                    break
                 try:
                     self._page.wait_for_selector(DETAIL_TABLE_SELECTOR, timeout=self.detail_wait_ms)
                     wait_state = "table_ok"
