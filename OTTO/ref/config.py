@@ -18,10 +18,10 @@ DB_TABLE = env_value("SEG_REF_DB_FINAL_TABLE", "dx_seg.dx_seg_ref_retail_com")
 
 SPEC_FIELDS = ["ref_refrigerator_type", "ref_capacity"]
 USE_DATASHEET = True
-# PDP supplement is reserved for explicitly recoverable missing fields. A missing
-# ref_refrigerator_type can be a policy NULL, so do not spend ZenRows PDP calls
-# trying to fill it.
-PDP_SUPPLEMENT_FIELDS = ["ref_capacity"]
+# PDP supplement is reserved for explicitly recoverable missing fields. The shared
+# full-output step skips ref_refrigerator_type only when this config marks it as a
+# policy NULL; unresolved type misses may still be checked on the PDP.
+PDP_SUPPLEMENT_FIELDS = ["ref_refrigerator_type", "ref_capacity"]
 
 # German refrigerator layout/freezer-position -> English. Product category and
 # installation terms (e.g. plain Kuehlschrank, Einbau, Wine Cooler, Freezer) are

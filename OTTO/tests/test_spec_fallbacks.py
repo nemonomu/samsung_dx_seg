@@ -146,7 +146,7 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
 class OttoPdpSupplementPolicyTests(unittest.TestCase):
     class RefCfg:
         SPEC_FIELDS = ["ref_refrigerator_type", "ref_capacity"]
-        PDP_SUPPLEMENT_FIELDS = ["ref_capacity"]
+        PDP_SUPPLEMENT_FIELDS = ["ref_refrigerator_type", "ref_capacity"]
 
     def test_policy_null_type_does_not_trigger_pdp(self) -> None:
         spec = {
@@ -160,7 +160,7 @@ class OttoPdpSupplementPolicyTests(unittest.TestCase):
         self.assertEqual(plan["target_fields"], [])
         self.assertEqual(plan["skipped_reason"], "policy_null_only")
 
-    def test_allowed_missing_capacity_triggers_pdp(self) -> None:
+    def test_policy_null_type_allows_capacity_pdp_only(self) -> None:
         spec = {
             "ref_refrigerator_type": None,
             "ref_capacity": None,
@@ -169,6 +169,13 @@ class OttoPdpSupplementPolicyTests(unittest.TestCase):
         missing = full_output.missing_spec_fields(spec, self.RefCfg)
         plan = full_output.pdp_supplement_plan(spec, self.RefCfg, "zenrows", missing)
         self.assertEqual(plan["target_fields"], ["ref_capacity"])
+        self.assertIsNone(plan["skipped_reason"])
+
+    def test_unresolved_missing_type_can_still_trigger_pdp(self) -> None:
+        spec = {"ref_refrigerator_type": None, "ref_capacity": "308 l"}
+        missing = full_output.missing_spec_fields(spec, self.RefCfg)
+        plan = full_output.pdp_supplement_plan(spec, self.RefCfg, "zenrows", missing)
+        self.assertEqual(plan["target_fields"], ["ref_refrigerator_type"])
         self.assertIsNone(plan["skipped_reason"])
 
 
