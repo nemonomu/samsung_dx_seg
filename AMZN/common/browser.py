@@ -22,6 +22,33 @@ from common import siel_logging as siel_log
 uc.Chrome.__del__ = lambda self: None
 
 
+_AMAZON_TECHNICAL_ERROR_MARKERS = (
+    "tut uns leid",
+    "ist ein technischer fehler aufgetreten",
+    "bitte schauen sie später wieder vorbei",
+)
+
+
+def classify_amazon_page(html: str | None, title: str | None = None) -> str | None:
+    """Classify known Amazon error pages without relying on a synthetic HTTP status."""
+    source = str(html or "").lower()
+    page_title = str(title or "").lower()
+    if (
+        "robot check" in page_title
+        or "sorry, we just need to make sure" in source
+        or "/errors/validatecaptcha" in source
+        or "bm-verify" in source
+        or "_sec/verify" in source
+        or "request was throttled" in source
+        or "continue shopping" in source
+        or "click the button below to continue shopping" in source
+    ):
+        return "amazon_interstitial"
+    if sum(marker in source for marker in _AMAZON_TECHNICAL_ERROR_MARKERS) >= 2:
+        return "amazon_technical_error"
+    return None
+
+
 def _truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
@@ -118,6 +145,27 @@ class AmazonBrowserSession:
         finally:
             self.driver = None
 
+    def restart(self, reason: str = "requested") -> None:
+        """Replace the temporary WebDriver session while preserving session settings."""
+        siel_log.run_log(f"driver restart reason={reason}", "WARNING")
+        self.close()
+        self.open()
+
+    def warm_up(self, url: str = "https://www.amazon.de/") -> dict[str, Any]:
+        """Initialize a fresh temporary Amazon session without deleting or reading cookies."""
+        siel_log.run_log(f"browser warmup start url={url}")
+        result = self.fetch(
+            url,
+            scroll_ratio=0.0,
+            scroll_max_scrolls=0,
+            post_load_sleep=max(getattr(self, "sleep", 1.5), 3.0),
+        )
+        siel_log.run_log(
+            f"browser warmup done status={result.get('status')} bytes={result.get('bytes')} "
+            f"url={result.get('url')} error={result.get('error')}"
+        )
+        return result
+
     def _click_if_present(self, by: str, selector: str, timeout_sleep: float = 0.5) -> bool:
         if self.driver is None:
             return False
@@ -180,16 +228,7 @@ class AmazonBrowserSession:
                 source = (self.driver.page_source or "").lower()
             except WebDriverException:
                 return False
-            blocked = (
-                "robot check" in title
-                or "sorry, we just need to make sure" in source
-                or "/errors/validatecaptcha" in source
-                or "bm-verify" in source
-                or "_sec/verify" in source
-                or "request was throttled" in source
-                or "continue shopping" in source
-                or "click the button below to continue shopping" in source
-            )
+            blocked = classify_amazon_page(source, title) == "amazon_interstitial"
             if not blocked:
                 return True
             clicked = self._click_if_present(
@@ -254,14 +293,24 @@ class AmazonBrowserSession:
                 pause=0.45 if scroll_pause is None else scroll_pause,
                 max_scrolls=8 if scroll_max_scrolls is None else scroll_max_scrolls,
             )
-            self.recover(url, cycles=1)
+            recovered = self.recover(url, cycles=1)
             html = self.driver.page_source or ""
+            page_error = classify_amazon_page(html, self.driver.title or "")
+            if page_error == "amazon_technical_error":
+                status = 503
+                error = page_error
+            elif page_error == "amazon_interstitial" or not recovered:
+                status = 429
+                error = "amazon_interstitial"
+            else:
+                status = 200
+                error = None
             result = {
                 "url": self.driver.current_url,
-                "status": 200 if recovered else 429,
+                "status": status,
                 "text": html,
                 "bytes": len(html.encode("utf-8", errors="replace")),
-                "error": None if recovered else "amazon_interstitial",
+                "error": error,
                 "elapsed_seconds": round(time.perf_counter() - started, 2),
             }
             siel_log.run_log(
@@ -284,3 +333,61 @@ class AmazonBrowserSession:
                 "ERROR",
             )
             return result
+
+    def refetch_without_cache(self, url: str, *, wait_range: tuple[float, float] = (2.0, 4.0),
+                              scroll_ratio: float = 1.0, scroll_pause: float | None = None,
+                              scroll_max_scrolls: int | None = None,
+                              post_load_sleep: float | None = None) -> dict[str, Any]:
+        """Reload one PDP in the current session while temporarily bypassing Chrome cache."""
+        self.open()
+        assert self.driver is not None
+        low, high = wait_range
+        time.sleep(random.uniform(min(low, high), max(low, high)))
+        cache_disabled = False
+        try:
+            try:
+                self.driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
+                cache_disabled = True
+            except WebDriverException as exc:
+                siel_log.run_log(
+                    f"cache bypass unavailable; continuing with normal reload: {type(exc).__name__}: {exc}",
+                    "WARNING",
+                )
+            return self.fetch(
+                url,
+                scroll_ratio=scroll_ratio,
+                scroll_pause=scroll_pause,
+                scroll_max_scrolls=scroll_max_scrolls,
+                post_load_sleep=post_load_sleep,
+            )
+        finally:
+            if cache_disabled:
+                try:
+                    self.driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": False})
+                except WebDriverException as exc:
+                    siel_log.run_log(f"cache restore failed: {type(exc).__name__}: {exc}", "WARNING")
+
+    def refetch(self, url: str, *, wait_range: tuple[float, float] = (5.0, 10.0),
+                scroll_ratio: float = 1.0, scroll_pause: float | None = None,
+                scroll_max_scrolls: int | None = None,
+                post_load_sleep: float | None = None) -> dict[str, Any]:
+        """Retry one failed page load once without changing Chrome's cache policy."""
+        self.open()
+        assert self.driver is not None
+        try:
+            self.driver.execute_script("window.stop();")
+        except WebDriverException:
+            pass
+        low, high = wait_range
+        wait_seconds = random.uniform(min(low, high), max(low, high))
+        time.sleep(wait_seconds)
+        result = self.fetch(
+            url,
+            scroll_ratio=scroll_ratio,
+            scroll_pause=scroll_pause,
+            scroll_max_scrolls=scroll_max_scrolls,
+            post_load_sleep=post_load_sleep,
+        )
+        result["retry_mode"] = "normal_cache"
+        result["retry_wait_seconds"] = round(wait_seconds, 2)
+        return result

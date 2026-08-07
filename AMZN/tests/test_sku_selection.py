@@ -12,6 +12,52 @@ def _detail_table(*rows: tuple[str, str]) -> str:
 
 
 class SkuSelectionTests(unittest.TestCase):
+    def test_unavailable_pdp_uses_visible_german_text_as_final_price(self) -> None:
+        html = (
+            "<html><body><div id='outOfStock'><div class='a-box-inner'>"
+            "<span class='a-color-base a-text-bold'>Derzeit nicht verfügbar.</span>"
+            "</div></div></body></html>"
+        )
+
+        self.assertEqual(
+            parse_product_detail_html(html, product="TV")["final_sku_price"],
+            "Derzeit nicht verfügbar.",
+        )
+
+    def test_current_product_unavailable_text_outranks_other_page_prices(self) -> None:
+        html = (
+            "<html><body><span class='a-price'><span class='a-offscreen'>499,00€</span></span>"
+            "<div id='outOfStock'><span class='a-color-base a-text-bold'>"
+            "Derzeit nicht verfügbar.</span></div></body></html>"
+        )
+
+        self.assertEqual(
+            parse_product_detail_html(html, product="TV")["final_sku_price"],
+            "Derzeit nicht verfügbar.",
+        )
+
+    def test_html_unavailable_fallback_fills_missed_db_price_selector(self) -> None:
+        html = (
+            "<html><body><div id='outOfStock'>"
+            "<span class='a-color-base a-text-bold'>Derzeit nicht verfügbar.</span>"
+            "</div></body></html>"
+        )
+
+        class Driver:
+            page_source = html
+
+            @staticmethod
+            def find_elements(_by: str, _xpath: str) -> list[object]:
+                return []
+
+        result = extract_detail(
+            Driver(),
+            {"final_sku_price": {"xpath": "//missing-price", "fallback": None}},
+            product="TV",
+        )
+
+        self.assertEqual(result["final_sku_price"], "Derzeit nicht verfügbar.")
+
     def test_tv_prefers_manufacturer_model_number(self) -> None:
         html = _detail_table(
             ("Hersteller-Teilenummer", "50468986159444"),
