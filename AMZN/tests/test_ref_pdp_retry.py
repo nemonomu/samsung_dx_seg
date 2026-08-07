@@ -33,6 +33,9 @@ class FakeLogger:
     def warning(self, *_args, **_kwargs) -> None:
         pass
 
+    def error(self, *_args, **_kwargs) -> None:
+        pass
+
 
 class FakeSession:
     def __init__(self, *, first_driver: Driver, retry_driver: Driver | None = None,
@@ -49,6 +52,7 @@ class FakeSession:
         self.fetch_count = 0
         self.refetch_count = 0
         self.normal_refetch_count = 0
+        self.restart_count = 0
 
     def fetch(self, url: str, **_kwargs) -> dict[str, object]:
         self.fetch_count += 1
@@ -80,10 +84,48 @@ class FakeSession:
             "bytes": 5,
         }
 
+    def restart(self, _reason: str) -> None:
+        self.restart_count += 1
+
+
+class RecoverySession(FakeSession):
+    def __init__(self, *, fetch_results: list[tuple[dict[str, object] | Exception, Driver]],
+                 normal_retry: tuple[dict[str, object], Driver] | None = None,
+                 cache_retry: tuple[dict[str, object], Driver] | None = None) -> None:
+        super().__init__(first_driver=fetch_results[0][1])
+        self.fetch_results = list(fetch_results)
+        self.normal_retry = normal_retry
+        self.cache_retry = cache_retry
+
+    def fetch(self, _url: str, **_kwargs) -> dict[str, object]:
+        self.fetch_count += 1
+        result, driver = self.fetch_results.pop(0)
+        self.driver = driver
+        if isinstance(result, Exception):
+            raise result
+        return dict(result)
+
+    def refetch(self, url: str, **_kwargs) -> dict[str, object]:
+        if self.normal_retry is None:
+            return super().refetch(url, **_kwargs)
+        self.normal_refetch_count += 1
+        result, driver = self.normal_retry
+        self.driver = driver
+        return {**result, "retry_mode": "normal_cache", "retry_wait_seconds": 5.0}
+
+    def refetch_without_cache(self, url: str, **_kwargs) -> dict[str, object]:
+        if self.cache_retry is None:
+            return super().refetch_without_cache(url, **_kwargs)
+        self.refetch_count += 1
+        result, driver = self.cache_retry
+        self.driver = driver
+        return dict(result)
+
 
 def _run_detail(session: FakeSession, *, product: str, parsed_by_driver: dict[int, dict[str, object]],
                 product_url: str | None = "https://www.amazon.de/dp/B0TEST1234",
-                landing_names_by_driver: dict[int, str | None] | None = None):
+                landing_names_by_driver: dict[int, str | None] | None = None,
+                emit=None):
     cfg = SimpleNamespace(PRODUCT=product, ACCOUNT_NAME="Amazon.de")
     target = {
         "asin": "B0TEST1234",
@@ -119,10 +161,143 @@ def _run_detail(session: FakeSession, *, product: str, parsed_by_driver: dict[in
             return_value=SimpleNamespace(update=lambda *_args, **_kwargs: None),
         ),
     ):
-        return detail_module.run(session=session, cfg=cfg, sleep=0, review_page_fallback=False)
+        return detail_module.run(
+            session=session,
+            cfg=cfg,
+            sleep=0,
+            review_page_fallback=False,
+            emit=emit,
+        )
 
 
 class RefPdpRetryTests(unittest.TestCase):
+    @staticmethod
+    def _result(*, status: int | None, text: str, error: str | None) -> dict[str, object]:
+        return {
+            "url": "https://www.amazon.de/dp/B0TEST1234",
+            "status": status,
+            "text": text,
+            "error": error,
+            "bytes": len(text),
+        }
+
+    def test_initial_fetch_tab_crash_restarts_chrome_and_recovers_tv(self) -> None:
+        dead_driver = Driver()
+        recovered_driver = Driver(title="Test TV", containers=("#dp",))
+        session = RecoverySession(fetch_results=[
+            (self._result(status=None, text="", error="WebDriverException: Message: tab crashed"), dead_driver),
+            (self._result(status=200, text="recovered", error=None), recovered_driver),
+        ])
+
+        manifest = _run_detail(
+            session,
+            product="TV",
+            parsed_by_driver={id(recovered_driver): {"sku": "TV-RECOVERED"}},
+        )
+
+        self.assertTrue(manifest["success"])
+        self.assertEqual(session.restart_count, 1)
+        self.assertEqual(session.fetch_count, 2)
+        self.assertEqual(manifest["rows_data"][0]["sku"], "TV-RECOVERED")
+        restart = manifest["attempts"][0]["browser_restart_attempts"][0]
+        self.assertEqual(restart["phase"], "initial_fetch")
+        self.assertTrue(restart["success"])
+
+    def test_thrown_dead_session_error_also_restarts_and_recovers(self) -> None:
+        dead_driver = Driver()
+        recovered_driver = Driver(title="Test TV", containers=("#dp",))
+        session = RecoverySession(fetch_results=[
+            (RuntimeError("invalid session id: browser connection refused"), dead_driver),
+            (self._result(status=200, text="recovered", error=None), recovered_driver),
+        ])
+
+        manifest = _run_detail(
+            session,
+            product="TV",
+            parsed_by_driver={id(recovered_driver): {"sku": "TV-RECOVERED"}},
+        )
+
+        self.assertTrue(manifest["success"])
+        self.assertEqual(session.restart_count, 1)
+        self.assertEqual(manifest["rows_data"][0]["sku"], "TV-RECOVERED")
+
+    def test_normal_refetch_tab_crash_restarts_chrome_and_recovers_tv(self) -> None:
+        first_driver = Driver()
+        dead_driver = Driver()
+        recovered_driver = Driver(title="Test TV", containers=("#dp",))
+        timeout = self._result(status=None, text="", error="TimeoutException: renderer timeout")
+        crash = self._result(status=None, text="", error="invalid session id: browser disconnected")
+        session = RecoverySession(
+            fetch_results=[
+                (timeout, first_driver),
+                (self._result(status=200, text="recovered", error=None), recovered_driver),
+            ],
+            normal_retry=(crash, dead_driver),
+        )
+
+        manifest = _run_detail(
+            session,
+            product="TV",
+            parsed_by_driver={id(recovered_driver): {"sku": "TV-RECOVERED"}},
+        )
+
+        self.assertEqual(session.restart_count, 1)
+        self.assertEqual(session.normal_refetch_count, 1)
+        self.assertEqual(manifest["attempts"][0]["selected_attempt"], "retry")
+        self.assertEqual(
+            manifest["attempts"][0]["browser_restart_attempts"][0]["phase"],
+            "normal_refetch",
+        )
+
+    def test_ref_cache_bypass_tab_crash_restarts_chrome_and_recovers(self) -> None:
+        first_driver = Driver()
+        dead_driver = Driver()
+        recovered_driver = Driver(title="Test Refrigerator", containers=("#dp",))
+        success = self._result(status=200, text="pdp", error=None)
+        crash = self._result(status=None, text="", error="WebDriverException: Message: tab crashed")
+        session = RecoverySession(
+            fetch_results=[(success, first_driver), (success, recovered_driver)],
+            cache_retry=(crash, dead_driver),
+        )
+        recovered = {
+            "sku": "RF-RECOVERED",
+            "ref_capacity": "199 L",
+            "ref_refrigerator_type": "Refrigerator",
+        }
+
+        manifest = _run_detail(
+            session,
+            product="REF",
+            parsed_by_driver={id(first_driver): {}, id(recovered_driver): recovered},
+        )
+
+        self.assertEqual(session.restart_count, 1)
+        self.assertEqual(session.refetch_count, 1)
+        self.assertEqual(manifest["rows_data"][0]["sku"], "RF-RECOVERED")
+        self.assertEqual(
+            manifest["attempts"][0]["browser_restart_attempts"][0]["phase"],
+            "cache_bypass_refetch",
+        )
+
+    def test_two_failed_new_chrome_sessions_stop_detail_and_emit_fatal_record(self) -> None:
+        dead_driver = Driver()
+        crash = self._result(status=None, text="", error="WebDriverException: Message: tab crashed")
+        session = RecoverySession(fetch_results=[
+            (crash, dead_driver),
+            (crash, dead_driver),
+            (crash, dead_driver),
+        ])
+        emitted: list[dict[str, object]] = []
+
+        with self.assertRaises(detail_module.DetailBrowserUnavailableError):
+            _run_detail(session, product="REF", parsed_by_driver={}, emit=emitted.append)
+
+        self.assertEqual(session.restart_count, 2)
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0]["stage"], "detail_error")
+        self.assertTrue(emitted[0]["_fatal"])
+        self.assertEqual(len(emitted[0]["browser_restart_attempts"]), 2)
+
     def test_browser_retry_reason_excludes_amazon_interstitial(self) -> None:
         self.assertIsNone(_browser_retry_reason({
             "status": 429, "text": "blocked", "error": "amazon_interstitial",
@@ -162,6 +337,7 @@ class RefPdpRetryTests(unittest.TestCase):
         self.assertEqual(session.normal_refetch_count, 1)
         self.assertEqual(session.refetch_count, 0)
         self.assertEqual(manifest["rows_data"][0]["final_sku_price"], "999,00€")
+        self.assertNotIn("_transport_warning", manifest["rows_data"][0])
         self.assertEqual(attempt["retry_reason"], "timeout")
         self.assertEqual(attempt["retry_mode"], "normal_cache")
         self.assertEqual(attempt["selected_attempt"], "retry")
@@ -185,10 +361,66 @@ class RefPdpRetryTests(unittest.TestCase):
         manifest = _run_detail(session, product="TV", parsed_by_driver={})
 
         attempt = manifest["attempts"][0]
+        self.assertTrue(manifest["success"])
         self.assertEqual(manifest["rows"], 1)
         self.assertEqual(session.normal_refetch_count, 1)
         self.assertEqual(attempt["selected_attempt"], "first")
         self.assertEqual(attempt["retry_final_reason"], "timeout")
+        self.assertEqual(manifest["rows_data"][0]["_transport_warning"], "timeout")
+
+    def test_latest_failed_retry_distinguishes_429_from_timeout(self) -> None:
+        cases = (
+            (
+                self._result(status=None, text="", error="TimeoutException: renderer timeout"),
+                self._result(status=429, text="blocked", error="amazon_interstitial"),
+                "amazon_429",
+            ),
+            (
+                self._result(status=503, text="technical error", error="amazon_technical_error"),
+                self._result(status=None, text="", error="TimeoutException: renderer timeout"),
+                "timeout",
+            ),
+        )
+        for first_result, retry_result, expected in cases:
+            with self.subTest(expected=expected):
+                driver = Driver()
+                session = FakeSession(
+                    first_driver=driver,
+                    first_result=first_result,
+                    normal_retry_result=retry_result,
+                )
+
+                manifest = _run_detail(
+                    session,
+                    product="TV",
+                    parsed_by_driver={id(driver): {}},
+                )
+
+                self.assertTrue(manifest["success"])
+                self.assertEqual(manifest["rows_data"][0]["_transport_warning"], expected)
+
+    def test_ref_incomplete_pdp_with_timeout_retry_is_warned_and_continues(self) -> None:
+        first_driver = Driver()
+        retry_driver = Driver()
+        session = RecoverySession(
+            fetch_results=[(
+                self._result(status=200, text="incomplete pdp", error=None),
+                first_driver,
+            )],
+            cache_retry=(
+                self._result(status=None, text="", error="TimeoutException: renderer timeout"),
+                retry_driver,
+            ),
+        )
+
+        manifest = _run_detail(
+            session,
+            product="REF",
+            parsed_by_driver={id(first_driver): {}, id(retry_driver): {}},
+        )
+
+        self.assertTrue(manifest["success"])
+        self.assertEqual(manifest["rows_data"][0]["_transport_warning"], "timeout")
 
     def test_ref_timeout_uses_only_the_common_retry(self) -> None:
         first_driver = Driver()
@@ -236,8 +468,11 @@ class RefPdpRetryTests(unittest.TestCase):
 
         manifest = _run_detail(session, product="TV", parsed_by_driver={id(driver): {}})
 
+        self.assertTrue(manifest["success"])
         self.assertEqual(session.normal_refetch_count, 0)
+        self.assertEqual(session.restart_count, 0)
         self.assertFalse(manifest["attempts"][0]["retry_attempted"])
+        self.assertEqual(manifest["rows_data"][0]["_transport_warning"], "amazon_429")
 
     def test_ref_interstitial_does_not_use_product_specific_retry(self) -> None:
         driver = Driver()
@@ -256,6 +491,7 @@ class RefPdpRetryTests(unittest.TestCase):
 
         self.assertEqual(session.normal_refetch_count, 0)
         self.assertEqual(session.refetch_count, 0)
+        self.assertEqual(session.restart_count, 0)
         self.assertFalse(manifest["attempts"][0]["retry_attempted"])
 
     def test_normal_ref_pdp_does_not_retry(self) -> None:

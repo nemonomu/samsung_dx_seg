@@ -56,6 +56,24 @@ def _session(fetch_result=None, fetch_error: Exception | None = None):
 
 
 class BrowserRefetchTests(unittest.TestCase):
+    def test_fatal_browser_error_matches_dead_session_messages_only(self) -> None:
+        for message in (
+            "Message: tab crashed",
+            "invalid session id",
+            "disconnected: not connected to DevTools",
+            "no such window",
+            "chrome not reachable",
+            "connection refused by local driver service",
+            "WinError 10061",
+        ):
+            with self.subTest(message=message):
+                self.assertIsNotNone(browser_module.fatal_browser_error({"error": message}))
+
+        self.assertIsNone(browser_module.fatal_browser_error({
+            "error": "TimeoutException: timed out receiving message from renderer",
+        }))
+        self.assertIsNone(browser_module.fatal_browser_error({"error": "amazon_interstitial"}))
+
     def test_classifies_captured_amazon_de_technical_error_page(self) -> None:
         html = """
         <h1>Tut uns Leid!</h1>

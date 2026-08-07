@@ -99,7 +99,15 @@ def main(argv: list[str] | None = None) -> int:
     for product in args.product:
         print(f"\n=== [run] starting product={product} ===\n", file=sys.stderr)
         cfg = _load_config(product)
-        rc = pipeline.run(cfg, _pipeline_args(args))
+        try:
+            rc = pipeline.run(cfg, _pipeline_args(args))
+        except Exception as exc:  # noqa: BLE001 - one product must not suppress the next product run.
+            rc = 1
+            print(
+                f"[run] product={product} raised unexpectedly: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
         if rc:
             status = rc
             print(f"[run] product={product} failed; continuing next product", file=sys.stderr)

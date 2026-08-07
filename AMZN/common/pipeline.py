@@ -59,6 +59,23 @@ def _bsr_page_load_strategies(args: argparse.Namespace) -> list[str]:
     return strategies or ["eager", "none", "eager"]
 
 
+def _require_complete_detail(manifest: dict[str, Any]) -> None:
+    """Block downstream output/DB work unless every selected PDP completed."""
+    rows = manifest.get("rows")
+    targets_count = manifest.get("targets")
+    if (
+        manifest.get("success") is not True
+        or not isinstance(targets_count, int)
+        or isinstance(targets_count, bool)
+        or targets_count <= 0
+        or rows != targets_count
+    ):
+        raise RuntimeError(
+            "detail completeness gate failed: "
+            f"success={manifest.get('success')} rows={rows} targets={targets_count}"
+        )
+
+
 def _emit_error(emit, *, stage: str, product: str, message: str, **extra: Any) -> None:
     rec = {
         "stage": stage,
@@ -192,8 +209,11 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
     write_json(out / "step00_run_manifest.json", run_manifest)
 
     streamer = None
-    if args.streaming_insert and not args.no_auto_insert and "db" in steps:
-        streamer = merge_insert.StreamingRetailInserter(cfg, batch_id=batch_id, dry_run=args.db_dry_run)
+    if args.streaming_insert:
+        siel_log.run_log(
+            "streaming insert is disabled for safe all-or-nothing detail loads; using batch insert",
+            "WARNING",
+        )
 
     def emit(record: dict[str, Any]) -> None:
         if record.get("batch_id") in (None, "") and record.get("stage") in {"main", "bsr", "detail"}:
@@ -206,6 +226,7 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
     status = 0
     fatal_error: Exception | None = None
     shared_session = None
+    detail_manifest: dict[str, Any] | None = None
 
     def close_shared_session(reason: str) -> None:
         nonlocal shared_session
@@ -268,6 +289,7 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
                     sleep=args.detail_sleep,
                     session=shared_session,
                 )
+                _require_complete_detail(detail_manifest)
                 siel_log.run_log(f"stage=detail product={cfg.PRODUCT} done records={detail_manifest.get('rows')}")
             if "full" in steps:
                 siel_log.run_log(f"stage=full product={cfg.PRODUCT} start")
@@ -281,7 +303,13 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
                     emit(summary)
                     write_json(out / "step14_streaming_db_save_manifest.json", summary)
                 else:
-                    manifest = merge_insert.insert_jsonl(cfg, jsonl_path, dry_run=args.db_dry_run)
+                    expected_rows = detail_manifest.get("rows") if detail_manifest is not None else None
+                    manifest = merge_insert.insert_jsonl(
+                        cfg,
+                        jsonl_path,
+                        dry_run=args.db_dry_run,
+                        expected_rows=expected_rows,
+                    )
                     manifest["stage"] = "db_insert_summary"
                     manifest["run_log_path"] = str(run_log_path)
                     emit(manifest)
@@ -291,7 +319,14 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
             fatal_error = exc
             siel_log.run_log(f"product={cfg.PRODUCT} failed: {type(exc).__name__}: {exc}", "ERROR")
             siel_log.run_log(traceback.format_exc(), "ERROR")
-            _emit_error(emit, stage="run_error", product=cfg.PRODUCT, message=repr(exc), _error="product run failed")
+            _emit_error(
+                emit,
+                stage="run_error",
+                product=cfg.PRODUCT,
+                message=repr(exc),
+                _error="product run failed",
+                _fatal=True,
+            )
         if "notify" in steps or args.email_report:
             siel_log.run_log(f"stage=notify product={cfg.PRODUCT} start")
             notify_manifest = notify.run(cfg)
