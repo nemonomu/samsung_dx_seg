@@ -17,6 +17,7 @@ from selenium.common.exceptions import NoSuchElementException, WebDriverExceptio
 from selenium.webdriver.common.by import By
 
 from common import siel_logging as siel_log
+from common.browser_errors import fatal_browser_error
 
 
 uc.Chrome.__del__ = lambda self: None

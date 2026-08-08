@@ -272,7 +272,12 @@ def insert_rows(cfg, rows: list[dict[str, Any]], *, dry_run: bool = False,
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
     preview_path = out / "amzn_full_output.csv"
-    write_csv(preview_path, rows, [f for f in BASE_FIELDS if any(f in row for row in rows)])
+    preview_fields = [f for f in BASE_FIELDS if any(f in row for row in rows)]
+    preview_rows = [
+        {field: row.get(field) for field in preview_fields}
+        for row in rows
+    ]
+    write_csv(preview_path, preview_rows, preview_fields)
     manifest["preview_csv"] = str(preview_path)
     if not rows:
         manifest.update(success=False, inserted_total=0, message="no merged rows")
@@ -323,8 +328,14 @@ def insert_rows(cfg, rows: list[dict[str, Any]], *, dry_run: bool = False,
     return manifest
 
 
-def insert_jsonl(cfg, jsonl_path: str | Path, *, dry_run: bool = False) -> dict[str, Any]:
+def insert_jsonl(cfg, jsonl_path: str | Path, *, dry_run: bool = False,
+                 expected_rows: int | None = None) -> dict[str, Any]:
     rows = merge_jsonl(cfg, jsonl_path)
+    if expected_rows is not None and len(rows) != expected_rows:
+        raise RuntimeError(
+            "JSONL completeness gate failed before DB insert: "
+            f"merged_rows={len(rows)} expected_rows={expected_rows}"
+        )
     manifest = insert_rows(cfg, rows, dry_run=dry_run)
     manifest["jsonl_path"] = str(jsonl_path)
     write_json(category_output_root(cfg.PRODUCT) / "step14_jsonl_db_save_manifest.json", manifest)

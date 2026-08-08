@@ -21,6 +21,105 @@ NORMAL_PDP_CONTAINERS = (
     "#detailBullets_feature_div",
     "#productDetails_feature_div",
 )
+MAX_DETAIL_BROWSER_RESTARTS = 2
+
+
+class DetailBrowserUnavailableError(RuntimeError):
+    """Raised when a dead detail browser cannot be recovered safely."""
+
+    def __init__(self, *, rank: int, asin: str, phase: str, marker: str,
+                 restart_attempts: list[dict[str, Any]]) -> None:
+        self.rank = rank
+        self.asin = asin
+        self.phase = phase
+        self.marker = marker
+        self.restart_attempts = list(restart_attempts)
+        super().__init__(
+            f"detail browser recovery exhausted: rank={rank} asin={asin} "
+            f"phase={phase} restarts={len(restart_attempts)} reason={marker}"
+        )
+
+
+def _fatal_browser_marker(result: dict[str, Any]) -> str | None:
+    from common.browser_errors import fatal_browser_error
+    return fatal_browser_error(result)
+
+
+def _recover_fatal_browser(
+        session: Any, url: str, result: dict[str, Any], *, rank: int, asin: str,
+        phase: str, logger: Any, restart_attempts: list[dict[str, Any]],
+        fetch_kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Replace a dead Chrome session and fetch the current PDP again."""
+    marker = _fatal_browser_marker(result)
+    while marker:
+        if len(restart_attempts) >= MAX_DETAIL_BROWSER_RESTARTS:
+            raise DetailBrowserUnavailableError(
+                rank=rank,
+                asin=asin,
+                phase=phase,
+                marker=marker,
+                restart_attempts=restart_attempts,
+            )
+        restart_no = len(restart_attempts) + 1
+        logger.error(
+            "rank=%d asin=%s fatal browser error phase=%s reason=%s restart=%d/%d",
+            rank, asin, phase, marker, restart_no, MAX_DETAIL_BROWSER_RESTARTS,
+        )
+        attempt = {
+            "restart": restart_no,
+            "phase": phase,
+            "trigger": marker,
+            "success": False,
+        }
+        try:
+            session.restart(f"detail_{phase}_{marker.replace(' ', '_')}")
+            result = session.fetch(url, **fetch_kwargs)
+            attempt["result_status"] = result.get("status")
+            attempt["result_error"] = result.get("error")
+            next_marker = _fatal_browser_marker(result)
+            attempt["success"] = next_marker is None
+            restart_attempts.append(attempt)
+            marker = next_marker
+        except Exception as exc:  # noqa: BLE001 - a failed replacement is a consumed retry.
+            attempt["result_error"] = f"{type(exc).__name__}: {exc}"
+            restart_attempts.append(attempt)
+            marker = "browser restart failed"
+        logger.info(
+            "rank=%d asin=%s browser restart result phase=%s restart=%d/%d success=%s",
+            rank, asin, phase, restart_no, MAX_DETAIL_BROWSER_RESTARTS, attempt["success"],
+        )
+    return result
+
+
+def _run_browser_operation(
+        operation: Any, session: Any, url: str, *, rank: int, asin: str,
+        phase: str, logger: Any, restart_attempts: list[dict[str, Any]],
+        fetch_kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Run one detail request and also recover fatal transport exceptions."""
+    try:
+        result = operation()
+    except Exception as exc:  # noqa: BLE001 - only classified fatal transport errors recover here.
+        error = f"{type(exc).__name__}: {str(exc)[:240]}"
+        if _fatal_browser_marker({"error": error}) is None:
+            raise
+        result = {
+            "url": url,
+            "status": None,
+            "text": "",
+            "bytes": 0,
+            "error": error,
+        }
+    return _recover_fatal_browser(
+        session,
+        url,
+        result,
+        rank=rank,
+        asin=asin,
+        phase=phase,
+        logger=logger,
+        restart_attempts=restart_attempts,
+        fetch_kwargs=fetch_kwargs,
+    )
 
 
 def review_url(product_url: str | None, asin: str | None) -> str | None:
@@ -97,6 +196,33 @@ def _browser_retry_reason(pdp: dict[str, Any]) -> str | None:
     return None
 
 
+def _transport_warning_reason(
+        selected_pdp: dict[str, Any], first_pdp: dict[str, Any],
+        retry_pdp: dict[str, Any] | None, retry_final_reason: str | None) -> str | None:
+    """Classify an unresolved 429/timeout using the latest failed PDP attempt."""
+    def classify(attempt: dict[str, Any] | None) -> str | None:
+        if not attempt:
+            return None
+        error = str(attempt.get("error") or "").casefold()
+        if attempt.get("status") == 429 or error == "amazon_interstitial":
+            return "amazon_429"
+        if "timeoutexception" in error or "timed out receiving message" in error:
+            return "timeout"
+        return None
+
+    if retry_final_reason:
+        retry_warning = classify(retry_pdp)
+        if retry_warning:
+            return retry_warning
+    if selected_pdp.get("status") == 200 and selected_pdp.get("text"):
+        return None
+    for attempt in (retry_pdp, first_pdp):
+        warning = classify(attempt)
+        if warning:
+            return warning
+    return None
+
+
 def _detail_quality(driver: Any | None, parsed_detail: dict[str, Any]) -> tuple[int, int]:
     """Prefer a structurally normal PDP, then the result with more REF core fields."""
     structure_ok = int(_has_nonempty_product_title(driver) and _has_normal_pdp_container(driver))
@@ -153,6 +279,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
     progress = siel_log.DetailProgress(len(selected))
     rows: list[dict[str, Any]] = []
     attempts = []
+    fatal_failure: DetailBrowserUnavailableError | None = None
     save_html = _truthy(os.getenv("AMZN_SAVE_HTML")) if save_html is None else save_html
     review_page_fallback = (
         _truthy(os.getenv("AMZN_REVIEW_PAGE_FALLBACK"))
@@ -179,12 +306,23 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
             product_url = target.get("product_url")
             detail = _base_detail_record(cfg, target, asin=asin, product_url=product_url, batch_id=batch_id)
             review = {"status": None, "text": "", "error": "review_not_requested", "bytes": 0}
+            restart_attempts: list[dict[str, Any]] = []
+            pdp_fetch_kwargs = {
+                "scroll_ratio": 1.0,
+                "scroll_max_scrolls": 15,
+                "post_load_sleep": max(sleep, 3.0),
+            }
             if product_url:
-                first_pdp = session.fetch(
+                first_pdp = _run_browser_operation(
+                    lambda: session.fetch(product_url, **pdp_fetch_kwargs),
+                    session,
                     product_url,
-                    scroll_ratio=1.0,
-                    scroll_max_scrolls=15,
-                    post_load_sleep=max(sleep, 3.0),
+                    rank=idx,
+                    asin=asin,
+                    phase="initial_fetch",
+                    logger=logger,
+                    restart_attempts=restart_attempts,
+                    fetch_kwargs=pdp_fetch_kwargs,
                 )
             else:
                 first_pdp = {"status": None, "text": "", "error": "missing_url", "bytes": 0, "url": product_url}
@@ -195,12 +333,20 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
             retry_final_reason = None
             if retry_reason:
                 logger.warning("asin=%s browser retry requested reason=%s", asin, retry_reason)
-                retry_pdp = session.refetch(
+                retry_pdp = _run_browser_operation(
+                    lambda: session.refetch(
+                        product_url,
+                        wait_range=(5.0, 10.0),
+                        **pdp_fetch_kwargs,
+                    ),
+                    session,
                     product_url,
-                    wait_range=(5.0, 10.0),
-                    scroll_ratio=1.0,
-                    scroll_max_scrolls=15,
-                    post_load_sleep=max(sleep, 3.0),
+                    rank=idx,
+                    asin=asin,
+                    phase="normal_refetch",
+                    logger=logger,
+                    restart_attempts=restart_attempts,
+                    fetch_kwargs=pdp_fetch_kwargs,
                 )
                 detail["retry_attempted"] = True
                 detail["retry_reason"] = retry_reason
@@ -257,12 +403,20 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                     if retry_reason:
                         first_quality = _detail_quality(session.driver, parsed_detail)
                         logger.warning("asin=%s pdp retry requested reason=%s", asin, retry_reason)
-                        retry_pdp = session.refetch_without_cache(
+                        retry_pdp = _run_browser_operation(
+                            lambda: session.refetch_without_cache(
+                                product_url,
+                                wait_range=(2.0, 4.0),
+                                **pdp_fetch_kwargs,
+                            ),
+                            session,
                             product_url,
-                            wait_range=(2.0, 4.0),
-                            scroll_ratio=1.0,
-                            scroll_max_scrolls=15,
-                            post_load_sleep=max(sleep, 3.0),
+                            rank=idx,
+                            asin=asin,
+                            phase="cache_bypass_refetch",
+                            logger=logger,
+                            restart_attempts=restart_attempts,
+                            fetch_kwargs=pdp_fetch_kwargs,
                         )
                         retry_detail = (
                             selector_api.extract_detail(session.driver, selector_map, product=cfg.PRODUCT)
@@ -341,17 +495,35 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                     and r_url
                     and review_page_fallback
                 ):
-                    review = session.fetch(
+                    review_fetch_kwargs = {
+                        "scroll_ratio": 1.0,
+                        "scroll_max_scrolls": 8,
+                        "post_load_sleep": max(sleep, 3.0),
+                    }
+                    review = _run_browser_operation(
+                        lambda: session.fetch(r_url, **review_fetch_kwargs),
+                        session,
                         r_url,
-                        scroll_ratio=1.0,
-                        scroll_max_scrolls=8,
-                        post_load_sleep=max(sleep, 3.0),
+                        rank=idx,
+                        asin=asin,
+                        phase="review_fetch",
+                        logger=logger,
+                        restart_attempts=restart_attempts,
+                        fetch_kwargs=review_fetch_kwargs,
                     )
                     if session.driver is not None and review.get("text"):
                         review_detail = selector_api.extract_detail(session.driver, selector_map, product=cfg.PRODUCT)
                         detail.update({k: v for k, v in review_detail.items() if v not in (None, "") and detail.get(k) in (None, "")})
             if save_html:
                 save_text(ref / f"{idx:04d}_{asin}_reviews.html", review["text"])
+            transport_warning = _transport_warning_reason(
+                selected_pdp,
+                first_pdp,
+                retry_pdp,
+                retry_final_reason,
+            )
+            if transport_warning:
+                detail["_transport_warning"] = transport_warning
             detail["loaded_url"] = landing_url
             detail["redirect_decision"] = redirect_decision
             review_text = bool(detail.get("detailed_review_content"))
@@ -390,19 +562,71 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                 "pdp_error": first_pdp.get("error"),
                 "retry_pdp_error": retry_pdp.get("error") if retry_pdp else None,
                 "review_error": review.get("error"),
+                "browser_restart_attempts": list(restart_attempts),
             })
             logger.info("rank=%d asin=%s pdp=%s review_text=%s review_page=%s redirect=%s detail_skip=%s", idx, asin, pdp.get("status"), review_text, review_page_status, redirect_decision or detail.get("redirect"), detail.get("_detail_skip"))
             print(f"[detail/{cfg.PRODUCT}] rank={idx} asin={asin} pdp={pdp.get('status')} review_text={review_text} review_page={review_page_status or '-'} redirect={redirect_decision or detail.get('redirect')}", flush=True)
             if inter_detail_sleep > 0:
                 time.sleep(inter_detail_sleep)
+    except DetailBrowserUnavailableError as exc:
+        fatal_failure = exc
+        failure_record = _base_detail_record(
+            cfg,
+            target,
+            asin=exc.asin,
+            product_url=target.get("product_url"),
+            batch_id=batch_id,
+        )
+        failure_record.update({
+            "stage": "detail_error",
+            "error_stage": "detail",
+            "rank": exc.rank,
+            "_error": "detail browser recovery exhausted",
+            "_fatal": True,
+            "message": str(exc),
+            "fatal_phase": exc.phase,
+            "fatal_reason": exc.marker,
+            "browser_restart_attempts": exc.restart_attempts,
+        })
+        attempts.append({
+            "rank": exc.rank,
+            "asin": exc.asin,
+            "fatal": True,
+            "fatal_phase": exc.phase,
+            "fatal_reason": exc.marker,
+            "browser_restart_attempts": exc.restart_attempts,
+        })
+        if emit:
+            emit(failure_record)
     finally:
         if own_session and session is not None:
             session.close()
 
-    path = out / "amzn_detail.csv"
+    path = out / ("amzn_detail_partial.csv" if fatal_failure else "amzn_detail.csv")
     write_csv(path, rows)
-    manifest = {"run_type": "detail", "product": cfg.PRODUCT, "rows": len(rows), "output": str(path), "raw_dir": str(ref) if save_html else "", "raw_saved": save_html, "review_page_fallback": review_page_fallback, "attempts": attempts, "selector_source": "db_xpath"}
+    manifest = {
+        "run_type": "detail",
+        "product": cfg.PRODUCT,
+        "success": fatal_failure is None and len(rows) == len(selected),
+        "rows": len(rows),
+        "targets": len(selected),
+        "completed_rows": len(rows),
+        "failed_rank": fatal_failure.rank if fatal_failure else None,
+        "resume_start": fatal_failure.rank if fatal_failure else None,
+        "output": str(path),
+        "raw_dir": str(ref) if save_html else "",
+        "raw_saved": save_html,
+        "review_page_fallback": review_page_fallback,
+        "attempts": attempts,
+        "selector_source": "db_xpath",
+    }
     write_json(out / "step08_detail_review_compare_manifest.json", manifest)
+    if fatal_failure:
+        logger.error(
+            "=== failed: records=%d targets=%d failed_rank=%d batch_id=%s ===",
+            len(rows), len(selected), fatal_failure.rank, batch_id,
+        )
+        raise fatal_failure
     logger.info("=== done: records=%d batch_id=%s ===", len(rows), batch_id)
     manifest["rows_data"] = rows
     return manifest

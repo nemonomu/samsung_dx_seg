@@ -99,6 +99,8 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
         "type_mismatch": [],
         "run_error": [],
         "run_warning": [],
+        "amazon_429": [],
+        "timeout": [],
         "detail_zero": [],
         "stage_counts": {},
         "stage_summaries": {},
@@ -127,6 +129,7 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
                 "page_no": rec.get("page_no"),
                 "url": rec.get("source_url") or rec.get("product_url") or "",
                 "message": rec.get("message") or rec.get("_error"),
+                "fatal": rec.get("_fatal") is True,
             }
             if is_listing_page_failure:
                 issues["listing_page_failure"].append(item)
@@ -153,6 +156,12 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
         detail_count += 1
         url = rec.get("source_url") or rec.get("product_url") or ""
         key = _key(rec)
+        transport_warning = rec.get("_transport_warning")
+        transport_item = {"asin": key, "url": url}
+        if transport_warning == "amazon_429":
+            issues["amazon_429"].append(transport_item)
+        elif transport_warning == "timeout":
+            issues["timeout"].append(transport_item)
         if rec.get("redirect") is True:
             label = rec.get("_redirect_decision") or rec.get("redirect_decision")
             issues["redirect"].append(f"{url} ({label})" if label else url)
@@ -248,7 +257,11 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     notice_null = issues.get("notice_null_fields", [])
     type_mis = issues["type_mismatch"]
     run_errors = issues.get("run_error", [])
+    fatal_run_errors = [item for item in run_errors if item.get("fatal")]
+    nonfatal_run_errors = [item for item in run_errors if not item.get("fatal")]
     run_warnings = issues.get("run_warning", [])
+    amazon_429 = issues.get("amazon_429", [])
+    timeouts = issues.get("timeout", [])
     detail_zero = issues.get("detail_zero", [])
     stage_counts = issues.get("stage_counts", {})
     listing_page_failures = issues.get("listing_page_failure", [])
@@ -256,9 +269,9 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     db_summary = issues.get("db_insert_summary") or {}
     has_warning = bool(
         redirects or sku_nulls or price_inv or rating_mis or all_null or type_mis
-        or run_errors or run_warnings or detail_zero or listing_page_failures
+        or run_errors or run_warnings or amazon_429 or timeouts or detail_zero or listing_page_failures
     )
-    has_sos = bool(db_insert_zero)
+    has_sos = bool(db_insert_zero or fatal_run_errors)
     severity = "sos" if has_sos else ("warning" if has_warning else "ok")
     product = _product_name(cfg_or_product)
 
@@ -286,6 +299,10 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
         return "\n".join(lines) + "\n", severity
 
     lines.append("SOS" if severity == "sos" else "WARNING")
+    if fatal_run_errors:
+        lines.append(f"- fatal run errors (DB insert skipped): {len(fatal_run_errors)}")
+        for item in fatal_run_errors[:20]:
+            lines.append(f"  - stage={item.get('stage')} message={item.get('message')}")
     if db_insert_zero:
         item = db_insert_zero[0]
         lines.append(
@@ -297,14 +314,22 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     if detail_zero:
         item = detail_zero[0]
         lines.append(f"- detail records = 0 (main={item.get('main_records', 0)}, bsr={item.get('bsr_records', 0)})")
-    if run_errors:
-        lines.append(f"- run errors: {len(run_errors)}")
-        for item in run_errors[:20]:
+    if nonfatal_run_errors:
+        lines.append(f"- run errors: {len(nonfatal_run_errors)}")
+        for item in nonfatal_run_errors[:20]:
             lines.append(f"  - stage={item.get('stage')} message={item.get('message')}")
     if run_warnings:
         lines.append(f"- run warnings: {len(run_warnings)}")
         for item in run_warnings[:20]:
             lines.append(f"  - stage={item.get('stage')} message={item.get('message')}")
+    if amazon_429:
+        lines.append(f"- Amazon 429 차단: {len(amazon_429)}")
+        for item in amazon_429:
+            lines.append(f"  - ASIN={item.get('asin')} URL={item.get('url')}")
+    if timeouts:
+        lines.append(f"- 페이지 타임아웃(재시도 후에도 실패): {len(timeouts)}")
+        for item in timeouts:
+            lines.append(f"  - ASIN={item.get('asin')} URL={item.get('url')}")
     if listing_page_failures:
         lines.append(f"- listing page failures: {len(listing_page_failures)}")
         for item in listing_page_failures[:20]:
