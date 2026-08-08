@@ -272,7 +272,12 @@ def insert_rows(cfg, rows: list[dict[str, Any]], *, dry_run: bool = False,
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
     preview_path = out / "amzn_full_output.csv"
-    write_csv(preview_path, rows, [f for f in BASE_FIELDS if any(f in row for row in rows)])
+    preview_fields = [f for f in BASE_FIELDS if any(f in row for row in rows)]
+    preview_rows = [
+        {field: row.get(field) for field in preview_fields}
+        for row in rows
+    ]
+    write_csv(preview_path, preview_rows, preview_fields)
     manifest["preview_csv"] = str(preview_path)
     if not rows:
         manifest.update(success=False, inserted_total=0, message="no merged rows")

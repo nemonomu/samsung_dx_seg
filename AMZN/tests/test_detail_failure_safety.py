@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -224,6 +226,49 @@ class DetailFailureSafetyTests(unittest.TestCase):
                 merge_insert.insert_jsonl(cfg, "run.jsonl", expected_rows=2)
 
         insert_rows.assert_not_called()
+
+    def test_redirect_listing_only_marker_is_excluded_from_batch_preview(self) -> None:
+        for product in ("TV", "REF"):
+            with self.subTest(product=product):
+                cfg = SimpleNamespace(PRODUCT=product, DB_TABLE="dx_seg.test_table")
+                main = {
+                    "stage": "main",
+                    "asin": "B0LISTING1",
+                    "item": "B0LISTING1",
+                    "product_url": "https://www.amazon.de/dp/B0LISTING1",
+                    "retailer_sku_name": f"Listing {product}",
+                    "main_rank": 1,
+                }
+                detail = {
+                    "stage": "detail",
+                    "asin": "B0LISTING1",
+                    "item": "B0REDIRECT",
+                    "product_url": "https://www.amazon.de/dp/B0LISTING1",
+                    "redirect": True,
+                    "_detail_skip": "url_mismatch_name_mismatch",
+                }
+                row = merge_insert.make_row(cfg, main, None, detail)
+                self.assertIsNotNone(row)
+                self.assertTrue(row.get("_redirect_listing_only"))
+
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    output_root = Path(tmp_dir)
+                    with patch.object(
+                        merge_insert, "category_output_root", return_value=output_root
+                    ):
+                        manifest = merge_insert.insert_rows(cfg, [row], dry_run=True)
+
+                    with (output_root / "amzn_full_output.csv").open(
+                        newline="", encoding="utf-8-sig"
+                    ) as fh:
+                        reader = csv.DictReader(fh)
+                        preview_rows = list(reader)
+                        fieldnames = reader.fieldnames or []
+
+                self.assertTrue(manifest["success"])
+                self.assertNotIn("_redirect_listing_only", fieldnames)
+                self.assertEqual(len(preview_rows), 1)
+                self.assertEqual(preview_rows[0]["item"], "B0LISTING1")
 
     def test_combined_runner_continues_after_unexpected_tv_error(self) -> None:
         tv_cfg = SimpleNamespace(PRODUCT="TV")
