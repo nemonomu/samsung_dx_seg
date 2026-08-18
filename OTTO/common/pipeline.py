@@ -27,6 +27,7 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
     if getattr(args, "save_html", False):
         os.environ["OTTO_SAVE_HTML"] = "1"
     steps = {"schema", "listing", "targets", "full", "db", "notify"} if args.only == "all" else {s.strip() for s in args.only.split(",")}
+    failed_steps: list[str] = []
     if "schema" in steps:
         schema.run(cfg)
     if "listing" in steps:
@@ -42,6 +43,10 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
             db_save.run(cfg, dry_run=True if args.db_dry_run else None)
         except Exception as exc:
             print(f"[db/{cfg.PRODUCT}] FAILED: {exc!r} -- continuing to notify", flush=True)
+            failed_steps.append("db")
     if "notify" in steps:
         notify.run(cfg)
+    if failed_steps:
+        print(f"[run/{cfg.PRODUCT}] pipeline FAILED: {','.join(failed_steps)}", flush=True)
+        return 1
     return 0

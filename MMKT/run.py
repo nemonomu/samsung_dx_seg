@@ -31,13 +31,14 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def run_step(mod: str, *args: str) -> None:
+def run_step(mod: str, *args: str) -> int:
     cmd = [sys.executable, "-m", mod, *args]
     print(f"\n=== {' '.join(cmd)} ===", flush=True)
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}  # live (unbuffered) child output
     r = subprocess.run(cmd, env=env)
     if r.returncode != 0:
         print(f"!! step {mod} exited {r.returncode}", flush=True)
+    return r.returncode
 
 
 def main() -> int:
@@ -45,24 +46,36 @@ def main() -> int:
     steps = [s.strip() for s in args.steps.split(",") if s.strip()]
     P = ["--product", args.product]
     T = args.transport
+    failures: list[tuple[str, int]] = []
+
+    def run_selected(label: str, mod: str, *step_args: str) -> None:
+        return_code = run_step(mod, *step_args)
+        if return_code != 0:
+            failures.append((label, return_code))
 
     if "listing" in steps:
         extra = ["--target", str(args.target)] if args.target else []
-        run_step("common.listing", *P, "--transport", T, "--sleep", "0", *extra)
+        run_selected("listing", "common.listing", *P, "--transport", T, "--sleep", "0", *extra)
     if "bsr" in steps:
-        run_step("common.listing", *P, "--sort", "bsr", "--target", str(args.bsr_target),
-                 "--transport", T, "--sleep", "0")
+        run_selected("bsr", "common.listing", *P, "--sort", "bsr", "--target", str(args.bsr_target),
+                     "--transport", T, "--sleep", "0")
     if "detail" in steps:
         extra = ["--resume"] if args.resume else []
-        run_step("common.pdp_detail", *P, "--transport", T, "--concurrency", str(args.concurrency), *extra)
+        run_selected("detail", "common.pdp_detail", *P, "--transport", T,
+                     "--concurrency", str(args.concurrency), *extra)
     if "full" in steps:
-        run_step("common.full_output", *P)
+        run_selected("full", "common.full_output", *P)
     if "db" in steps:
         # db_save is insert-only; it never deletes existing rows.
         db_args = ["--dry-run"] if args.dry_db else []
-        run_step("common.db_save", *P, *db_args)
+        run_selected("db", "common.db_save", *P, *db_args)
     if "notify" in steps:
-        run_step("common.notify", *P)
+        run_selected("notify", "common.notify", *P)
+
+    if failures:
+        summary = ", ".join(f"{label}={code}" for label, code in failures)
+        print(f"\n[run] pipeline FAILED: {summary}", flush=True)
+        return 1
     print("\n[run] pipeline done.", flush=True)
     return 0
 
