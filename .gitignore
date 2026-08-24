@@ -34,3 +34,6 @@ AMZN/**/data/output/
 AMZN/erd.xlsx
 AMZN/logs/
 AMZN/config.py
+
+# SEG scheduler run logs (retained locally for 10 days)
+logs/

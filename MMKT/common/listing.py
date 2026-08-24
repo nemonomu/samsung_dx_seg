@@ -9,7 +9,9 @@ display order, and stops once MAIN_TARGET_UNIQUE unique SKUs are collected.
   python MMKT/step01_listing.py --target 36 --max-pages 3
 
 Raw HTML for each page is saved under references/listing/<stamp>/ for
-reproducibility; parsed rows go to data/output/mmkt_listing_<sort>.csv + manifest.
+reproducibility. Inactive timestamped raw-HTML directories older than 48 hours
+are removed before a new listing run; parsed rows go to
+data/output/mmkt_listing_<sort>.csv + manifest.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ from typing import Any
 import importlib
 
 from common.config import LISTING_PAGE_SIZE, REFERENCES_ROOT, ensure_dirs, page_url, write_json
+from common.listing_retention import LISTING_ARCHIVE_RETENTION_HOURS, cleanup_listing_archives
 from common.parsers import parse_listing_html
 
 
@@ -94,7 +97,17 @@ def main() -> int:
         "calendar_week": "w" + str(run_now.isocalendar().week),
         "batch_id": "m_" + run_now.strftime("%Y%m%d_%H%M%S"),
     }
-    raw_dir = REFERENCES_ROOT / "listing" / f"{args.sort}_{stamp}"
+    listing_root = REFERENCES_ROOT / "listing"
+    cleanup = cleanup_listing_archives(listing_root)
+    if cleanup.deleted:
+        print(f"[step01][cleanup] removed={len(cleanup.deleted)} "
+              f"retention_hours={LISTING_ARCHIVE_RETENTION_HOURS}")
+    if cleanup.skipped_recently_modified:
+        print(f"[step01][cleanup] active_old_dirs_kept={len(cleanup.skipped_recently_modified)}")
+    for error in cleanup.errors:
+        print(f"[step01][cleanup][WARN] {error}")
+
+    raw_dir = listing_root / f"{args.sort}_{stamp}"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     seen: dict[str, dict[str, Any]] = {}  # sku_id -> row (first occurrence wins)
