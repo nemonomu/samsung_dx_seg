@@ -76,6 +76,13 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     null_fields_check = NULL_BASE + spec_fields + NULL_TAIL
     null_fields = [f for f in null_fields_check if not any((r.get(f) or "").strip() for r in rows)]
 
+    has_review_collection = "review_collection" in step02
+    review_collection = step02.get("review_collection") or {}
+    review_partial = int(review_collection.get("partial") or 0)
+    review_complete = int(review_collection.get("complete") or max(0, total - review_partial))
+    review_recovered = int(review_collection.get("recovered_after_retry") or 0)
+    partial_items = list(step02.get("review_partial_items") or [])
+
     issues = []
     if main_present != main_expected:
         issues.append(f"main_rank {main_present}/{main_expected}")
@@ -83,6 +90,8 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         issues.append(f"bsr_rank {bsr_present}/{bsr_expected}")
     if total and detail_ratio < min_ratio:
         issues.append(f"detail collection low {detail_present}/{total} ({detail_ratio:.0%})")
+    if review_partial:
+        issues.append(f"review_partial {review_partial}/{total}")
     for source, mf in (("step02", step02), ("full", full)):
         missing_primary = int(mf.get("rows_missing_primary_spec") or 0)
         if missing_primary:
@@ -102,6 +111,31 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
 
     base_subject = f"[SEG] MediaMarkt {cfg.PRODUCT} crawled"
     subject = base_subject if not issues else f"[CHECK] {base_subject}"
+    review_lines = []
+    if has_review_collection:
+        review_lines = [
+            "Review collection",
+            f"  complete - {review_complete}/{total}",
+            f"  partial - {review_partial}/{total}",
+            f"  recovered after retry - {review_recovered}",
+        ]
+    if has_review_collection and partial_items:
+        review_lines.append("  Partial items")
+        for item in partial_items[:20]:
+            review_lines.append(
+                "    - sku_id={sku_id} sku={sku} total={total_reviews} "
+                "collected={collected} failed_page={failed_page} reason={reason}".format(
+                    sku_id=item.get("sku_id") or "-",
+                    sku=item.get("sku") or "-",
+                    total_reviews=item.get("count_of_reviews", 0),
+                    collected=item.get("collected", 0),
+                    failed_page=item.get("failed_page") or "-",
+                    reason=item.get("stop_reason") or "unknown",
+                )
+            )
+        if len(partial_items) > 20:
+            review_lines.append(f"    ... and {len(partial_items) - 20} more")
+
     lines = [
         subject, "",
         f"Total collected: {total} sku", "",
@@ -111,6 +145,8 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         f"  detail(PDP) - {detail_present}/{total} ({detail_ratio:.0%})", "",
         "All-null fields",
         *([f"  {f}" for f in null_fields] if null_fields else ["  none"]), "",
+        *review_lines,
+        *([""] if review_lines else []),
         ("Issues: none" if not issues else "Issues\n" + "\n".join(f"  - {i}" for i in issues)),
     ]
     return subject, "\n".join(lines) + "\n"

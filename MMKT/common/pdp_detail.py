@@ -16,6 +16,7 @@ import argparse
 import csv
 import io
 import os
+import re
 import sys
 import threading
 import time
@@ -33,6 +34,12 @@ from common.parsers import (
     parse_pdp_html,
     parse_product_reviews,
     parse_reviews_summary,
+)
+from common.pdp_browser import (
+    REVIEW_TOP_WRITTEN_TARGET,
+    review_stop_reason,
+    review_total_pages,
+    review_written_count,
 )
 def load_cfg(product: str):
     return importlib.import_module(f"{product}.config")
@@ -61,6 +68,8 @@ def csv_columns(cfg):
         *policy_columns,
         "star_rating", "count_of_star_ratings", "count_of_reviews",
         "summarized_review_content", "retailer_sku_name_similar", "detailed_review_content",
+        "review_collected_count", "review_partial", "review_stop_reason",
+        "review_failed_page", "review_retry_count",
         "nav_status", "gql_summary", "gql_reviews", "gql_comparison",
         "attempts", "fetch_error", "crawl_strdatetime",
     ]
@@ -77,10 +86,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--limit", type=int, default=0, help="max targets (0 = all)")
     p.add_argument("--sleep", type=float, default=0.5,
                    help="throttle between SKUs to stay under Cloudflare's GraphQL rate limit")
-    p.add_argument("--review-pages", type=int, default=4,
-                   help="initial review API pages to fetch (10/page)")
+    p.add_argument("--review-pages", type=int, default=1,
+                   help="initial review API pages to fetch (10/page; adaptive continuation follows)")
     p.add_argument("--review-max-pages", type=int, default=8,
                    help="fetch additional review pages up to this cap only when written reviews stay below 20")
+    p.add_argument("--review-recovery-max-pages", type=int, default=12,
+                   help="review-page cap for the targeted recovery pass")
+    p.add_argument("--review-retry-cooldown", type=float, default=8.0,
+                   help="one shared cooldown before retrying failed review pages")
     p.add_argument("--transport", choices=["uc", "zenrows"], default="uc",
                    help="uc = local undetected-chromedriver (no ZenRows); zenrows = legacy")
     p.add_argument("--concurrency", type=int, default=2,
@@ -113,13 +126,24 @@ def merge_detail(html: str, detail: dict[str, Any], sku_id: str, cfg) -> dict[st
     # authoritative fallback when comparison reviewStatistics is absent.
     if row.get("star_rating") in (None, "") and reviews.get("star_rating") is not None:
         row["star_rating"] = reviews["star_rating"]
-    # Reviews query is authoritative for counts + the top-20 written reviews.
+    # Reviews query is authoritative for counts + the top-20 text-bearing reviews.
     if reviews.get("count_of_star_ratings") is not None:
         row["count_of_star_ratings"] = reviews["count_of_star_ratings"]
     row["count_of_reviews"] = reviews.get("count_of_reviews")
     if reviews.get("detailed_review_content"):
         row["detailed_review_content"] = reviews["detailed_review_content"]
     row["summarized_review_content"] = summary
+    row["review_collected_count"] = reviews.get("_written_review_count", 0)
+    row["review_stop_reason"] = detail.get("review_stop_reason") or "unknown"
+    statuses = list((detail.get("gql_status") or {}).get("reviews") or [])
+    failed_page = next(
+        (idx for idx, status in enumerate(statuses, start=1) if status != 200),
+        None,
+    )
+    row["review_failed_page"] = failed_page
+    row["review_retry_count"] = 0
+    row["_review_resps"] = list(detail.get("review_resps") or [])
+    row["_review_statuses"] = statuses
     row["_comparison_matched"] = comparison_matched
     return row
 
@@ -261,6 +285,163 @@ def detail_attempt_is_rate_limited(
     return nav_status == 429 or (ssr_attempted and ssr_status == 429)
 
 
+def _int_value(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def review_row_is_partial(row: dict[str, Any]) -> bool:
+    """True only when review collection ended before a trustworthy result."""
+    statuses = row.get("_review_statuses")
+    if not isinstance(statuses, list):
+        statuses = [
+            int(value) if str(value).isdigit() else value
+            for value in str(row.get("gql_reviews") or "").split(",")
+            if str(value).strip()
+        ]
+    if any(status != 200 for status in statuses):
+        return True
+    collected = _int_value(row.get("review_collected_count"), -1)
+    if collected < 0:
+        collected = len(re.findall(
+            r"(?:^| \|\|\| )review\d+ - ",
+            str(row.get("detailed_review_content") or ""),
+        ))
+    total = _int_value(row.get("count_of_reviews"))
+    reason = str(row.get("review_stop_reason") or "")
+    if collected >= REVIEW_TOP_WRITTEN_TARGET:
+        return False
+    if total >= 100:
+        return True
+    return total > 0 and reason == "page_cap"
+
+
+def _refresh_review_row(row: dict[str, Any], *, max_pages: int) -> None:
+    resps = list(row.get("_review_resps") or [])
+    statuses = list(row.get("_review_statuses") or [])
+    parsed = parse_product_reviews(resps)
+    if parsed.get("count_of_star_ratings") is not None:
+        row["count_of_star_ratings"] = parsed["count_of_star_ratings"]
+    if parsed.get("count_of_reviews") is not None:
+        row["count_of_reviews"] = parsed["count_of_reviews"]
+    row["detailed_review_content"] = parsed.get("detailed_review_content") or ""
+    row["review_collected_count"] = parsed.get("_written_review_count", 0)
+    row["gql_reviews"] = ",".join(str(status) for status in statuses)
+    row["review_failed_page"] = next(
+        (idx for idx, status in enumerate(statuses, start=1) if status != 200),
+        "",
+    )
+    row["review_stop_reason"] = review_stop_reason(
+        resps, statuses, max_pages=max_pages
+    )
+    row["review_partial"] = review_row_is_partial(row)
+    if not row["review_failed_page"]:
+        error = str(row.get("fetch_error") or "")
+        if error.startswith("gql_failed GetProductReviews=") or error.startswith(
+            "review_recovery_failed"
+        ):
+            row["fetch_error"] = ""
+
+
+def recover_partial_reviews(
+    rows: list[dict[str, Any]], args: argparse.Namespace
+) -> list[dict[str, Any]]:
+    """Retry only the failed/unfinished review pages after the main PDP pass."""
+    candidates = [
+        row for row in rows
+        if review_row_is_partial(row) and isinstance(row.get("_review_resps"), list)
+    ]
+    if not candidates:
+        return []
+
+    recovery_max = max(
+        _int_value(getattr(args, "review_max_pages", 8), 8),
+        _int_value(getattr(args, "review_recovery_max_pages", 12), 12),
+    )
+    has_rate_limit = any(
+        429 in list(row.get("_review_statuses") or []) for row in candidates
+    )
+    cooldown = max(0.0, float(getattr(args, "review_retry_cooldown", 8.0)))
+    if has_rate_limit and cooldown:
+        print(
+            f"[step02][review-recovery] cooldown={cooldown:g}s "
+            f"queued={len(candidates)}",
+            flush=True,
+        )
+        time.sleep(cooldown)
+
+    session = None
+    logs: list[dict[str, Any]] = []
+    try:
+        session = make_session(args.transport, 1, recovery_max)
+        session.open()
+        for position, row in enumerate(candidates, start=1):
+            sku_id = str(row.get("sku_id") or "").strip()
+            resps = row["_review_resps"]
+            statuses = row["_review_statuses"]
+            collected_before = review_written_count(resps)
+            failed_index = next(
+                (idx for idx, status in enumerate(statuses) if status != 200),
+                None,
+            )
+            page_no = failed_index + 1 if failed_index is not None else len(statuses) + 1
+            total_pages = review_total_pages(resps)
+            last_page = min(recovery_max, total_pages or recovery_max)
+            retried_pages: list[int] = []
+
+            while (
+                review_written_count(resps) < REVIEW_TOP_WRITTEN_TARGET
+                and page_no <= last_page
+            ):
+                result = session.fetch_review_page(sku_id, page_no)
+                status = result.get("status")
+                retried_pages.append(page_no)
+                row["review_retry_count"] = _int_value(row.get("review_retry_count")) + 1
+                if page_no <= len(resps):
+                    resps[page_no - 1] = result.get("data")
+                    statuses[page_no - 1] = status
+                else:
+                    resps.append(result.get("data"))
+                    statuses.append(status)
+                if status != 200:
+                    row["fetch_error"] = (
+                        f"review_recovery_failed page={page_no} status={status}"
+                        + (f" error={result.get('error')}" if result.get("error") else "")
+                    )
+                    break
+                total_pages = review_total_pages(resps)
+                last_page = min(recovery_max, total_pages or recovery_max)
+                page_no += 1
+
+            _refresh_review_row(row, max_pages=recovery_max)
+            log = {
+                "sku_id": sku_id,
+                "retried_pages": retried_pages,
+                "collected_before": collected_before,
+                "collected_after": _int_value(row.get("review_collected_count")),
+                "partial": bool(row.get("review_partial")),
+                "stop_reason": row.get("review_stop_reason"),
+            }
+            logs.append(log)
+            print(
+                f"[step02][review-recovery] {position}/{len(candidates)} "
+                f"sku={sku_id} pages={retried_pages or '-'} "
+                f"reviews={log['collected_before']}->{log['collected_after']} "
+                f"partial={log['partial']}",
+                flush=True,
+            )
+            if getattr(args, "sleep", 0) > 0:
+                time.sleep(args.sleep)
+    except Exception as exc:
+        logs.append({"error": type(exc).__name__ + ": " + str(exc)})
+    finally:
+        if session is not None:
+            session.close()
+    return logs
+
+
 def main() -> int:
     if hasattr(sys.stdout, "buffer"):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -301,7 +482,8 @@ def main() -> int:
     if args.resume and out_path.exists():
         with open(out_path, encoding="utf-8-sig") as fh:
             for r in csv.DictReader(fh):
-                if primary_spec_satisfied(r, cfg):
+                is_review_partial = review_row_is_partial(r)
+                if primary_spec_satisfied(r, cfg) and not is_review_partial:
                     kept_rows.append(r)
         good_ids = {r["sku_id"] for r in kept_rows}
         valid = [(i, t) for i, t in valid if t["sku_id"].strip() not in good_ids]
@@ -386,6 +568,7 @@ def main() -> int:
                             "fetch_error": detail.get("error"), "crawl_strdatetime": crawl_dt,
                             "attempts": attempt,
                         })
+                        _refresh_review_row(candidate, max_pages=args.review_max_pages)
                         if detail.get("error") and not diagnostic_logged:
                             with lock:
                                 print(f"[step02][w{worker_id}][diag] sku={sku_id} "
@@ -514,6 +697,7 @@ def main() -> int:
             page_log.append({"sku_id": sku_id, "nav_status": None, "specs_ok": False,
                              "error": "not_collected_after_worker"})
     missing_retry_log: list[dict[str, Any]] = []
+    review_recovery_log = recover_partial_reviews(rows, args)
     missing_retry = getattr(args, "missing_retry", "zenrows")
     if missing_retry == "zenrows":
         missing_retry_log = recover_missing_rows_via_zenrows(rows, valid, cfg, crawl_dt)
@@ -521,6 +705,13 @@ def main() -> int:
     # Final clean pass: re-sort the full set by rank and rewrite tidily.
     rows.extend(kept_rows)  # resume: fold in previously good rows
     rows.sort(key=lambda r: int(r.get("rank") or 0))
+    for row in rows:
+        if row.get("review_collected_count") in (None, ""):
+            row["review_collected_count"] = len(re.findall(
+                r"(?:^| \|\|\| )review\d+ - ",
+                str(row.get("detailed_review_content") or ""),
+            ))
+        row["review_partial"] = review_row_is_partial(row)
 
     with out_path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=csv_columns(cfg), extrasaction="ignore")
@@ -535,6 +726,23 @@ def main() -> int:
     with_sum = sum(1 for r in rows if r.get("summarized_review_content"))
     rows_missing_primary_spec = sum(1 for r in rows if not primary_spec_satisfied(r, cfg))
     rows_with_fetch_error = sum(1 for r in rows if (r.get("fetch_error") or "").strip())
+    review_partial_rows = [r for r in rows if review_row_is_partial(r)]
+    review_recovered = sum(
+        1 for entry in review_recovery_log
+        if entry.get("collected_after", 0) > entry.get("collected_before", 0)
+        and not entry.get("partial")
+    )
+    review_partial_items = [
+        {
+            "sku_id": r.get("sku_id"),
+            "sku": r.get("sku"),
+            "count_of_reviews": _int_value(r.get("count_of_reviews")),
+            "collected": _int_value(r.get("review_collected_count")),
+            "failed_page": r.get("review_failed_page") or None,
+            "stop_reason": r.get("review_stop_reason"),
+        }
+        for r in review_partial_rows
+    ]
     manifest = {
         "run_type": "mmkt_step02_pdp_detail",
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -548,6 +756,14 @@ def main() -> int:
         "rows_with_summary": with_sum,
         "rows_missing_primary_spec": rows_missing_primary_spec,
         "rows_with_fetch_error": rows_with_fetch_error,
+        "review_collection": {
+            "complete": len(rows) - len(review_partial_rows),
+            "partial": len(review_partial_rows),
+            "recovered_after_retry": review_recovered,
+            "queued_for_retry": sum(1 for entry in review_recovery_log if entry.get("sku_id")),
+        },
+        "review_partial_items": review_partial_items,
+        "review_recovery_log": review_recovery_log,
         "missing_retry": missing_retry,
         "missing_retry_log": missing_retry_log,
         "output_csv": str(out_path),

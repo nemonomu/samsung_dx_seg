@@ -28,6 +28,7 @@ from common.pdp_detail import (
     merge_detail,
     needs_pdp_backfill,
     primary_spec_satisfied,
+    review_row_is_partial,
 )
 from ldy import config as ldy_config
 from ref import config as ref_config
@@ -183,6 +184,7 @@ class DetailFallbackTests(unittest.TestCase):
             self.assertEqual(row["ref_refrigerator_type"], "")
             self.assertEqual(row[PRIMARY_SPEC_EXPECTED_NULL], "True")
             self.assertEqual(row["fetch_error"], "")
+            self.assertFalse(review_row_is_partial(row), row)
 
             args.resume = True
             with (

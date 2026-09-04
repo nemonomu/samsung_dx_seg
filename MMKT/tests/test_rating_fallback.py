@@ -16,10 +16,19 @@ if str(MMKT_ROOT) not in sys.path:
 import common.db_save as db_save_module
 import common.full_output as full_output_module
 from common.full_output import resolve_rating_fields
-from common.notify import _detail_present
-from common.parsers import parse_product_reviews
-from common.pdp_browser import review_written_count, should_fetch_more_review_pages
-from common.pdp_detail import merge_detail
+from common.notify import _detail_present, build_report
+from common.parsers import parse_product_reviews, review_content
+from common.pdp_browser import (
+    review_total_pages,
+    review_written_count,
+    should_fetch_more_review_pages,
+)
+from common.pdp_detail import (
+    _refresh_review_row,
+    merge_detail,
+    recover_partial_reviews,
+    review_row_is_partial,
+)
 from tv import config as tv_config
 
 
@@ -84,6 +93,63 @@ CAPTURE_DISTRIBUTION = [
 
 class RatingFallbackTests(unittest.TestCase):
 
+    def test_review_content_combines_pros_cons_and_body_without_ui_metadata(self):
+        review = {
+            "id": "r1",
+            "feedback": {
+                "positive": "Schönes Design.",
+                "negative": "Keine",
+                "full": "Ich bin sehr zufrieden.",
+            },
+            "productVariant": "Ursprünglich erschienen auf Produktvariante: WW5000D",
+            "author": "anonym",
+        }
+        self.assertEqual(
+            review_content(review),
+            "Vorteile: Schönes Design. | Nachteile: Keine | Inhalt: Ich bin sehr zufrieden.",
+        )
+
+    def test_pros_or_cons_only_review_counts_as_written(self):
+        page = {
+            "data": {
+                "reviews": {
+                    "totalResults": 1,
+                    "reviews": [
+                        {"id": "r1", "feedback": {"positive": "Sehr leise", "full": ""}}
+                    ],
+                }
+            }
+        }
+        self.assertEqual(review_written_count([page]), 1)
+        parsed = parse_product_reviews([page])
+        self.assertEqual(parsed["detailed_review_content"], "review1 - Vorteile: Sehr leise")
+
+    def test_pagination_stops_at_actual_last_page(self):
+        pages = [
+            review_page(5, total_results=13, start=0),
+            review_page(2, total_results=13, start=10),
+        ]
+        self.assertEqual(review_total_pages(pages), 2)
+        self.assertFalse(
+            should_fetch_more_review_pages(pages, fetched_pages=2, max_pages=8)
+        )
+
+    def test_hundred_plus_requires_twenty_but_small_exhausted_set_does_not(self):
+        large = {
+            "count_of_reviews": "100",
+            "review_collected_count": "19",
+            "review_stop_reason": "actual_last_page",
+            "gql_reviews": "200,200,200",
+        }
+        small = {
+            "count_of_reviews": "13",
+            "review_collected_count": "7",
+            "review_stop_reason": "actual_last_page",
+            "gql_reviews": "200,200",
+        }
+        self.assertTrue(review_row_is_partial(large))
+        self.assertFalse(review_row_is_partial(small))
+
     def test_review_pagination_continues_until_twenty_written_reviews(self):
         pages = [
             review_page(5, start=0),
@@ -100,6 +166,93 @@ class RatingFallbackTests(unittest.TestCase):
         self.assertFalse(
             should_fetch_more_review_pages(pages, fetched_pages=5, max_pages=8)
         )
+
+    def test_review_recovery_retries_only_failed_page(self):
+        resps = [
+            review_page(5, total_results=397, start=0),
+            review_page(5, total_results=397, start=10),
+            review_page(5, total_results=397, start=20),
+            review_page(2, total_results=397, start=30),
+            None,
+        ]
+        row = {
+            "sku_id": "2971010",
+            "count_of_reviews": 397,
+            "fetch_error": "gql_failed GetProductReviews=429",
+            "_review_resps": resps,
+            "_review_statuses": [200, 200, 200, 200, 429],
+        }
+        _refresh_review_row(row, max_pages=8)
+        self.assertTrue(review_row_is_partial(row))
+
+        class FakeSession:
+            def __init__(self):
+                self.pages = []
+
+            def open(self):
+                return None
+
+            def fetch_review_page(self, sku_id, page_no):
+                self.pages.append((sku_id, page_no))
+                return {
+                    "status": 200,
+                    "data": review_page(3, total_results=397, start=40),
+                    "error": None,
+                }
+
+            def close(self):
+                return None
+
+        session = FakeSession()
+        args = SimpleNamespace(
+            transport="uc",
+            review_max_pages=8,
+            review_recovery_max_pages=12,
+            review_retry_cooldown=0,
+            sleep=0,
+        )
+        with patch("common.pdp_detail.make_session", return_value=session):
+            logs = recover_partial_reviews([row], args)
+
+        self.assertEqual(session.pages, [("2971010", 5)])
+        self.assertEqual(row["review_collected_count"], 20)
+        self.assertFalse(row["review_partial"])
+        self.assertEqual(row["fetch_error"], "")
+        self.assertEqual(logs[0]["retried_pages"], [5])
+
+    def test_email_report_includes_unresolved_review_partial(self):
+        cfg = SimpleNamespace(
+            OUTPUT_ROOT=Path("unused"),
+            MAIN_TARGET_UNIQUE=1,
+            BSR_TARGET_RANK=1,
+            SPEC_FIELDS=["screen_size"],
+            PRODUCT="TV",
+        )
+        rows = [{"main_rank": "1", "bsr_rank": "1", "sku": "MODEL", "screen_size": "55"}]
+        step02 = {
+            "review_collection": {
+                "complete": 0,
+                "partial": 1,
+                "recovered_after_retry": 2,
+            },
+            "review_partial_items": [
+                {
+                    "sku_id": "2971010",
+                    "sku": "WW90DG5G34AE",
+                    "count_of_reviews": 397,
+                    "collected": 17,
+                    "failed_page": 5,
+                    "stop_reason": "request_failed",
+                }
+            ],
+        }
+        with patch("common.notify._read_json", side_effect=[step02, {}, {}]):
+            subject, report = build_report(cfg, rows)
+        self.assertTrue(subject.startswith("[CHECK]"))
+        self.assertIn("partial - 1/1", report)
+        self.assertIn("recovered after retry - 2", report)
+        self.assertIn("sku_id=2971010", report)
+        self.assertIn("review_partial 1/1", report)
 
     def test_full_output_to_db_dry_run_contract(self):
         with tempfile.TemporaryDirectory() as tmp:

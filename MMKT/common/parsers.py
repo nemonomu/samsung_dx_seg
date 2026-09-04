@@ -482,6 +482,41 @@ def _format_reviews(reviews: list[dict[str, Any]], limit: int = 20) -> str | Non
     )
 
 
+def review_content(review: dict[str, Any]) -> str | None:
+    """Return the user-authored review content shown by MediaMarkt.
+
+    Bazaarvoice reviews may contain only Vorteile/Nachteile and no
+    ``feedback.full`` value.  Those entries are still meaningful written
+    reviews.  UI metadata (variant attribution, author, verified badge,
+    helpful count, media, and so on) is deliberately not included.
+    """
+    feedback = review.get("feedback") or {}
+    if not isinstance(feedback, dict):
+        feedback = {}
+    values = [
+        ("Vorteile", text_clean(feedback.get("positive") or feedback.get("pros"))),
+        ("Nachteile", text_clean(feedback.get("negative") or feedback.get("cons"))),
+        ("Inhalt", text_clean(feedback.get("full"))),
+    ]
+    parts: list[str] = []
+    seen: set[str] = set()
+    for label, value in values:
+        if not value:
+            continue
+        normalized = value.casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        parts.append(f"{label}: {value}" if label != "Inhalt" or len(values) > 1 else value)
+    if not parts:
+        return None
+    # Preserve the source punctuation; a single pipe separates fields inside
+    # one review, while the existing triple-pipe separates different reviews.
+    if len(parts) == 1 and parts[0].startswith("Inhalt: "):
+        return parts[0][len("Inhalt: "):]
+    return " | ".join(parts)
+
+
 def tv_extract_pdp_spec(features: dict[str, str], name: str | None = None) -> dict[str, Any]:
     """TV product-specific PDP spec fields (No.40-43)."""
     return {
@@ -600,8 +635,8 @@ def parse_product_reviews(resp_pages: Any, *, top: int = 20) -> dict[str, Any]:
     """GetProductReviews (one or more reviewPage responses) → review fields.
 
     Returns star_rating + count_of_star_ratings from the rating distribution,
-    count_of_reviews from totalResults (written reviews), and
-    detailed_review_content (top-N written reviews joined). No.44-48.
+    count_of_reviews from totalResults (including ratings-only entries), and
+    detailed_review_content (top-N reviews with full/pro/con text). No.44-48.
     """
     pages = resp_pages if isinstance(resp_pages, list) else [resp_pages]
     total_results: int | None = None
@@ -623,22 +658,22 @@ def parse_product_reviews(resp_pages: Any, *, top: int = 20) -> dict[str, Any]:
 
     ordered = sorted(
         merged.values(),
-        key=lambda r: (bool((r.get("feedback") or {}).get("full")), r.get("date") or ""),
+        key=lambda r: (bool(review_content(r)), r.get("date") or ""),
         reverse=True,
     )
     written = [
         {
             "rating": r.get("rating"),
             "title": text_clean(r.get("title")),
-            "text": text_clean((r.get("feedback") or {}).get("full")),
+            "text": review_content(r),
         }
         for r in ordered
-        if text_clean((r.get("feedback") or {}).get("full"))
+        if review_content(r)
     ]
     return {
         "star_rating": distribution_average,
-        # totalResults is the written-review count, not the number of ratings.
-        # Keep rating count unknown when no valid distribution was returned so
+        # totalResults may include ratings-only entries. Keep rating count
+        # unknown when no valid distribution was returned so
         # merge_detail can preserve comparison's count and step09 can use the
         # listing AggregateRating fallback.
         "count_of_star_ratings": distribution_sum,

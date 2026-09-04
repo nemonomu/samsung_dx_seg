@@ -27,6 +27,9 @@ from common.pdp_browser import (
     _comparison_vars,
     _reviews_vars,
     _summary_vars,
+    review_stop_reason,
+    review_total_pages,
+    review_written_count,
     should_fetch_more_review_pages,
 )
 
@@ -166,7 +169,7 @@ class UcSession:
         script_timeout_s: int = 40,
         settle_s: float = 1.2,
         warmup_s: float = 3.0,
-        review_pages: int = 4,
+        review_pages: int = 1,
         review_max_pages: int | None = 8,
         performance_logging: bool = False,
         block_images: bool = True,
@@ -433,8 +436,27 @@ class UcSession:
                 "summary": summary.get("status"),
                 "reviews": [r.get("status") for r in reviews],
             },
+            "review_collected_count": review_written_count([r.get("data") for r in reviews]),
+            "review_total_pages": review_total_pages([r.get("data") for r in reviews]),
+            "review_stop_reason": review_stop_reason(
+                [r.get("data") for r in reviews],
+                [r.get("status") for r in reviews],
+                max_pages=self.review_max_pages,
+            ),
             "error": error,
             "elapsed_seconds": round(time.perf_counter() - started, 2),
+        }
+
+    def fetch_review_page(self, sku_id: str, page_no: int) -> dict[str, Any]:
+        """Fetch one review page for the targeted recovery pass."""
+        results = self._gql_many([
+            ("GetProductReviews", _reviews_vars(sku_id, page_no))
+        ])
+        result = results[0] if results else {}
+        return {
+            "status": result.get("status"),
+            "data": result.get("data"),
+            "error": result.get("transport_error") or result.get("body_preview"),
         }
 
     def close(self) -> None:

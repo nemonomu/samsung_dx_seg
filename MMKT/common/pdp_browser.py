@@ -15,6 +15,7 @@ step00_capture_pdp_har.py if they start returning 404/PersistedQueryNotFound.
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 import uuid
@@ -22,6 +23,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from common.zenrows import DEFAULT_PROXY_COUNTRY, build_scraping_browser_url
+from common.parsers import review_content
 
 MMKT_HOME = "https://www.mediamarkt.de/"
 GRAPHQL_ENDPOINT = "https://www.mediamarkt.de/api/v1/graphql"
@@ -105,6 +107,7 @@ def _comparison_vars(sku_id: str) -> dict[str, Any]:
 
 
 REVIEW_TOP_WRITTEN_TARGET = 20
+REVIEW_PAGE_SIZE = 10
 
 
 def _review_root(page: Any) -> dict[str, Any]:
@@ -125,8 +128,7 @@ def review_written_count(resp_pages: Any) -> int:
         for idx, review in enumerate(_review_root(page).get("reviews") or []):
             if not isinstance(review, dict):
                 continue
-            text = str(((review.get("feedback") or {}).get("full") or "")).strip()
-            if not text:
+            if not review_content(review):
                 continue
             rid = str(review.get("id") or review.get("cid") or f"{page_idx}:{idx}")
             if rid in seen:
@@ -149,6 +151,14 @@ def review_total_results(resp_pages: Any) -> int | None:
     return None
 
 
+def review_total_pages(resp_pages: Any, *, page_size: int = REVIEW_PAGE_SIZE) -> int | None:
+    """Return the real last review page from MediaMarkt's total result count."""
+    total = review_total_results(resp_pages)
+    if total is None:
+        return None
+    return max(1, math.ceil(total / max(1, page_size)))
+
+
 def should_fetch_more_review_pages(
     resp_pages: Any,
     *,
@@ -161,10 +171,30 @@ def should_fetch_more_review_pages(
     written = review_written_count(resp_pages)
     if written >= target:
         return False
-    total = review_total_results(resp_pages)
-    if total is not None and total <= written:
+    total_pages = review_total_pages(resp_pages)
+    if total_pages is not None and fetched_pages >= total_pages:
         return False
     return True
+
+
+def review_stop_reason(
+    resp_pages: Any,
+    statuses: list[Any],
+    *,
+    max_pages: int,
+    target: int = REVIEW_TOP_WRITTEN_TARGET,
+) -> str:
+    if any(status != 200 for status in statuses):
+        return "request_failed"
+    if review_written_count(resp_pages) >= target:
+        return "target_reached"
+    fetched_pages = len(statuses)
+    total_pages = review_total_pages(resp_pages)
+    if total_pages is not None and fetched_pages >= total_pages:
+        return "actual_last_page"
+    if fetched_pages >= max_pages:
+        return "page_cap"
+    return "unknown"
 
 
 # The PWA app appends this "pwa" context block to every GraphQL extensions param;
@@ -203,7 +233,7 @@ class PdpBrowserSession:
         nav_timeout_ms: int = 90000,
         settle_ms: int = 1200,
         warmup_wait_ms: int = 3000,
-        review_pages: int = 4,
+        review_pages: int = 1,
         review_max_pages: int | None = 8,
         block_resources: bool = True,
     ) -> None:
@@ -420,8 +450,27 @@ class PdpBrowserSession:
                 "summary": (summary or {}).get("status"),
                 "reviews": [(r or {}).get("status") for r in review_pages],
             },
+            "review_collected_count": review_written_count(review_bodies),
+            "review_total_pages": review_total_pages(review_bodies),
+            "review_stop_reason": review_stop_reason(
+                review_bodies,
+                [(r or {}).get("status") for r in review_pages],
+                max_pages=self.review_max_pages,
+            ),
             "error": error,
             "elapsed_seconds": round(time.perf_counter() - started, 2),
+        }
+
+    def fetch_review_page(self, sku_id: str, page_no: int) -> dict[str, Any]:
+        """Fetch one review page for the targeted recovery pass."""
+        results = self._gql_fetch_many([
+            self._build_call("GetProductReviews", _reviews_vars(sku_id, page_no))
+        ])
+        result = results[0] if results else {"status": None, "body": None}
+        return {
+            "status": (result or {}).get("status"),
+            "data": (result or {}).get("body"),
+            "error": (result or {}).get("error"),
         }
 
     def close(self) -> None:
