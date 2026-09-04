@@ -10,6 +10,7 @@ from common.config import run_meta
 from common.full_output import BASE_FIELDS
 from common.io_util import ACCOUNT_NAME, COUNTRY, RETAILER, category_output_root, db_config, split_table, write_csv, write_json
 from common.jsonl import read_jsonl
+from common.last_known_db import empty_stats, safe_backfill_from_retail_history
 from common.translations import translate_record_fields
 
 INT_COLUMNS = {"main_rank", "bsr_rank"}
@@ -227,20 +228,6 @@ def _existing_columns(conn, schema: str, table: str) -> list[str]:
         return [r[0] for r in cur.fetchall()]
 
 
-def _safe_item_mst_fill(conn, schema: str, product_lower: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SAVEPOINT seg_item_mst_fill")
-        result = item_mst.fill_from_mst(conn, schema, product_lower, rows)
-        with conn.cursor() as cur:
-            cur.execute("RELEASE SAVEPOINT seg_item_mst_fill")
-        return result
-    except Exception as exc:  # noqa: BLE001
-        with conn.cursor() as cur:
-            cur.execute("ROLLBACK TO SAVEPOINT seg_item_mst_fill")
-        return {"filled": 0, "skipped": True, "reason": f"{type(exc).__name__}: {exc}"}
-
-
 def _safe_item_mst_upsert(conn, schema: str, product_lower: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     try:
         with conn.cursor() as cur:
@@ -296,7 +283,31 @@ def insert_rows(cfg, rows: list[dict[str, Any]], *, dry_run: bool = False,
                 manifest.update(success=True, skipped=True, inserted_total=0, message=f"table {schema}.{table} not found")
                 write_json(out / manifest_name, manifest)
                 return manifest
-            _safe_item_mst_fill(conn, schema, product_lower, rows)
+            # retail.com history is the source of truth for backfill. The old
+            # item_mst fill matched item+account only and could cross product
+            # title changes, so it is intentionally not called here.
+            last_known = safe_backfill_from_retail_history(
+                conn,
+                schema=schema,
+                table=table,
+                rows=rows,
+                account_names=_account_delete_names(),
+                product=cfg.PRODUCT,
+                fields=("sku", *item_mst.SPEC_COLS.get(product_lower, ())),
+            )
+            manifest["last_known_db_backfill"] = last_known
+            preview_rows = [
+                {field: row.get(field) for field in preview_fields}
+                for row in rows
+            ]
+            write_csv(preview_path, preview_rows, preview_fields)
+            print(
+                f"[db/{cfg.PRODUCT}] last-known DB backfill "
+                f"recovered_rows={last_known['recovered_rows']} "
+                f"recovered_fields={last_known['recovered_fields']} "
+                f"error={last_known['error'] or 'none'}",
+                flush=True,
+            )
             insert_cols = [c for c in existing if c != "id" and any(c in r for r in rows)]
             deleted = 0
             with conn.cursor() as cur:
@@ -356,6 +367,7 @@ class StreamingRetailInserter:
         self.inserted = 0
         self.deleted = 0
         self.errors: list[str] = []
+        self.last_known = empty_stats()
         self.conn = None
         self.insert_cols: list[str] = []
         if not dry_run:
@@ -401,7 +413,26 @@ class StreamingRetailInserter:
             return
         try:
             with self.conn:
-                _safe_item_mst_fill(self.conn, self.schema, self.product_lower, [row])
+                backfill = safe_backfill_from_retail_history(
+                    self.conn,
+                    schema=self.schema,
+                    table=self.table,
+                    rows=[row],
+                    account_names=_account_delete_names(),
+                    product=self.cfg.PRODUCT,
+                    fields=("sku", *item_mst.SPEC_COLS.get(self.product_lower, ())),
+                )
+                self.last_known["eligible_rows"] += backfill["eligible_rows"]
+                self.last_known["queried_items"] += backfill["queried_items"]
+                self.last_known["history_rows"] += backfill["history_rows"]
+                self.last_known["matched_history_rows"] += backfill["matched_history_rows"]
+                self.last_known["recovered_rows"] += backfill["recovered_rows"]
+                for field, count in backfill["recovered_fields"].items():
+                    self.last_known["recovered_fields"][field] = (
+                        self.last_known["recovered_fields"].get(field, 0) + count
+                    )
+                if backfill["error"]:
+                    self.last_known["error"] = backfill["error"]
                 with self.conn.cursor() as cur:
                     col_sql = ", ".join(_quote(c) for c in insert_cols)
                     placeholders = ", ".join(["%s"] * len(insert_cols))
@@ -422,4 +453,5 @@ class StreamingRetailInserter:
             "deleted_existing": self.deleted,
             "rows_full": self.inserted,
             "errors": self.errors[:20],
+            "last_known_db_backfill": self.last_known,
         }

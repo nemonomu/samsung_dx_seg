@@ -10,7 +10,8 @@ import os
 from datetime import datetime
 from typing import Any
 
-from common.io_util import category_output_root, db_config, read_csv, split_table, write_json
+from common.io_util import category_output_root, db_config, read_csv, split_table, write_csv, write_json
+from common.last_known_db import safe_backfill_from_retail_history
 
 INT_COLUMNS = {"main_rank", "bsr_rank"}
 
@@ -75,9 +76,6 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
         write_json(out / "step14_db_save_manifest.json", manifest)
         print(f"[db/{cfg.PRODUCT}] dry_run rows={len(rows)} target={schema}.{table}")
         return manifest
-    if rows_with_missing_specs:
-        print(f"[db/{cfg.PRODUCT}][WARN] missing specs rows={rows_with_missing_specs} counts={missing_spec_counts}; continuing DB insert")
-
     config = db_config()
     if not config:
         raise RuntimeError("DB_CONFIG missing from .env")
@@ -97,6 +95,43 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
                     write_json(out / "step14_db_save_manifest.json", manifest)
                     print(f"[db/{cfg.PRODUCT}] table {schema}.{table} not found -> skipped (dry-run)")
                     return manifest
+                last_known = safe_backfill_from_retail_history(
+                    conn,
+                    schema=schema,
+                    table=table,
+                    rows=rows,
+                    account_names=(cfg.ACCOUNT_NAME,),
+                    product=cfg.PRODUCT,
+                    fields=("sku", *cfg.SPEC_FIELDS),
+                )
+                manifest["last_known_db_backfill"] = last_known
+                manifest.update(
+                    missing_spec_counts_before_backfill=missing_spec_counts,
+                    rows_with_missing_specs_before_backfill=rows_with_missing_specs,
+                )
+                missing_spec_counts = _missing_spec_counts(rows, spec_fields)
+                rows_with_missing_specs = sum(
+                    1
+                    for row in rows
+                    if any(not _has_value(row.get(field)) for field in spec_fields)
+                )
+                manifest.update(
+                    missing_spec_counts=missing_spec_counts,
+                    rows_with_missing_specs=rows_with_missing_specs,
+                )
+                write_csv(input_csv, rows)
+                print(
+                    f"[db/{cfg.PRODUCT}] last-known DB backfill "
+                    f"recovered_rows={last_known['recovered_rows']} "
+                    f"recovered_fields={last_known['recovered_fields']} "
+                    f"error={last_known['error'] or 'none'}"
+                )
+                if rows_with_missing_specs:
+                    print(
+                        f"[db/{cfg.PRODUCT}][WARN] missing specs "
+                        f"rows={rows_with_missing_specs} counts={missing_spec_counts}; "
+                        "continuing DB insert"
+                    )
                 csv_fields = list(rows[0].keys())
                 insert_cols = [c for c in existing if c != "id" and c in csv_fields]
                 # NOTE: insert-only. This step NEVER deletes/updates existing DB rows.

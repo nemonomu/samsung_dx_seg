@@ -13,6 +13,7 @@ DB_CONFIG in the project .env and are never printed.
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ from typing import Any
 import importlib
 
 from common.config import ACCOUNT_NAME, db_config, read_csv, write_json
+from common.last_known_db import safe_backfill_from_retail_history
 
 
 def load_cfg(product: str):
@@ -92,6 +94,17 @@ def table_columns(cur, schema: str, table: str) -> list[str]:
     return [row[0] for row in cur.fetchall()]
 
 
+def _write_backfilled_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    """Keep the final CSV identical to the rows sent to PostgreSQL."""
+    fields = list(rows[0].keys())
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    os.replace(temporary, path)
+
+
 def main() -> int:
     args = parse_args()
     cfg = load_cfg(args.product)
@@ -144,11 +157,6 @@ def main() -> int:
         print(f"[step14] dry_run rows={len(rows)} target={schema}.{table} "
               f"account={ACCOUNT_NAME} batch_ids={batch_ids}")
         return 0
-    if rows_missing_primary_spec or weak_detail_rows:
-        print(
-            f"[step14][WARN] missing primary spec rows={rows_missing_primary_spec} "
-            f"weak_detail={weak_detail_rows} counts={spec_missing_counts}; continuing DB insert"
-        )
     config = db_config()
     if not config:
         raise RuntimeError("DB_CONFIG is missing from .env")
@@ -169,6 +177,63 @@ def main() -> int:
                 existing = table_columns(cur, schema, table)
                 if not existing:
                     raise RuntimeError(f"DB table not found: {schema}.{table}")
+                last_known = safe_backfill_from_retail_history(
+                    conn,
+                    schema=schema,
+                    table=table,
+                    rows=rows,
+                    account_names=(ACCOUNT_NAME,),
+                    product=cfg.PRODUCT,
+                    fields=("sku", *cfg.SPEC_FIELDS),
+                )
+                manifest["last_known_db_backfill"] = last_known
+                manifest.update(
+                    spec_missing_counts_before_backfill=spec_missing_counts,
+                    rows_missing_primary_spec_before_backfill=rows_missing_primary_spec,
+                    weak_detail_rows_before_backfill=weak_detail_rows,
+                )
+                spec_missing_counts = {
+                    field: sum(1 for row in rows if not _has_value(row.get(field)))
+                    for field in spec_fields
+                }
+                rows_missing_primary_spec = sum(
+                    1
+                    for row in rows
+                    if primary
+                    and not _has_value(row.get(primary))
+                    and (row.get("item") or "").strip() not in policy_null_ids
+                )
+                weak_detail_rows = sum(
+                    1
+                    for row in rows
+                    if not any(
+                        _has_value(row.get(field))
+                        for field in [
+                            "sku",
+                            "delivery_availability",
+                            "pick_up_availability",
+                            *spec_fields,
+                        ]
+                    )
+                )
+                manifest.update(
+                    spec_missing_counts=spec_missing_counts,
+                    rows_missing_primary_spec=rows_missing_primary_spec,
+                    weak_detail_rows=weak_detail_rows,
+                )
+                _write_backfilled_csv(input_path, rows)
+                print(
+                    "[step14] last-known DB backfill "
+                    f"recovered_rows={last_known['recovered_rows']} "
+                    f"recovered_fields={last_known['recovered_fields']} "
+                    f"error={last_known['error'] or 'none'}"
+                )
+                if rows_missing_primary_spec or weak_detail_rows:
+                    print(
+                        f"[step14][WARN] missing primary spec rows={rows_missing_primary_spec} "
+                        f"weak_detail={weak_detail_rows} counts={spec_missing_counts}; "
+                        "continuing DB insert"
+                    )
                 insert_columns = [c for c in existing if c != "id" and c in csv_fields]
 
                 # INSERT-ONLY: never delete/update existing rows. Each run appends
