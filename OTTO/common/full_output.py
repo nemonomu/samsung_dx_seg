@@ -7,6 +7,7 @@ PDP-only fields (cfg.PDP_SUPPLEMENT_FIELDS, e.g. LDY Bauart) via a ZenRows brows
 from __future__ import annotations
 
 import csv
+import random
 import re
 import time
 from datetime import datetime
@@ -20,6 +21,16 @@ from common.io_util import category_output_root
 from common.parsers import format_detailed_review_content, parse_review_html
 
 REVIEW_DETAIL_LIMIT = 20  # detailed_review_content collects up to this many written reviews
+SUMMARY_RANK_LIMIT = 20  # the client requirement limits review-summary QA/retries to main top 20
+SUMMARY_CONTENT_ATTEMPTS = 4  # bounded content retries for intermittent summary omission on valid HTTP 200 pages
+SUMMARY_NO_SOURCE_CONFIRM_ATTEMPTS = 3  # do not classify one marker-free response as a genuine source NULL
+SUMMARY_RETRY_SLEEP_RANGE_SECONDS = (0.8, 1.5)
+SUMMARY_UI_TEXT = (
+    "Das sagen unsere Kunden",
+    "Bewertungen ansehen",
+    "Ist diese Zusammenfassung hilfreich?",
+    "Nicht hilfreich",
+)
 QA_FILL_WARN = 0.90  # spec-field fill rate below this logs a loud [QA][WARN] (advisory only)
 from common.reco import fetch_similar_product_names
 
@@ -138,14 +149,13 @@ def pdp_supplement_plan(spec: dict[str, Any], cfg, pdp_supplement: str,
     }
 
 
-def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int = 45) -> dict[str, Any]:
+def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int = 45,
+                   require_summary: bool = False,
+                   summary_attempts: int = SUMMARY_CONTENT_ATTEMPTS) -> dict[str, Any]:
     """Fetch the review page and follow ?page=N until REVIEW_DETAIL_LIMIT written reviews
     are gathered (OTTO paginates reviews). Rating summary / recommendation come from page 1.
     Returns the page-1 parse dict with reviews/detailed_review_content spanning all pages."""
     if not base_url:
-        return {}
-    resp = fetch_html(base_url, timeout=timeout, retries=3)  # no rating fallback -> retry hard
-    if resp.get("status") != 200:
         return {}
     rp = out / "_tmp_review.html"
 
@@ -159,8 +169,74 @@ def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int 
             except OSError:
                 pass
 
+    max_summary_attempts = max(1, summary_attempts) if require_summary else 1
+    page1: dict[str, Any] | None = None
+    resp: dict[str, Any] = {"status": None, "body": b"", "error": "not_requested"}
+    summary_eligible = False
+    summary_container_present = False
+    attempts_made = 0
+    for attempt in range(1, max_summary_attempts + 1):
+        attempts_made = attempt
+        resp = fetch_html(base_url, timeout=timeout, retries=3 if attempt == 1 else 1)
+        if resp.get("status") != 200:
+            break
+        body = resp.get("body", b"")
+        raw_html.save(f"review_{save_pid}_summary_a{attempt}", body)
+        parsed = _parse(body)
+        page1 = parsed
+        summary_container_present = summary_container_present or bool(
+            parsed.get("summary_container_present")
+        )
+        summary_eligible = summary_eligible or bool(
+            parsed.get("summary_placeholder_present")
+            or parsed.get("summary_container_present")
+            or parsed.get("summary_rendered")
+        )
+        if parsed.get("summary_rendered"):
+            break
+        if not require_summary:
+            break
+        if not summary_eligible and attempt >= min(
+            SUMMARY_NO_SOURCE_CONFIRM_ATTEMPTS, max_summary_attempts
+        ):
+            break
+        if attempt < max_summary_attempts:
+            time.sleep(random.uniform(*SUMMARY_RETRY_SLEEP_RANGE_SECONDS))
+
+    if page1 is None:
+        return {
+            "_review_status": resp.get("status"),
+            "_summary_required": require_summary,
+            "_summary_attempts": attempts_made,
+            "_summary_eligible": False,
+            "_summary_rendered": False,
+            "_summary_container_present": False,
+            "_summary_item_count": 0,
+            "_summary_failure_reason": (
+                f"http_status={resp.get('status')}" if resp.get("status") is not None
+                else resp.get("error") or "request_failed"
+            ),
+        }
+
     raw_html.save(f"review_{save_pid}", resp.get("body", b""))
-    page1 = _parse(resp.get("body", b""))
+    summary_rendered = bool(page1.get("summary_rendered"))
+    if summary_rendered:
+        summary_failure_reason = None
+    elif summary_container_present:
+        summary_failure_reason = "selector_mismatch"
+    elif summary_eligible:
+        summary_failure_reason = "eligible_not_rendered"
+    else:
+        summary_failure_reason = "no_source"
+    page1["_review_status"] = resp.get("status")
+    page1["_summary_required"] = require_summary
+    page1["_summary_attempts"] = attempts_made
+    page1["_summary_eligible"] = summary_eligible
+    page1["_summary_rendered"] = summary_rendered
+    page1["_summary_container_present"] = summary_container_present
+    page1["_summary_item_count"] = page1.get("summary_item_count") or 0
+    page1["_summary_failure_reason"] = summary_failure_reason
+
     reviews = list(page1.get("reviews") or [])
     last_page = page1.get("last_page") or 1
     seen = {r.get("review_id") for r in reviews if r.get("review_id")}
@@ -268,8 +344,16 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
 
             reco = fetch_similar_product_names(target.get("variation_id"), timeout=timeout)
             pid = (target.get("product_id") or "").strip() or product_id_from_url(target.get("product_url")) or str(target.get("main_rank"))
-            review = collect_review(review_url_for(target), out, pid, timeout=timeout)
-            review_resp = {"status": 200 if review else None}
+            try:
+                main_rank = int(str(target.get("main_rank") or "").strip())
+            except ValueError:
+                main_rank = None
+            summary_required = main_rank is not None and 1 <= main_rank <= SUMMARY_RANK_LIMIT
+            review = collect_review(
+                review_url_for(target), out, pid, timeout=timeout,
+                require_summary=summary_required,
+            )
+            review_resp = {"status": review.get("_review_status") if review else None}
 
             missing_before_pdp = missing_spec_fields(spec, cfg)
             missing_after_pdp = list(missing_before_pdp)
@@ -362,8 +446,16 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             for f in cfg.SPEC_FIELDS:
                 row[f] = spec.get(f)
             rows.append(row)
-            attempts.append({"rank": target.get("main_rank"), "datasheet_status": ds_status,
+            attempts.append({"rank": target.get("main_rank"), "item": target.get("product_id"),
+                             "product_url": target.get("product_url"), "datasheet_status": ds_status,
                              "reco": reco.get("similar_count"), "review_status": review_resp.get("status"),
+                             "summary_required": review.get("_summary_required", summary_required),
+                             "summary_attempts": review.get("_summary_attempts", 0),
+                             "summary_eligible": review.get("_summary_eligible", False),
+                             "summary_rendered": review.get("_summary_rendered", False),
+                             "summary_container_present": review.get("_summary_container_present", False),
+                             "summary_item_count": review.get("_summary_item_count", 0),
+                             "summary_failure_reason": review.get("_summary_failure_reason"),
                              "spec": {f: spec.get(f) for f in cfg.SPEC_FIELDS},
                              "missing_spec_before_pdp": missing_before_pdp,
                              "missing_spec_after_pdp": missing_after_pdp,
@@ -381,7 +473,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                              "pdp_supplement_recovered_fields": pdp_recovered_fields,
                              "pdp_supplement_failure_reason": pdp_failure_reason,
                              "pdp_supplement_error": pdp_error})
-            print(f"[full/{cfg.PRODUCT}] rank={target.get('main_rank')} sku={sku} spec={ {f: spec.get(f) for f in cfg.SPEC_FIELDS} } reco={reco.get('similar_count')} review={review_resp.get('status')}", flush=True)
+            print(f"[full/{cfg.PRODUCT}] rank={target.get('main_rank')} sku={sku} spec={ {f: spec.get(f) for f in cfg.SPEC_FIELDS} } reco={reco.get('similar_count')} review={review_resp.get('status')} summary={review.get('_summary_rendered', False)} attempts={review.get('_summary_attempts', 0)} reason={review.get('_summary_failure_reason')}", flush=True)
             if detail_sleep > 0:
                 time.sleep(detail_sleep)
     finally:
@@ -408,6 +500,72 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
     rows_with_missing_specs = sum(
         1 for r in rows if any(not has_value(r.get(f)) for f in cfg.SPEC_FIELDS)
     )
+    summary_top20 = [a for a in attempts if a.get("summary_required")]
+    summary_eligible_count = sum(1 for a in summary_top20 if a.get("summary_eligible"))
+    summary_rendered_count = sum(1 for a in summary_top20 if a.get("summary_rendered"))
+    summary_eligible_missing = sum(
+        1 for a in summary_top20 if a.get("summary_eligible") and not a.get("summary_rendered")
+    )
+    summary_selector_mismatch = sum(
+        1 for a in summary_top20 if a.get("summary_failure_reason") == "selector_mismatch"
+    )
+    summary_http_failed = sum(
+        1 for a in summary_top20
+        if str(a.get("summary_failure_reason") or "").startswith("http_status=")
+    )
+    summary_ui_contamination = sum(
+        1 for row in rows
+        if any(text in str(row.get("summarized_review_content") or "") for text in SUMMARY_UI_TEXT)
+    )
+    summary_qa = {
+        "rank_limit": SUMMARY_RANK_LIMIT,
+        "checked": len(summary_top20),
+        "eligible": summary_eligible_count,
+        "rendered": summary_rendered_count,
+        "eligible_missing": summary_eligible_missing,
+        "no_source": sum(1 for a in summary_top20 if a.get("summary_failure_reason") == "no_source"),
+        "selector_mismatch": summary_selector_mismatch,
+        "http_failed": summary_http_failed,
+        "ui_text_contamination": summary_ui_contamination,
+    }
+    print(
+        f"[full/{cfg.PRODUCT}][QA] review_summary_top20 checked={summary_qa['checked']} "
+        f"eligible={summary_qa['eligible']} rendered={summary_qa['rendered']} "
+        f"eligible_missing={summary_qa['eligible_missing']} no_source={summary_qa['no_source']} "
+        f"selector_mismatch={summary_qa['selector_mismatch']} http_failed={summary_qa['http_failed']} "
+        f"ui_text_contamination={summary_qa['ui_text_contamination']}",
+        flush=True,
+    )
+    if summary_eligible_missing:
+        print(
+            f"[full/{cfg.PRODUCT}][QA][WARN] summarized_review_content eligible but missing "
+            f"{summary_eligible_missing}/{summary_eligible_count} after {SUMMARY_CONTENT_ATTEMPTS} attempts",
+            flush=True,
+        )
+    summary_anomalies = [
+        {
+            "rank": a.get("rank"),
+            "item": a.get("item"),
+            "product_url": a.get("product_url"),
+            "review_status": a.get("review_status"),
+            "summary_attempts": a.get("summary_attempts"),
+            "summary_eligible": a.get("summary_eligible"),
+            "summary_rendered": a.get("summary_rendered"),
+            "summary_container_present": a.get("summary_container_present"),
+            "summary_item_count": a.get("summary_item_count"),
+            "summary_failure_reason": a.get("summary_failure_reason"),
+        }
+        for a in summary_top20
+        if (a.get("summary_attempts") or 0) > 1 or a.get("summary_failure_reason")
+    ]
+    summary_anomaly_output = out / "otto_review_summary_anomalies.json"
+    write_json(summary_anomaly_output, {
+        "product": cfg.PRODUCT,
+        "batch_id": run_meta["batch_id"],
+        "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "summary_qa": summary_qa,
+        "anomalies": summary_anomalies,
+    })
 
     manifest = {
         "run_type": "full_output", "product": cfg.PRODUCT,
@@ -418,6 +576,8 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
         "fill_rate": fill_rate,
         "missing_spec_counts": missing_spec_counts,
         "rows_with_missing_specs": rows_with_missing_specs,
+        "summary_qa": summary_qa,
+        "summary_anomaly_output": str(summary_anomaly_output),
     }
     write_json(out / "step09_full_output_manifest.json", manifest)
     print(f"[full/{cfg.PRODUCT}] output={output_csv} rows={len(rows)}")

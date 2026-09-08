@@ -17,6 +17,12 @@ NULL_TAIL = [
     "retailer_sku_name_similar", "star_rating", "count_of_star_ratings", "count_of_reviews",
     "recommendation_intent", "summarized_review_content", "detailed_review_content",
 ]
+SUMMARY_UI_TEXT = (
+    "Das sagen unsere Kunden",
+    "Bewertungen ansehen",
+    "Ist diese Zusammenfassung hilfreich?",
+    "Nicht hilfreich",
+)
 
 
 def _truthy(v) -> bool:
@@ -53,6 +59,29 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     for field, count in spec_missing_counts.items():
         if count:
             issues.append(f"{field} NULL {count}/{total}")
+    summary_qa = full.get("summary_qa") or {}
+    summary_checked = int(summary_qa.get("checked") or 0)
+    summary_eligible = int(summary_qa.get("eligible") or 0)
+    summary_rendered = int(summary_qa.get("rendered") or 0)
+    summary_eligible_missing = int(summary_qa.get("eligible_missing") or 0)
+    summary_no_source = int(summary_qa.get("no_source") or 0)
+    summary_selector_mismatch = int(summary_qa.get("selector_mismatch") or 0)
+    summary_http_failed = int(summary_qa.get("http_failed") or 0)
+    summary_ui_polluted = max(int(summary_qa.get("ui_text_contamination") or 0), sum(
+        1 for row in rows
+        if any(text in str(row.get("summarized_review_content") or "") for text in SUMMARY_UI_TEXT)
+    ))
+    if summary_eligible_missing:
+        issues.append(
+            f"summarized_review_content eligible missing "
+            f"{summary_eligible_missing}/{summary_eligible}"
+        )
+    if summary_ui_polluted:
+        issues.append(f"summarized_review_content UI text {summary_ui_polluted}/{total}")
+    if summary_selector_mismatch:
+        issues.append(f"summarized_review_content selector mismatch {summary_selector_mismatch}")
+    if summary_http_failed:
+        issues.append(f"summarized_review_content HTTP failed {summary_http_failed}")
     if db.get("success") is False:
         issues.append(f"DB issue: {db.get('reason') or db.get('blocked_reason') or 'unknown'}")
     if db.get("dry_run") is False and db.get("inserted", 0) != total:
@@ -70,6 +99,15 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         f"  bsr_rank - {bsr_present}/{bsr_expected}", "",
         "All-null fields",
         *([f"  {f}" for f in null_fields] if null_fields else ["  none"]), "",
+        "Review summary coverage (main top 20)",
+        f"  checked - {summary_checked}",
+        f"  eligible - {summary_eligible}",
+        f"  rendered - {summary_rendered}",
+        f"  eligible missing - {summary_eligible_missing}",
+        f"  no source - {summary_no_source}",
+        f"  selector mismatch - {summary_selector_mismatch}",
+        f"  HTTP failed - {summary_http_failed}",
+        f"  UI text contamination - {summary_ui_polluted}", "",
         ("Issues: none" if not issues else "Issues\n" + "\n".join(f"  - {i}" for i in issues)),
     ]
     return subject, "\n".join(lines) + "\n"

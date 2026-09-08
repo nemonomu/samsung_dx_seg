@@ -379,17 +379,18 @@ def clean_summary_review_item(value: str | None) -> str | None:
     return cleaned
 
 
-def extract_summarized_review_content(soup: BeautifulSoup) -> str | None:
-    scope = summary_review_scope(soup)
-    if not scope:
-        return None
-
+def summary_review_items(soup: BeautifulSoup) -> list[str]:
+    """Return only OTTO's AI-summary bullet text, excluding headings and controls."""
     items: list[str] = []
-    for raw_text in scope.stripped_strings:
-        item = clean_summary_review_item(raw_text)
+    for node in soup.select(".pdp_cr-summary .pdp_cr-summary__item-content span"):
+        item = clean_summary_review_item(node.get_text(" ", strip=True))
         if item and item not in items:
             items.append(item)
+    return items
 
+
+def extract_summarized_review_content(soup: BeautifulSoup) -> str | None:
+    items = summary_review_items(soup)
     return MULTI_VALUE_DELIMITER.join(items) if items else None
 
 def parse_detail_reviews(soup: BeautifulSoup) -> list[dict[str, Any]]:
@@ -465,6 +466,7 @@ def parse_review_html(path: Path) -> dict[str, Any]:
     reviews = parse_detail_reviews(soup)
     non_empty_reviews = [row for row in reviews if row.get("review_text")]
     average_rating, rating_count = extract_review_rating(soup)
+    summary_items = summary_review_items(soup)
     return {
         "path": str(path),
         "title": text_clean(soup.title.get_text(" ", strip=True)) if soup.title else None,
@@ -475,7 +477,11 @@ def parse_review_html(path: Path) -> dict[str, Any]:
         "average_rating": average_rating,
         "rating_count": rating_count,
         "reviews": reviews,
-        "summarized_review_content": extract_summarized_review_content(soup),
+        "summarized_review_content": MULTI_VALUE_DELIMITER.join(summary_items) if summary_items else None,
+        "summary_placeholder_present": bool(soup.select_one(".js_pdp_cr-summary")),
+        "summary_container_present": bool(soup.select_one(".pdp_cr-summary")),
+        "summary_rendered": bool(summary_items),
+        "summary_item_count": len(summary_items),
         "detailed_review_content": format_detailed_review_content(reviews),
         "detailed_review_count": min(20, len(non_empty_reviews)),
         "recommendation_intent": extract_recommendation_intent(soup),
