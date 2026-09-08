@@ -455,12 +455,11 @@ def _embedded_reviews(apollo: dict[str, Any], limit: int = 20) -> list[dict[str,
     for val in apollo.values():
         if not isinstance(val, dict) or val.get("__typename") != "GraphqlReview":
             continue
-        feedback = val.get("feedback") or {}
         reviews.append(
             {
                 "rating": val.get("rating"),
                 "title": text_clean(val.get("title")),
-                "text": text_clean(feedback.get("full")),
+                "text": review_content(val),
                 "date": (val.get("date") or "")[:10],
                 "verified": val.get("isVerifiedPurchaser"),
                 "ratings_only": val.get("isRatingsOnly"),
@@ -493,9 +492,20 @@ def review_content(review: dict[str, Any]) -> str | None:
     feedback = review.get("feedback") or {}
     if not isinstance(feedback, dict):
         feedback = {}
+
+    def first_feedback_text(*keys: str) -> str | None:
+        for key in keys:
+            value = text_clean(feedback.get(key))
+            if value:
+                return value
+        return None
+
     values = [
-        ("Vorteile", text_clean(feedback.get("positive") or feedback.get("pros"))),
-        ("Nachteile", text_clean(feedback.get("negative") or feedback.get("cons"))),
+        # Current MediaMarkt GetProductReviews schema (captured 2026-09-05)
+        # uses advantages/disadvantages. Keep the older aliases as fallbacks
+        # so a PWA schema transition does not silently drop authored text.
+        ("Vorteile", first_feedback_text("advantages", "positive", "pros")),
+        ("Nachteile", first_feedback_text("disadvantages", "negative", "cons")),
         ("Inhalt", text_clean(feedback.get("full"))),
     ]
     parts: list[str] = []

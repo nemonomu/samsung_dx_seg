@@ -17,7 +17,7 @@ import common.db_save as db_save_module
 import common.full_output as full_output_module
 from common.full_output import resolve_rating_fields
 from common.notify import _detail_present, build_report
-from common.parsers import parse_product_reviews, review_content
+from common.parsers import _embedded_reviews, parse_product_reviews, review_content
 from common.pdp_browser import (
     review_total_pages,
     review_written_count,
@@ -97,16 +97,67 @@ class RatingFallbackTests(unittest.TestCase):
         review = {
             "id": "r1",
             "feedback": {
-                "positive": "Schönes Design.",
-                "negative": "Keine",
+                "advantages": "Schönes Design.",
+                "disadvantages": "Keine",
                 "full": "Ich bin sehr zufrieden.",
             },
+            "positiveFeedbackCount": 17,
+            "negativeFeedbackCount": 2,
             "productVariant": "Ursprünglich erschienen auf Produktvariante: WW5000D",
             "author": "anonym",
         }
         self.assertEqual(
             review_content(review),
             "Vorteile: Schönes Design. | Nachteile: Keine | Inhalt: Ich bin sehr zufrieden.",
+        )
+
+    def test_review_content_supports_actual_schema_variants_and_blank_fallbacks(self):
+        cases = [
+            (
+                {"feedback": {"advantages": "Sehr leise"}},
+                "Vorteile: Sehr leise",
+            ),
+            (
+                {"feedback": {"disadvantages": "Keine", "full": "Gutes Gerät"}},
+                "Nachteile: Keine | Inhalt: Gutes Gerät",
+            ),
+            (
+                {"feedback": {"advantages": "Gut", "disadvantages": "Teuer"}},
+                "Vorteile: Gut | Nachteile: Teuer",
+            ),
+            (
+                {"feedback": {"advantages": " ", "positive": "Legacy Vorteil"}},
+                "Vorteile: Legacy Vorteil",
+            ),
+            (
+                {"feedback": {"advantages": "Identisch", "full": "Identisch"}},
+                "Vorteile: Identisch",
+            ),
+            (
+                {"feedback": {"full": "Nur allgemeiner Text"}},
+                "Nur allgemeiner Text",
+            ),
+        ]
+        for review, expected in cases:
+            with self.subTest(review=review):
+                self.assertEqual(review_content(review), expected)
+
+    def test_embedded_reviews_use_actual_advantages_disadvantages_schema(self):
+        apollo = {
+            "GraphqlReview:r1": {
+                "__typename": "GraphqlReview",
+                "id": "r1",
+                "date": "2026-09-05T00:00:00Z",
+                "feedback": {
+                    "advantages": "Leise",
+                    "disadvantages": "Keine",
+                    "full": "Sehr zufrieden",
+                },
+            }
+        }
+        self.assertEqual(
+            _embedded_reviews(apollo)[0]["text"],
+            "Vorteile: Leise | Nachteile: Keine | Inhalt: Sehr zufrieden",
         )
 
     def test_pros_or_cons_only_review_counts_as_written(self):
