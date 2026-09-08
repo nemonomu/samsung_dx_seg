@@ -92,6 +92,7 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
     issues: dict[str, Any] = {
         "redirect": [],
         "sku_null": [],
+        "matching_prices": [],
         "price_inversion": [],
         "rating_count_no_rating": [],
         "all_null_fields": [],
@@ -177,6 +178,11 @@ def collect_issues(cfg_or_product: Any, jsonl_path: str | Path) -> tuple[dict[st
         merged = merge_insert.make_row(cfg_for_merge, main.get(key), bsr.get(key), rec) if key else None
         final_price = (merged or rec).get("final_sku_price")
         original_price = (merged or rec).get("original_sku_price")
+        if (merged or {}).get("_original_matches_final"):
+            issues["matching_prices"].append({
+                "url": (merged or {}).get("product_url") or url,
+                "final": final_price,
+            })
         fpv = parse_price(final_price)
         opv = parse_price(original_price)
         if fpv is not None and opv is not None and fpv >= opv:
@@ -251,6 +257,7 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     issues, detail_count = collect_issues(cfg_or_product, jsonl_path)
     redirects = issues["redirect"]
     sku_nulls = issues["sku_null"]
+    matching_prices = issues["matching_prices"]
     price_inv = issues["price_inversion"]
     rating_mis = issues["rating_count_no_rating"]
     all_null = issues["all_null_fields"]
@@ -268,7 +275,7 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
     db_insert_zero = issues.get("db_insert_zero", [])
     db_summary = issues.get("db_insert_summary") or {}
     has_warning = bool(
-        redirects or sku_nulls or price_inv or rating_mis or all_null or type_mis
+        redirects or sku_nulls or matching_prices or price_inv or rating_mis or all_null or type_mis
         or run_errors or run_warnings or amazon_429 or timeouts or detail_zero or listing_page_failures
     )
     has_sos = bool(db_insert_zero or fatal_run_errors)
@@ -342,6 +349,10 @@ def build_email_report_with_severity(cfg_or_product: Any, jsonl_path: str | Path
         lines.append(f"- sku null: {len(sku_nulls)}")
         for url in sku_nulls:
             lines.append(f"  - {url}")
+    if matching_prices:
+        lines.append(f"- 확인 필요: original_sku_price와 final_sku_price가 동일: {len(matching_prices)}")
+        for item in matching_prices:
+            lines.append(f"  - URL={item['url']} (price={item['final']})")
     if price_inv:
         lines.append(f"- price inversion (final >= original): {len(price_inv)}")
         for item in price_inv:

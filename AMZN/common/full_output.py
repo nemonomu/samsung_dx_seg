@@ -76,7 +76,8 @@ def run(cfg) -> dict:
             "ref_refrigerator_type": detail.get("ref_refrigerator_type"),
             "ref_capacity": detail.get("ref_capacity"),
         }
-        siel_logging.null_original_when_same_as_final(row)
+        siel_logging.apply_price_relationship(row)
+        row.pop("_original_matches_final", None)
         translate_record_fields(row)
         rows.append(row)
     path = out / "amzn_full_output.csv"
