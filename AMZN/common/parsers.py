@@ -101,6 +101,26 @@ _INVENTORY_STATUS_RE = re.compile(
 )
 
 
+def normalize_available_quantity(value: Any) -> str | None:
+    """Keep a listing's limited-stock message verbatim, including its suffix."""
+    text = clean_text(value)
+    if text and re.match(
+        r"^(?:Nur noch\s+\d+\s+auf Lager\b|Only\s+\d+\s+left\s+in\s+stock\b)",
+        text,
+        flags=re.I,
+    ):
+        return text
+    return None
+
+
+def _available_quantity_text(root) -> str | None:
+    for node in root.select("span.a-color-price, span[aria-label]"):
+        value = normalize_available_quantity(node.get_text(" "))
+        if value:
+            return value
+    return None
+
+
 def _inventory_status_text(root) -> str | None:
     text = clean_text(root.get_text(" "))
     if not text:
@@ -416,6 +436,7 @@ def parse_listing_html(html: str, *, page: int, sort: str, start_rank: int = 1) 
             "number_of_units_purchased_past_month": clean_text(item.select_one("span.a-size-base.a-color-secondary").get_text(" ") if item.select_one("span.a-size-base.a-color-secondary") else None),
             "sku_status": "Sponsored" if (item.select_one(".puis-sponsored-label-text") or "Gesponsert" in item.get_text(" ")) else None,
             "inventory_status": translate_field("inventory_status", _inventory_status_text(item)),
+            "available_quantity_for_purchase": _available_quantity_text(item) if sort == "main" else None,
             "star_rating": _rating_text(item),
             "count_of_star_ratings": _rating_count(item),
         }

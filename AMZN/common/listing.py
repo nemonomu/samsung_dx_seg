@@ -49,6 +49,7 @@ _LISTING_NORMALIZE_FIELDS = {
     "star_rating",
     "count_of_star_ratings",
     "number_of_units_purchased_past_month",
+    "available_quantity_for_purchase",
     "inventory_status",
 }
 

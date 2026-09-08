@@ -1,7 +1,7 @@
 """Step09: join Amazon listing targets and detail rows into DB-loadable output."""
 from __future__ import annotations
 
-from common import siel_logging
+from common import parsers, siel_logging
 from common.config import run_meta
 from common.io_util import ACCOUNT_NAME, COUNTRY, category_output_root, read_csv, write_csv, write_json
 from common.translations import translate_record_fields
@@ -59,7 +59,9 @@ def run(cfg) -> dict:
             ),
             "sku_status": target.get("sku_status"),
             "discount_type": target.get("discount_type"),
-            "available_quantity_for_purchase": None,
+            "available_quantity_for_purchase": parsers.normalize_available_quantity(
+                target.get("available_quantity_for_purchase")
+            ) if target.get("main_rank") not in (None, "") else None,
             "delivery_availability": detail.get("delivery_availability"),
             "fastest_delivery": detail.get("fastest_delivery"),
             "inventory_status": detail.get("inventory_status"),

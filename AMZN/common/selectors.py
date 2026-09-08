@@ -182,6 +182,8 @@ def _scroll_to(driver, y: int) -> None:
 def normalize_field(field: str, value: str | None) -> str | None:
     if not value:
         return None
+    if field == "available_quantity_for_purchase":
+        return parsers.normalize_available_quantity(value)
     if field == "sku_status":
         if "gesponsert" in value.casefold() or "sponsored" in value.casefold():
             return "Sponsored"

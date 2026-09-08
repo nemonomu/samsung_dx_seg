@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from common import item_mst, siel_logging as siel_log
+from common import item_mst, parsers, siel_logging as siel_log
 from common.config import run_meta
 from common.full_output import BASE_FIELDS
 from common.io_util import ACCOUNT_NAME, COUNTRY, RETAILER, category_output_root, db_config, split_table, write_csv, write_json
@@ -167,6 +167,9 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
             primary.get("number_of_units_purchased_past_month"),
         ),
         "sku_status": _first(primary.get("sku_status"), detail_values.get("sku_status")),
+        "available_quantity_for_purchase": parsers.normalize_available_quantity(
+            (main_rec or {}).get("available_quantity_for_purchase")
+        ),
         "discount_type": _first(primary.get("discount_type"), detail_values.get("discount_type")),
     }
     detail_fields = [
