@@ -59,6 +59,7 @@ def _detail_present(r: dict, spec_fields: list[str]) -> bool:
 
 def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     out = cfg.OUTPUT_ROOT
+    listing = _read_json(out / "mmkt_step01_listing_main_manifest.json")
     step02 = _read_json(out / "mmkt_step02_pdp_detail_manifest.json")
     full = _read_json(out / "step09_full_output_manifest.json")
     db = _read_json(out / "step14_db_save_manifest.json")
@@ -83,6 +84,15 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     review_recovered = int(review_collection.get("recovered_after_retry") or 0)
     partial_items = list(step02.get("review_partial_items") or [])
 
+    sponsored_monitoring = listing.get("sponsored_monitoring") or {}
+    raw_gesponsert = int(sponsored_monitoring.get("raw_gesponsert_occurrences") or 0)
+    visible_sponsored_labels = int(sponsored_monitoring.get("visible_label_occurrences") or 0)
+    mapped_sponsored_ids = int(sponsored_monitoring.get("mapped_product_id_count") or 0)
+    unmatched_sponsored_ids = int(sponsored_monitoring.get("unmatched_product_id_count") or 0)
+    final_sponsored_rows = sum(
+        1 for row in rows if (row.get("sku_status") or "").strip() == "Sponsored"
+    )
+
     issues = []
     if main_present != main_expected:
         issues.append(f"main_rank {main_present}/{main_expected}")
@@ -92,6 +102,16 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         issues.append(f"detail collection low {detail_present}/{total} ({detail_ratio:.0%})")
     if review_partial:
         issues.append(f"review_partial {review_partial}/{total}")
+    if raw_gesponsert and final_sponsored_rows == 0:
+        issues.append(
+            "sku_status Sponsored 0 despite Gesponsert in listing HTML "
+            f"(raw={raw_gesponsert}, visible={visible_sponsored_labels}, "
+            f"mapped_ids={mapped_sponsored_ids})"
+        )
+    if unmatched_sponsored_ids:
+        issues.append(
+            f"sponsored product-id mapping mismatch {unmatched_sponsored_ids} id(s)"
+        )
     for source, mf in (("step02", step02), ("full", full)):
         missing_primary = int(mf.get("rows_missing_primary_spec") or 0)
         if missing_primary:
@@ -143,6 +163,12 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         f"  main_rank - {main_present}/{main_expected}",
         f"  bsr_rank - {bsr_present}/{bsr_expected}",
         f"  detail(PDP) - {detail_present}/{total} ({detail_ratio:.0%})", "",
+        "Sponsored monitoring",
+        f"  raw Gesponsert occurrences - {raw_gesponsert}",
+        f"  visible labels - {visible_sponsored_labels}",
+        f"  mapped product ids - {mapped_sponsored_ids}",
+        f"  unmatched product ids - {unmatched_sponsored_ids}",
+        f"  final sku_status=Sponsored - {final_sponsored_rows}/{total}", "",
         "All-null fields",
         *([f"  {f}" for f in null_fields] if null_fields else ["  none"]), "",
         *review_lines,

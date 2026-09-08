@@ -140,7 +140,11 @@ def main() -> int:
               f"(unique={len(seen)}/{target}) ...", flush=True)
         html, status, elapsed, err = fetch_page(url)
         (raw_dir / f"page_{page:02d}.html").write_text(html, encoding="utf-8")
-        rows = parse_listing_html(html, page=page) if status == 200 else []
+        sponsored_diagnostics: dict[str, Any] = {}
+        rows = (
+            parse_listing_html(html, page=page, diagnostics=sponsored_diagnostics)
+            if status == 200 else []
+        )
         new = 0
         for row in rows:
             sku_id = row.get("sku_id")
@@ -150,8 +154,15 @@ def main() -> int:
             row.update(run_meta)
             seen[sku_id] = row
             new += 1
-        page_log.append({"page": page, "status": status, "parsed": len(rows),
-                         "new_unique": new, "elapsed": elapsed, "error": err})
+        page_log.append({
+            "page": page,
+            "status": status,
+            "parsed": len(rows),
+            "new_unique": new,
+            "elapsed": elapsed,
+            "error": err,
+            **sponsored_diagnostics,
+        })
         print(f"[step01] sort={args.sort} page={page:>2} status={status} "
               f"parsed={len(rows):>2} new={new:>2} total_unique={len(seen)} ({elapsed}s)", flush=True)
         if status != 200 or not rows:
@@ -174,6 +185,47 @@ def main() -> int:
     for i, row in enumerate(ordered, start=1):
         row["rank"] = i
 
+    mapped_sponsored_ids = sorted({
+        str(pid)
+        for page_info in page_log
+        for pid in page_info.get("sponsored_product_ids", [])
+    })
+    unmatched_sponsored_ids = sorted({
+        str(pid)
+        for page_info in page_log
+        for pid in page_info.get("unmatched_sponsored_ids", [])
+    })
+    raw_gesponsert_occurrences = sum(
+        int(page_info.get("raw_gesponsert_occurrences") or 0)
+        for page_info in page_log
+    )
+    final_sponsored_rows = sum(
+        1 for row in ordered if row.get("sku_status") == "Sponsored"
+    )
+    sponsored_monitoring = {
+        "raw_gesponsert_occurrences": raw_gesponsert_occurrences,
+        "visible_label_occurrences": sum(
+            int(page_info.get("visible_label_occurrences") or 0)
+            for page_info in page_log
+        ),
+        "mapped_label_occurrences": sum(
+            int(page_info.get("mapped_label_occurrences") or 0)
+            for page_info in page_log
+        ),
+        "mapped_product_id_count": len(mapped_sponsored_ids),
+        "mapped_product_ids": mapped_sponsored_ids,
+        "unmatched_product_id_count": len(unmatched_sponsored_ids),
+        "unmatched_product_ids": unmatched_sponsored_ids,
+        "parsed_sponsored_rows": sum(
+            int(page_info.get("parsed_sponsored_rows") or 0)
+            for page_info in page_log
+        ),
+        "final_sponsored_rows": final_sponsored_rows,
+        "warning_zero_collected": bool(
+            raw_gesponsert_occurrences and final_sponsored_rows == 0
+        ),
+    }
+
     out_path = Path(args.output) if args.output else cfg.OUTPUT_ROOT / f"mmkt_listing_{args.sort}.csv"
     with out_path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS, extrasaction="ignore")
@@ -194,6 +246,7 @@ def main() -> int:
         "written_rows": len(ordered),
         "raw_dir": str(raw_dir.relative_to(REFERENCES_ROOT.parent)),
         "output_csv": str(out_path),
+        "sponsored_monitoring": sponsored_monitoring,
         "pages": page_log,
     }
     manifest_path = cfg.OUTPUT_ROOT / f"mmkt_step01_listing_{args.sort}_manifest.json"

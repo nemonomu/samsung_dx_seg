@@ -185,10 +185,87 @@ def _discount_type(badges_feat: dict | None) -> tuple[str | None, str | None]:
     return raw, eng
 
 
-def parse_listing_html(html: str, *, page: int = 1) -> list[dict[str, Any]]:
+def extract_sponsored_diagnostics(html: str) -> dict[str, Any]:
+    """Return observable ``Gesponsert`` signals and their product-id mapping.
+
+    MediaMarkt currently keeps an ``adData`` key in ProductListPage entries but
+    may set it to null even when the rendered card is labelled as sponsored.
+    Associate the visible label with the nearest ancestor containing exactly
+    one product link.  Broad page/grid ancestors are intentionally ignored so
+    one label cannot mark unrelated products as sponsored.
+    """
+    diagnostics: dict[str, Any] = {
+        "raw_gesponsert_occurrences": len(re.findall(r"\bGesponsert\b", html, re.I)),
+        "visible_label_occurrences": 0,
+        "mapped_label_occurrences": 0,
+        "sponsored_product_ids": [],
+    }
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        return diagnostics
+
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except Exception:
+        soup = BeautifulSoup(html, "html.parser")
+    sponsored_ids: set[str] = set()
+    label_pattern = re.compile(r"\bGesponsert\b", re.I)
+
+    for label in soup.find_all(string=label_pattern):
+        parent = getattr(label, "parent", None)
+        if parent is None or getattr(parent, "name", None) in {
+            "script", "style", "noscript",
+        }:
+            continue
+        diagnostics["visible_label_occurrences"] += 1
+
+        ancestor = parent
+        for _ in range(10):
+            if ancestor is None or getattr(ancestor, "name", None) in {
+                "html", "body",
+            }:
+                break
+            product_ids: set[str] = set()
+            for link in ancestor.find_all("a", href=True):
+                match = re.search(r"-(\d+)\.html(?:[?#]|$)", link.get("href") or "")
+                if match:
+                    product_ids.add(match.group(1))
+            if len(product_ids) == 1:
+                sponsored_ids.update(product_ids)
+                diagnostics["mapped_label_occurrences"] += 1
+                break
+            ancestor = getattr(ancestor, "parent", None)
+
+    diagnostics["sponsored_product_ids"] = sorted(sponsored_ids)
+    return diagnostics
+
+
+def extract_sponsored_product_ids(html: str) -> set[str]:
+    """Return product ids whose rendered listing card shows ``Gesponsert``."""
+    return set(extract_sponsored_diagnostics(html)["sponsored_product_ids"])
+
+
+def parse_listing_html(
+    html: str,
+    *,
+    page: int = 1,
+    diagnostics: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Parse one MediaMarkt listing page into ordered per-SKU Main-field rows."""
+    sponsored_diagnostics = extract_sponsored_diagnostics(html)
+    sponsored_ids = set(sponsored_diagnostics["sponsored_product_ids"])
+    if diagnostics is not None:
+        diagnostics.update(sponsored_diagnostics)
+
     state = extract_preloaded_state(html)
     if not state:
+        if diagnostics is not None:
+            diagnostics.update({
+                "legacy_ad_data_rows": 0,
+                "parsed_sponsored_rows": 0,
+                "unmatched_sponsored_ids": sorted(sponsored_ids),
+            })
         return []
     apollo = state.get("apolloState") or {}
     by_type = _index_apollo(apollo)
@@ -198,7 +275,6 @@ def parse_listing_html(html: str, *, page: int = 1) -> list[dict[str, Any]]:
     prices = by_type.get("CofrPriceFeature", {})
     badges = by_type.get("CofrBadgesFeature", {})
     online = by_type.get("CofrOnlineStatusFeature", {})
-
     # Display order + sponsored flag from ProductListPage.products[].
     ordered: list[tuple[str, dict]] = []
     for pagestate in by_type.get("__ORDER__", {}).get("pages", []):  # type: ignore[union-attr]
@@ -209,6 +285,13 @@ def parse_listing_html(html: str, *, page: int = 1) -> list[dict[str, Any]]:
     if not ordered:  # fallback: JSON-LD order
         ordered = [(pid, {}) for pid in sorted(jsonld, key=lambda k: jsonld[k].get("position") or 0)]
 
+    ordered_ids = {pid for pid, _ in ordered}
+    if diagnostics is not None:
+        diagnostics["legacy_ad_data_rows"] = sum(
+            1 for _, entry in ordered if bool(entry.get("adData"))
+        )
+        diagnostics["unmatched_sponsored_ids"] = sorted(sponsored_ids - ordered_ids)
+
     base_rank = (page - 1) * 12
     rows: list[dict[str, Any]] = []
     for idx, (pid, entry) in enumerate(ordered, start=1):
@@ -216,7 +299,9 @@ def parse_listing_html(html: str, *, page: int = 1) -> list[dict[str, Any]]:
         ld = jsonld.get(pid) or {}
         pf = _price_fields(prices.get(pid))
         raw_dt, eng_dt = _discount_type(badges.get(pid))
-        is_sponsored = bool(entry.get("adData"))
+        # Keep the legacy payload signal, but prefer the rendered label when
+        # MediaMarkt leaves adData null for a visibly sponsored product card.
+        is_sponsored = bool(entry.get("adData")) or pid in sponsored_ids
         url = prod.get("url") or ld.get("url") or ""
         if url and not url.startswith("http"):
             url = MMKT_BASE + url
@@ -237,6 +322,10 @@ def parse_listing_html(html: str, *, page: int = 1) -> list[dict[str, Any]]:
                 "product_url": url,
                 "is_available": (online.get(pid) or {}).get("isAvailableAndBuyable"),
             }
+        )
+    if diagnostics is not None:
+        diagnostics["parsed_sponsored_rows"] = sum(
+            1 for row in rows if row.get("sku_status") == "Sponsored"
         )
     return rows
 
