@@ -48,11 +48,11 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
 
     issues = []
     if targets.get("main_target_shortfall"):
-        issues.append(f"main target shortfall {targets.get('main_target_shortfall')}")
+        issues.append(f"메인 수집 대상 부족 {targets.get('main_target_shortfall')}")
     if main_present != main_expected:
-        issues.append(f"main_rank {main_present}/{main_expected}")
+        issues.append(f"main_rank 수집 {main_present}/{main_expected}")
     if bsr_present != bsr_expected:
-        issues.append(f"bsr_rank {bsr_present}/{bsr_expected}")
+        issues.append(f"bsr_rank 수집 {bsr_present}/{bsr_expected}")
     spec_missing_counts = full.get("missing_spec_counts") or {
         f: sum(1 for r in rows if not (r.get(f) or "").strip()) for f in cfg.SPEC_FIELDS
     }
@@ -73,42 +73,42 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     ))
     if summary_eligible_missing:
         issues.append(
-            f"summarized_review_content eligible missing "
+            f"summarized_review_content 요약 대상 중 미수집 "
             f"{summary_eligible_missing}/{summary_eligible}"
         )
     if summary_ui_polluted:
-        issues.append(f"summarized_review_content UI text {summary_ui_polluted}/{total}")
+        issues.append(f"summarized_review_content UI 문구 혼입 {summary_ui_polluted}/{total}")
     if summary_selector_mismatch:
-        issues.append(f"summarized_review_content selector mismatch {summary_selector_mismatch}")
+        issues.append(f"summarized_review_content 선택자 불일치 {summary_selector_mismatch}")
     if summary_http_failed:
-        issues.append(f"summarized_review_content HTTP failed {summary_http_failed}")
+        issues.append(f"summarized_review_content HTTP 실패 {summary_http_failed}")
     if db.get("success") is False:
-        issues.append(f"DB issue: {db.get('reason') or db.get('blocked_reason') or 'unknown'}")
+        issues.append(f"DB 오류: {db.get('reason') or db.get('blocked_reason') or '원인 불명'}")
     if db.get("dry_run") is False and db.get("inserted", 0) != total:
-        issues.append(f"DB inserted {db.get('inserted', 0)}/{total}")
+        issues.append(f"DB 저장 {db.get('inserted', 0)}/{total}")
     elif db.get("dry_run"):
-        issues.append("DB dry-run/skipped")
+        issues.append("DB 시험 실행으로 저장 생략")
 
-    base_subject = f"[SEG] OTTO {cfg.PRODUCT} crawled"
-    subject = base_subject if not issues else f"[CHECK] {base_subject}"
+    base_subject = f"[SEG] OTTO {cfg.PRODUCT} 수집 완료"
+    subject = base_subject if not issues else f"[확인필요] {base_subject}"
     lines = [
         subject, "",
-        f"Total collected: {total} sku", "",
-        "Rank coverage",
+        f"총 수집: {total}개 SKU", "",
+        "순위 수집 현황",
         f"  main_rank - {main_present}/{main_expected}",
         f"  bsr_rank - {bsr_present}/{bsr_expected}", "",
-        "All-null fields",
-        *([f"  {f}" for f in null_fields] if null_fields else ["  none"]), "",
-        "Review summary coverage (main top 20)",
-        f"  checked - {summary_checked}",
-        f"  eligible - {summary_eligible}",
-        f"  rendered - {summary_rendered}",
-        f"  eligible missing - {summary_eligible_missing}",
-        f"  no source - {summary_no_source}",
-        f"  selector mismatch - {summary_selector_mismatch}",
-        f"  HTTP failed - {summary_http_failed}",
-        f"  UI text contamination - {summary_ui_polluted}", "",
-        ("Issues: none" if not issues else "Issues\n" + "\n".join(f"  - {i}" for i in issues)),
+        "전체 NULL 필드",
+        *([f"  {f}" for f in null_fields] if null_fields else ["  없음"]), "",
+        "리뷰 요약 수집 현황 (메인 TOP 20)",
+        f"  확인 대상 - {summary_checked}",
+        f"  요약 대상 - {summary_eligible}",
+        f"  수집 완료 - {summary_rendered}",
+        f"  요약 대상 중 미수집 - {summary_eligible_missing}",
+        f"  요약 없음 - {summary_no_source}",
+        f"  선택자 불일치 - {summary_selector_mismatch}",
+        f"  HTTP 실패 - {summary_http_failed}",
+        f"  UI 문구 혼입 - {summary_ui_polluted}", "",
+        ("이상 없음" if not issues else "확인 필요\n" + "\n".join(f"  - {i}" for i in issues)),
     ]
     return subject, "\n".join(lines) + "\n"
 

@@ -194,9 +194,9 @@ class OttoReviewSummaryTests(unittest.TestCase):
             with patch.object(notify, "category_output_root", return_value=out):
                 subject, report = notify.build_report(FakeConfig(), rows)
 
-        self.assertTrue(subject.startswith("[CHECK]"))
-        self.assertIn("eligible missing - 1", report)
-        self.assertIn("UI text contamination - 1", report)
+        self.assertTrue(subject.startswith("[확인필요]"))
+        self.assertIn("요약 대상 중 미수집 - 1", report)
+        self.assertIn("UI 문구 혼입 - 1", report)
 
 
 if __name__ == "__main__":
