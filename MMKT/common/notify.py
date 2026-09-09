@@ -87,6 +87,7 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     sponsored_monitoring = listing.get("sponsored_monitoring") or {}
     raw_gesponsert = int(sponsored_monitoring.get("raw_gesponsert_occurrences") or 0)
     visible_sponsored_labels = int(sponsored_monitoring.get("visible_label_occurrences") or 0)
+    unmapped_sponsored_labels = int(sponsored_monitoring.get("unmapped_label_occurrences") or 0)
     mapped_sponsored_ids = int(sponsored_monitoring.get("mapped_product_id_count") or 0)
     unmatched_sponsored_ids = int(sponsored_monitoring.get("unmatched_product_id_count") or 0)
     final_sponsored_rows = sum(
@@ -102,15 +103,19 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         issues.append(f"detail collection low {detail_present}/{total} ({detail_ratio:.0%})")
     if review_partial:
         issues.append(f"review_partial {review_partial}/{total}")
-    if raw_gesponsert and final_sponsored_rows == 0:
+    if visible_sponsored_labels and final_sponsored_rows == 0:
         issues.append(
-            "sku_status Sponsored 0 despite Gesponsert in listing HTML "
+            "sku_status Sponsored 0 despite Gesponsert in product list "
             f"(raw={raw_gesponsert}, visible={visible_sponsored_labels}, "
             f"mapped_ids={mapped_sponsored_ids})"
         )
     if unmatched_sponsored_ids:
         issues.append(
             f"sponsored product-id mapping mismatch {unmatched_sponsored_ids} id(s)"
+        )
+    if unmapped_sponsored_labels:
+        issues.append(
+            f"sponsored labels without one product id {unmapped_sponsored_labels} label(s)"
         )
     for source, mf in (("step02", step02), ("full", full)):
         missing_primary = int(mf.get("rows_missing_primary_spec") or 0)
@@ -165,7 +170,8 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         f"  detail(PDP) - {detail_present}/{total} ({detail_ratio:.0%})", "",
         "Sponsored monitoring",
         f"  raw Gesponsert occurrences - {raw_gesponsert}",
-        f"  visible labels - {visible_sponsored_labels}",
+        f"  product-list labels - {visible_sponsored_labels}",
+        f"  unmapped product-list labels - {unmapped_sponsored_labels}",
         f"  mapped product ids - {mapped_sponsored_ids}",
         f"  unmatched product ids - {unmatched_sponsored_ids}",
         f"  final sku_status=Sponsored - {final_sponsored_rows}/{total}", "",

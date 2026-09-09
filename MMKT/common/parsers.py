@@ -185,60 +185,224 @@ def _discount_type(badges_feat: dict | None) -> tuple[str | None, str | None]:
     return raw, eng
 
 
-def extract_sponsored_diagnostics(html: str) -> dict[str, Any]:
-    """Return observable ``Gesponsert`` signals and their product-id mapping.
+def _product_id_from_href(href: str | None) -> str | None:
+    match = re.search(r"-(\d+)\.html(?:[?#]|$)", href or "")
+    return match.group(1) if match else None
 
-    MediaMarkt currently keeps an ``adData`` key in ProductListPage entries but
-    may set it to null even when the rendered card is labelled as sponsored.
-    Associate the visible label with the nearest ancestor containing exactly
-    one product link.  Broad page/grid ancestors are intentionally ignored so
-    one label cannot mark unrelated products as sponsored.
+
+def _parse_dom_euro(text: str | None) -> float | None:
+    if not text:
+        return None
+    match = re.search(r"(\d[\d.]*(?:,\d{2}|,–)?)\s*€", text)
+    if not match:
+        return None
+    raw = match.group(1).replace(".", "").replace(",–", ",00").replace(",", ".")
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _data_test_contains(tag, token: str) -> bool:
+    value = tag.get("data-test") if getattr(tag, "get", None) else None
+    return token in str(value or "").split()
+
+
+def _has_sponsored_label(tag) -> bool:
+    pattern = re.compile(r"^\s*Gesponsert\s*$", re.I)
+    return any(
+        getattr(node, "parent", None) is not None
+        and getattr(node.parent, "name", None) not in {"script", "style", "noscript"}
+        for node in tag.find_all(string=pattern)
+    )
+
+
+def _dom_price_fields(card) -> dict[str, Any]:
+    price_root = card.find(
+        lambda tag: getattr(tag, "name", None)
+        and _data_test_contains(tag, "mms-price")
+    )
+    if price_root is None:
+        return {"final": None, "original": None, "savings": None}
+
+    strike = price_root.find(
+        lambda tag: getattr(tag, "name", None)
+        and "mms-strike-price-type" in str(tag.get("data-test") or "")
+    )
+    original = _parse_dom_euro(strike.get_text(" ", strip=True)) if strike else None
+
+    final = None
+    for node in price_root.find_all(string=re.compile(r"€")):
+        parent = getattr(node, "parent", None)
+        if parent is None:
+            continue
+        def excluded_price_region(tag) -> bool:
+            return bool(
+                getattr(tag, "name", None)
+                and (
+                    "mms-strike-price-type" in str(tag.get("data-test") or "")
+                    or "additional-info" in str(tag.get("data-test") or "")
+                )
+            )
+
+        if excluded_price_region(parent) or parent.find_parent(excluded_price_region):
+            continue
+        value = _parse_dom_euro(str(node))
+        if value is not None:
+            final = value
+            break
+
+    price_text = price_root.get_text(" ", strip=True)
+    pct = re.search(r"-\s*(\d+)\s*%", price_text)
+    return {
+        "final": final,
+        "original": original,
+        "savings": f"-{pct.group(1)}%" if pct else None,
+    }
+
+
+def extract_rendered_listing_rows(html: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Parse the rendered product-list DOM, including lazy sponsored cards.
+
+    Sponsored cards are injected after the SSR ``ProductListPage.products``
+    payload.  Only cards inside ``#mms-search-productlist`` are eligible; the
+    separate sponsored carousel outside that list is deliberately excluded.
     """
     diagnostics: dict[str, Any] = {
         "raw_gesponsert_occurrences": len(re.findall(r"\bGesponsert\b", html, re.I)),
+        "dom_label_occurrences": 0,
+        "outside_product_list_label_occurrences": 0,
         "visible_label_occurrences": 0,
         "mapped_label_occurrences": 0,
+        "unmapped_label_occurrences": 0,
         "sponsored_product_ids": [],
+        "rendered_listing_rows": 0,
     }
     try:
         from bs4 import BeautifulSoup
     except ImportError:
-        return diagnostics
+        return [], diagnostics
 
     try:
         soup = BeautifulSoup(html, "lxml")
     except Exception:
         soup = BeautifulSoup(html, "html.parser")
+    sponsored_pattern = re.compile(r"^\s*Gesponsert\s*$", re.I)
+    dom_sponsored_nodes = [
+        node for node in soup.find_all(string=sponsored_pattern)
+        if getattr(node, "parent", None) is not None
+        and getattr(node.parent, "name", None) not in {"script", "style", "noscript"}
+    ]
+    diagnostics["dom_label_occurrences"] = len(dom_sponsored_nodes)
+    root = soup.find(id="mms-search-productlist") or soup.find(
+        attrs={"data-test": "mms-search-srp-productlist"}
+    )
+    product_list = root.find("ul", attrs={"role": "list"}) if root else None
+    if product_list is None and root is not None:
+        product_list = root.find("ul")
+    if product_list is None:
+        diagnostics["outside_product_list_label_occurrences"] = len(dom_sponsored_nodes)
+        return [], diagnostics
+
+    product_list_label_count = sum(
+        1 for node in dom_sponsored_nodes
+        if node.parent is product_list
+        or node.parent.find_parent("ul", attrs={"role": "list"}) is product_list
+    )
+    diagnostics["outside_product_list_label_occurrences"] = max(
+        0, len(dom_sponsored_nodes) - product_list_label_count
+    )
+
+    rows: list[dict[str, Any]] = []
     sponsored_ids: set[str] = set()
-    label_pattern = re.compile(r"\bGesponsert\b", re.I)
-
-    for label in soup.find_all(string=label_pattern):
-        parent = getattr(label, "parent", None)
-        if parent is None or getattr(parent, "name", None) in {
-            "script", "style", "noscript",
-        }:
+    for item in product_list.find_all("li", recursive=False):
+        sponsored = _has_sponsored_label(item)
+        if sponsored:
+            diagnostics["visible_label_occurrences"] += 1
+        product_ids = {
+            pid
+            for link in item.find_all("a", href=True)
+            if (pid := _product_id_from_href(link.get("href")))
+        }
+        if len(product_ids) != 1:
+            if sponsored:
+                diagnostics["unmapped_label_occurrences"] += 1
             continue
-        diagnostics["visible_label_occurrences"] += 1
+        pid = next(iter(product_ids))
+        if sponsored:
+            diagnostics["mapped_label_occurrences"] += 1
+            sponsored_ids.add(pid)
 
-        ancestor = parent
-        for _ in range(10):
-            if ancestor is None or getattr(ancestor, "name", None) in {
-                "html", "body",
-            }:
-                break
-            product_ids: set[str] = set()
-            for link in ancestor.find_all("a", href=True):
-                match = re.search(r"-(\d+)\.html(?:[?#]|$)", link.get("href") or "")
-                if match:
-                    product_ids.add(match.group(1))
-            if len(product_ids) == 1:
-                sponsored_ids.update(product_ids)
-                diagnostics["mapped_label_occurrences"] += 1
-                break
-            ancestor = getattr(ancestor, "parent", None)
+        title_node = item.find(attrs={"data-test": "product-title"}) or item.find(
+            attrs={"data-test": "mms-sba-product-title"}
+        )
+        matching_links = [
+            link for link in item.find_all("a", href=True)
+            if _product_id_from_href(link.get("href")) == pid
+        ]
+        title = text_clean(title_node.get_text(" ", strip=True)) if title_node else None
+        if not title:
+            link_texts = [
+                text_clean(link.get_text(" ", strip=True))
+                for link in matching_links
+            ]
+            title = max((value for value in link_texts if value), key=len, default=None)
+        href = next((link.get("href") for link in matching_links if link.get("href")), "")
+        url = href if str(href).startswith("http") else MMKT_BASE + str(href)
+
+        price = _dom_price_fields(item)
+        badge_names: list[str] = []
+        for badge in item.find_all(attrs={"data-test": "mms-badge"}):
+            name = text_clean(badge.get_text(" ", strip=True))
+            if name and name not in badge_names:
+                badge_names.append(name)
+        raw_dt = MULTI_VALUE_DELIMITER.join(badge_names) or None
+        eng_dt = MULTI_VALUE_DELIMITER.join(translate_text(name) for name in badge_names) or None
+
+        rating_node = item.find(attrs={"data-test": "mms-customer-rating"})
+        rating_match = re.search(
+            r"([0-9]+(?:[.,][0-9]+)?)\s+von\s+5",
+            str(rating_node.get("aria-label") or "") if rating_node else "",
+            re.I,
+        )
+        count_node = item.find(attrs={"data-test": "mms-customer-rating-count"})
+        count_text = count_node.get_text(" ", strip=True) if count_node else ""
+        count_match = re.search(r"[\d.]+", count_text)
+        article = item.find("article")
+        article_data_test = str(article.get("data-test") or "") if article else ""
+        card_type = "sponsored-ad" if "mms-sba-product-tile" in article_data_test else "standard"
+
+        rows.append({
+            "sku_id": pid,
+            "retailer_sku_name": title,
+            "manufacturer": None,
+            "final_sku_price": format_euro(price["final"]),
+            "original_sku_price": format_euro(price["original"]),
+            "savings": price["savings"],
+            "sku_status": "Sponsored" if sponsored else None,
+            "discount_type": raw_dt,
+            "discount_type_en": eng_dt,
+            "star_rating": (
+                float(rating_match.group(1).replace(",", "."))
+                if rating_match else None
+            ),
+            "count_of_reviews": (
+                int(count_match.group(0).replace(".", ""))
+                if count_match else None
+            ),
+            "product_url": url,
+            "is_available": None,
+            "listing_card_type": card_type,
+        })
 
     diagnostics["sponsored_product_ids"] = sorted(sponsored_ids)
-    return diagnostics
+    diagnostics["rendered_listing_rows"] = len(rows)
+    return rows, diagnostics
+
+
+def extract_sponsored_diagnostics(html: str) -> dict[str, Any]:
+    """Return sponsored signals limited to the rendered listing itself."""
+    return extract_rendered_listing_rows(html)[1]
 
 
 def extract_sponsored_product_ids(html: str) -> set[str]:
@@ -253,7 +417,7 @@ def parse_listing_html(
     diagnostics: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Parse one MediaMarkt listing page into ordered per-SKU Main-field rows."""
-    sponsored_diagnostics = extract_sponsored_diagnostics(html)
+    rendered_rows, sponsored_diagnostics = extract_rendered_listing_rows(html)
     sponsored_ids = set(sponsored_diagnostics["sponsored_product_ids"])
     if diagnostics is not None:
         diagnostics.update(sponsored_diagnostics)
@@ -262,6 +426,7 @@ def parse_listing_html(
     if not state:
         if diagnostics is not None:
             diagnostics.update({
+                "state_listing_rows": 0,
                 "legacy_ad_data_rows": 0,
                 "parsed_sponsored_rows": 0,
                 "unmatched_sponsored_ids": sorted(sponsored_ids),
@@ -285,15 +450,14 @@ def parse_listing_html(
     if not ordered:  # fallback: JSON-LD order
         ordered = [(pid, {}) for pid in sorted(jsonld, key=lambda k: jsonld[k].get("position") or 0)]
 
-    ordered_ids = {pid for pid, _ in ordered}
     if diagnostics is not None:
+        diagnostics["state_listing_rows"] = len(ordered)
         diagnostics["legacy_ad_data_rows"] = sum(
             1 for _, entry in ordered if bool(entry.get("adData"))
         )
-        diagnostics["unmatched_sponsored_ids"] = sorted(sponsored_ids - ordered_ids)
 
-    base_rank = (page - 1) * 12
-    rows: list[dict[str, Any]] = []
+    base_rank = (page - 1) * 1000
+    state_rows: list[dict[str, Any]] = []
     for idx, (pid, entry) in enumerate(ordered, start=1):
         prod = products.get(pid) or {}
         ld = jsonld.get(pid) or {}
@@ -305,7 +469,7 @@ def parse_listing_html(
         url = prod.get("url") or ld.get("url") or ""
         if url and not url.startswith("http"):
             url = MMKT_BASE + url
-        rows.append(
+        state_rows.append(
             {
                 "position": base_rank + idx,
                 "sku_id": pid,
@@ -323,7 +487,29 @@ def parse_listing_html(
                 "is_available": (online.get(pid) or {}).get("isAvailableAndBuyable"),
             }
         )
+
+    state_by_id = {row["sku_id"]: row for row in state_rows}
+    rows: list[dict[str, Any]] = []
+    used_ids: set[str] = set()
+    for rendered in rendered_rows:
+        pid = rendered["sku_id"]
+        state_row = state_by_id.get(pid)
+        row = dict(state_row or rendered)
+        if rendered.get("sku_status") == "Sponsored":
+            row["sku_status"] = "Sponsored"
+        row["listing_card_type"] = rendered.get("listing_card_type")
+        row["position"] = base_rank + len(rows) + 1
+        rows.append(row)
+        used_ids.add(pid)
+    for state_row in state_rows:
+        if state_row["sku_id"] in used_ids:
+            continue
+        state_row["position"] = base_rank + len(rows) + 1
+        rows.append(state_row)
+
     if diagnostics is not None:
+        parsed_ids = {row["sku_id"] for row in rows}
+        diagnostics["unmatched_sponsored_ids"] = sorted(sponsored_ids - parsed_ids)
         diagnostics["parsed_sponsored_rows"] = sum(
             1 for row in rows if row.get("sku_status") == "Sponsored"
         )

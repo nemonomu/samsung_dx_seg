@@ -29,7 +29,7 @@ import importlib
 
 from common.config import LISTING_PAGE_SIZE, REFERENCES_ROOT, ensure_dirs, page_url, write_json
 from common.listing_retention import LISTING_ARCHIVE_RETENTION_HOURS, cleanup_listing_archives
-from common.parsers import parse_listing_html
+from common.parsers import extract_sponsored_diagnostics, parse_listing_html
 
 
 def load_cfg(product: str):
@@ -37,6 +37,7 @@ def load_cfg(product: str):
 
 CSV_COLUMNS = [
     "position",
+    "rank",
     "page",
     "sku_id",
     "retailer_sku_name",
@@ -67,6 +68,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-pages", type=int, default=0,
                    help="hard page cap (0 = derive from target)")
     p.add_argument("--sleep", type=float, default=1.0)
+    p.add_argument("--render-settle", type=float, default=15.0,
+                   help="seconds to wait for lazy sponsored listing cards before capture")
+    p.add_argument("--sponsored-extra-wait", type=float, default=20.0,
+                   help="extra seconds when Gesponsert placeholders still have no product link")
     p.add_argument("--timeout", type=int, default=90)
     p.add_argument("--transport", choices=["uc", "zenrows"], default="uc",
                    help="uc = local undetected-chromedriver (no ZenRows); zenrows = legacy")
@@ -122,23 +127,36 @@ def main() -> int:
         uc_session.open()
         print(f"[step01] transport=uc warmup={uc_session.warmup_status}")
 
-    def fetch_page(url: str) -> tuple[str, int, float, str | None]:
+    def fetch_page(url: str) -> tuple[str, int, float, str | None, float]:
         t0 = time.perf_counter()
         if uc_session is not None:
-            r = uc_session.navigate(url)
+            r = uc_session.navigate(url, settle_s=max(0.0, args.render_settle))
             html = r["html"]
+            extra_waited = 0.0
+            if not r["blocked"] and "__PRELOADED_STATE__" in html:
+                early = extract_sponsored_diagnostics(html)
+                unresolved = int(early.get("unmapped_label_occurrences") or 0)
+                if unresolved and args.sponsored_extra_wait > 0:
+                    extra_waited = max(0.0, args.sponsored_extra_wait)
+                    print(
+                        f"[step01] Sponsored placeholders={unresolved}; "
+                        f"waiting {extra_waited:.1f}s for product links ...",
+                        flush=True,
+                    )
+                    time.sleep(extra_waited)
+                    html = uc_session.driver.page_source or ""
             ok = 200 if (not r["blocked"] and "__PRELOADED_STATE__" in html) else 403
-            return html, ok, round(time.perf_counter() - t0, 2), r["error"]
+            return html, ok, round(time.perf_counter() - t0, 2), r["error"], extra_waited
         from common.zenrows import fetch_via_universal
         res = fetch_via_universal(url, timeout=args.timeout, proxy_country="de")
         body = res["body"]
-        return body.decode("utf-8", errors="replace"), res["status"], res["elapsed"], res["error"]
+        return body.decode("utf-8", errors="replace"), res["status"], res["elapsed"], res["error"], 0.0
 
     for page in range(1, max_pages + 1):
         url = page_url(base_url, page)
         print(f"[step01] sort={args.sort} page={page:>2}/{max_pages} fetching "
               f"(unique={len(seen)}/{target}) ...", flush=True)
-        html, status, elapsed, err = fetch_page(url)
+        html, status, elapsed, err, sponsored_extra_wait = fetch_page(url)
         (raw_dir / f"page_{page:02d}.html").write_text(html, encoding="utf-8")
         sponsored_diagnostics: dict[str, Any] = {}
         rows = (
@@ -160,6 +178,7 @@ def main() -> int:
             "parsed": len(rows),
             "new_unique": new,
             "elapsed": elapsed,
+            "sponsored_extra_wait": sponsored_extra_wait,
             "error": err,
             **sponsored_diagnostics,
         })
@@ -180,9 +199,10 @@ def main() -> int:
     if uc_session is not None:
         uc_session.close()
 
-    ordered = sorted(seen.values(), key=lambda r: r["position"])[: target]
+    ordered = list(seen.values())[: target]
     # renumber position 1..N contiguously after dedup/trim
     for i, row in enumerate(ordered, start=1):
+        row["position"] = i
         row["rank"] = i
 
     mapped_sponsored_ids = sorted({
@@ -202,14 +222,19 @@ def main() -> int:
     final_sponsored_rows = sum(
         1 for row in ordered if row.get("sku_status") == "Sponsored"
     )
+    listing_sponsored_labels = sum(
+        int(page_info.get("visible_label_occurrences") or 0)
+        for page_info in page_log
+    )
     sponsored_monitoring = {
         "raw_gesponsert_occurrences": raw_gesponsert_occurrences,
-        "visible_label_occurrences": sum(
-            int(page_info.get("visible_label_occurrences") or 0)
-            for page_info in page_log
-        ),
+        "visible_label_occurrences": listing_sponsored_labels,
         "mapped_label_occurrences": sum(
             int(page_info.get("mapped_label_occurrences") or 0)
+            for page_info in page_log
+        ),
+        "unmapped_label_occurrences": sum(
+            int(page_info.get("unmapped_label_occurrences") or 0)
             for page_info in page_log
         ),
         "mapped_product_id_count": len(mapped_sponsored_ids),
@@ -222,7 +247,7 @@ def main() -> int:
         ),
         "final_sponsored_rows": final_sponsored_rows,
         "warning_zero_collected": bool(
-            raw_gesponsert_occurrences and final_sponsored_rows == 0
+            listing_sponsored_labels and final_sponsored_rows == 0
         ),
     }
 
