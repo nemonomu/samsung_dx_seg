@@ -795,7 +795,7 @@ def review_content(review: dict[str, Any]) -> str | None:
     parts: list[str] = []
     for label, value in values:
         if value:
-            parts.append(f"{label}: '{value}'")
+            parts.append(f"{label}: {value}")
     body = feedback_text(feedback.get("full"))
     if body:
         parts.append(body)
