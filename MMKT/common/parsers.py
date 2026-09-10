@@ -768,9 +768,19 @@ def review_content(review: dict[str, Any]) -> str | None:
     if not isinstance(feedback, dict):
         feedback = {}
 
+    def feedback_text(value: Any) -> str | None:
+        # Pros/cons arrive as arrays in the API, but older responses use
+        # strings. Never stringify containers: [] is not authored content.
+        if isinstance(value, str):
+            return text_clean(value)
+        if isinstance(value, list):
+            items = [text_clean(item) for item in value if isinstance(item, str)]
+            return ", ".join(item for item in items if item) or None
+        return None
+
     def first_feedback_text(*keys: str) -> str | None:
         for key in keys:
-            value = text_clean(feedback.get(key))
+            value = feedback_text(feedback.get(key))
             if value:
                 return value
         return None
@@ -781,24 +791,18 @@ def review_content(review: dict[str, Any]) -> str | None:
         # so a PWA schema transition does not silently drop authored text.
         ("Vorteile", first_feedback_text("advantages", "positive", "pros")),
         ("Nachteile", first_feedback_text("disadvantages", "negative", "cons")),
-        ("Inhalt", text_clean(feedback.get("full"))),
     ]
     parts: list[str] = []
-    seen: set[str] = set()
     for label, value in values:
-        if not value:
-            continue
-        normalized = value.casefold()
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        parts.append(f"{label}: {value}" if label != "Inhalt" or len(values) > 1 else value)
+        if value:
+            parts.append(f"{label}: '{value}'")
+    body = feedback_text(feedback.get("full"))
+    if body:
+        parts.append(body)
     if not parts:
         return None
     # Preserve the source punctuation; a single pipe separates fields inside
     # one review, while the existing triple-pipe separates different reviews.
-    if len(parts) == 1 and parts[0].startswith("Inhalt: "):
-        return parts[0][len("Inhalt: "):]
     return " | ".join(parts)
 
 

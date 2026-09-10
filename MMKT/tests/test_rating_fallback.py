@@ -50,7 +50,11 @@ def review_page(written: int, *, total_results: int = 652, start: int = 0):
     reviews = []
     for idx in range(10):
         full = f"review text {start + idx}" if idx < written else ""
-        reviews.append({"id": f"r{start + idx}", "feedback": {"full": full}})
+        reviews.append({
+            "id": f"r{start + idx}",
+            "isRatingsOnly": not bool(full),
+            "feedback": {"advantages": [], "disadvantages": [], "full": full},
+        })
     return {"data": {"reviews": {"totalResults": total_results, "reviews": reviews}}}
 
 def comparison_response(*, average=None, total=None):
@@ -108,30 +112,30 @@ class RatingFallbackTests(unittest.TestCase):
         }
         self.assertEqual(
             review_content(review),
-            "Vorteile: Schönes Design. | Nachteile: Keine | Inhalt: Ich bin sehr zufrieden.",
+            "Vorteile: 'Schönes Design.' | Nachteile: 'Keine' | Ich bin sehr zufrieden.",
         )
 
     def test_review_content_supports_actual_schema_variants_and_blank_fallbacks(self):
         cases = [
             (
                 {"feedback": {"advantages": "Sehr leise"}},
-                "Vorteile: Sehr leise",
+                "Vorteile: 'Sehr leise'",
             ),
             (
                 {"feedback": {"disadvantages": "Keine", "full": "Gutes Gerät"}},
-                "Nachteile: Keine | Inhalt: Gutes Gerät",
+                "Nachteile: 'Keine' | Gutes Gerät",
             ),
             (
                 {"feedback": {"advantages": "Gut", "disadvantages": "Teuer"}},
-                "Vorteile: Gut | Nachteile: Teuer",
+                "Vorteile: 'Gut' | Nachteile: 'Teuer'",
             ),
             (
                 {"feedback": {"advantages": " ", "positive": "Legacy Vorteil"}},
-                "Vorteile: Legacy Vorteil",
+                "Vorteile: 'Legacy Vorteil'",
             ),
             (
                 {"feedback": {"advantages": "Identisch", "full": "Identisch"}},
-                "Vorteile: Identisch",
+                "Vorteile: 'Identisch' | Identisch",
             ),
             (
                 {"feedback": {"full": "Nur allgemeiner Text"}},
@@ -157,7 +161,7 @@ class RatingFallbackTests(unittest.TestCase):
         }
         self.assertEqual(
             _embedded_reviews(apollo)[0]["text"],
-            "Vorteile: Leise | Nachteile: Keine | Inhalt: Sehr zufrieden",
+            "Vorteile: 'Leise' | Nachteile: 'Keine' | Sehr zufrieden",
         )
 
     def test_pros_or_cons_only_review_counts_as_written(self):
@@ -173,7 +177,41 @@ class RatingFallbackTests(unittest.TestCase):
         }
         self.assertEqual(review_written_count([page]), 1)
         parsed = parse_product_reviews([page])
-        self.assertEqual(parsed["detailed_review_content"], "review1 - Vorteile: Sehr leise")
+        self.assertEqual(parsed["detailed_review_content"], "review1 - Vorteile: 'Sehr leise'")
+
+    def test_review_arrays_and_empty_content(self):
+        cases = [
+            ({"advantages": ["Tolles Bild, guter Ton, leichte Installation"],
+              "disadvantages": ["Noch keine gefunden"], "full": "Extrem gutes Bild."},
+             "Vorteile: 'Tolles Bild, guter Ton, leichte Installation' | Nachteile: 'Noch keine gefunden' | Extrem gutes Bild."),
+            ({"advantages": [], "disadvantages": [], "full": None}, None),
+            ({"advantages": [None, "", "  "], "disadvantages": None, "full": " "}, None),
+            ({"advantages": [], "disadvantages": [], "full": "Alles bestens"}, "Alles bestens"),
+            ({"advantages": [" Leise ", "", None, "Gutes Bild"], "disadvantages": []},
+             "Vorteile: 'Leise, Gutes Bild'"),
+            ({"advantages": [], "positive": ["Legacy Vorteil"]}, "Vorteile: 'Legacy Vorteil'"),
+            ({"advantages": [], "disadvantages": ["Teuer"]}, "Nachteile: 'Teuer'"),
+            ({"advantages": {}, "disadvantages": False, "full": None}, None),
+        ]
+        for feedback, expected in cases:
+            with self.subTest(feedback=feedback):
+                self.assertEqual(review_content({"feedback": feedback}), expected)
+
+    def test_empty_array_reviews_do_not_fill_target_and_next_page_is_numbered(self):
+        pages = [review_page(10, start=0), review_page(9, start=10)]
+        self.assertEqual(review_written_count(pages), 19)
+        self.assertTrue(should_fetch_more_review_pages(pages, fetched_pages=2, max_pages=8))
+        pages.append(review_page(1, start=20))
+        self.assertEqual(review_written_count(pages), 20)
+        self.assertFalse(should_fetch_more_review_pages(pages, fetched_pages=3, max_pages=8))
+        parsed = parse_product_reviews(pages)
+        expected = [f"review{i + 1} - review text {i}" for i in range(19)]
+        expected.append("review20 - review text 20")
+        self.assertEqual(parsed["detailed_review_content"], " ||| ".join(expected))
+        self.assertEqual(parsed["_written_review_count"], 20)
+        empty = parse_product_reviews([review_page(0)])
+        self.assertIsNone(empty["detailed_review_content"])
+        self.assertEqual(empty["_written_review_count"], 0)
 
     def test_pagination_stops_at_actual_last_page(self):
         pages = [
