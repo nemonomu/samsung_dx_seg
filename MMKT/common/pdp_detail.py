@@ -29,7 +29,9 @@ import importlib
 
 from common.config import REFERENCES_ROOT, ensure_dirs, write_json
 from common.parsers import (
+    IS_BUNDLE,
     PRIMARY_SPEC_EXPECTED_NULL,
+    is_bundle_product,
     parse_comparison_detail,
     parse_pdp_html,
     parse_product_reviews,
@@ -61,7 +63,7 @@ def csv_columns(cfg):
         else []
     )
     return [
-        "rank", "sku_id", "product_url",
+        "rank", "sku_id", "product_url", IS_BUNDLE,
         "delivery_availability", "delivery_availability_en",
         "pick_up_availability", "pick_up_availability_en",
         "sku", *cfg.SPEC_FIELDS,
@@ -110,7 +112,42 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def merge_detail(html: str, detail: dict[str, Any], sku_id: str, cfg) -> dict[str, Any]:
+def _parsed_row_reviews(row: dict[str, Any]) -> dict[str, Any]:
+    resps = list(row.get("_review_resps") or [])
+    statuses = list(row.get("_review_statuses") or [])
+    # Keep page positions: an empty later page does not prove an unrated SKU.
+    return parse_product_reviews([
+        resp if not statuses or (idx < len(statuses) and statuses[idx] == 200) else None
+        for idx, resp in enumerate(resps)
+    ])
+
+
+def _apply_review_ratings(row: dict[str, Any], reviews: dict[str, Any]) -> None:
+    if str(row.get(IS_BUNDLE) or "").lower() in {"true", "1"}:
+        # Never retain a component/comparison/listing average for a bundle.
+        row["star_rating"] = reviews.get("star_rating")
+        row["count_of_star_ratings"] = reviews.get("count_of_star_ratings")
+        row["count_of_reviews"] = reviews.get("count_of_reviews")
+        if reviews.get("_empty_review_result"):
+            row["star_rating"] = 0.0
+            row["count_of_star_ratings"] = 0
+        elif reviews.get("count_of_star_ratings") == 0:
+            row["star_rating"] = 0.0
+        return
+    # Preserve the established comparison-first policy for ordinary products.
+    if row.get("star_rating") in (None, "") and reviews.get("star_rating") is not None:
+        row["star_rating"] = reviews["star_rating"]
+    if reviews.get("count_of_star_ratings") is not None:
+        row["count_of_star_ratings"] = reviews["count_of_star_ratings"]
+        if reviews["count_of_star_ratings"] == 0:
+            row["star_rating"] = 0.0
+    if reviews.get("count_of_reviews") is not None:
+        row["count_of_reviews"] = reviews["count_of_reviews"]
+
+
+def merge_detail(
+    html: str, detail: dict[str, Any], sku_id: str, cfg, *, product_name: str | None = None
+) -> dict[str, Any]:
     """Build one detail row. GraphQL-only: the comparison response carries specs/
     delivery/pickup/ratings/similar; reviews + summary come alongside. Falls back
     to SSR-HTML parsing only if the comparison response is empty AND html exists."""
@@ -120,16 +157,15 @@ def merge_detail(html: str, detail: dict[str, Any], sku_id: str, cfg) -> dict[st
         row = parse_pdp_html(html, sku_id, cfg)
     if not row:
         row = {"sku_id": str(sku_id)}
-    reviews = parse_product_reviews(detail.get("review_resps") or [])
+    row[IS_BUNDLE] = bool(row.get(IS_BUNDLE)) or is_bundle_product(product_name)
+    row["_review_resps"] = list(detail.get("review_resps") or [])
+    row["_review_statuses"] = list((detail.get("gql_status") or {}).get("reviews") or [])
+    reviews = _parsed_row_reviews(row)
     summary = parse_reviews_summary(detail.get("summary_resp"))
-    # Comparison is the primary average; the reviews distribution is the
-    # authoritative fallback when comparison reviewStatistics is absent.
-    if row.get("star_rating") in (None, "") and reviews.get("star_rating") is not None:
-        row["star_rating"] = reviews["star_rating"]
-    # Reviews query is authoritative for counts + the top-20 text-bearing reviews.
-    if reviews.get("count_of_star_ratings") is not None:
-        row["count_of_star_ratings"] = reviews["count_of_star_ratings"]
     row["count_of_reviews"] = reviews.get("count_of_reviews")
+    _apply_review_ratings(row, reviews)
+    if row[IS_BUNDLE]:
+        row["detailed_review_content"] = None
     if reviews.get("detailed_review_content"):
         row["detailed_review_content"] = reviews["detailed_review_content"]
     row["summarized_review_content"] = summary
@@ -163,6 +199,9 @@ def backfill_missing_pdp_fields(
             recovered.append(field)
     if primary_spec_expected_null(ssr_row):
         row[PRIMARY_SPEC_EXPECTED_NULL] = True
+    if ssr_row.get(IS_BUNDLE):
+        row[IS_BUNDLE] = True
+        _apply_review_ratings(row, _parsed_row_reviews(row))
     return True, recovered
 
 
@@ -174,12 +213,25 @@ def _has_value(value: Any) -> bool:
 
 def _merge_missing_values(row: dict[str, Any], parsed: dict[str, Any], cfg) -> list[str]:
     recovered: list[str] = []
+    bundle = str(row.get(IS_BUNDLE) or "").lower() in {"true", "1"} or parsed.get(IS_BUNDLE) is True
+    review_fields = {
+        "star_rating", "count_of_star_ratings", "count_of_reviews",
+        "detailed_review_content", "summarized_review_content",
+    }
     for field in csv_columns(cfg):
+        if field == IS_BUNDLE or (bundle and field in review_fields):
+            continue
+        if field in review_fields and row.get(field) not in (None, ""):
+            continue
         if not _has_value(row.get(field)) and _has_value(parsed.get(field)):
             row[field] = parsed[field]
             recovered.append(field)
     if primary_spec_expected_null(parsed):
         row[PRIMARY_SPEC_EXPECTED_NULL] = True
+    if bundle:
+        row[IS_BUNDLE] = True
+        if isinstance(row.get("_review_resps"), list):
+            _apply_review_ratings(row, _parsed_row_reviews(row))
     return recovered
 
 
@@ -294,6 +346,11 @@ def _int_value(value: Any, default: int = 0) -> int:
 
 def review_row_is_partial(row: dict[str, Any]) -> bool:
     """True only when review collection ended before a trustworthy result."""
+    if str(row.get(IS_BUNDLE) or "").lower() in {"true", "1"} and any(
+        row.get(field) in (None, "")
+        for field in ("star_rating", "count_of_star_ratings", "count_of_reviews")
+    ):
+        return True
     statuses = row.get("_review_statuses")
     if not isinstance(statuses, list):
         statuses = [
@@ -321,11 +378,8 @@ def review_row_is_partial(row: dict[str, Any]) -> bool:
 def _refresh_review_row(row: dict[str, Any], *, max_pages: int) -> None:
     resps = list(row.get("_review_resps") or [])
     statuses = list(row.get("_review_statuses") or [])
-    parsed = parse_product_reviews(resps)
-    if parsed.get("count_of_star_ratings") is not None:
-        row["count_of_star_ratings"] = parsed["count_of_star_ratings"]
-    if parsed.get("count_of_reviews") is not None:
-        row["count_of_reviews"] = parsed["count_of_reviews"]
+    parsed = _parsed_row_reviews(row)
+    _apply_review_ratings(row, parsed)
     row["detailed_review_content"] = parsed.get("detailed_review_content") or ""
     row["review_collected_count"] = parsed.get("_written_review_count", 0)
     row["gql_reviews"] = ",".join(str(status) for status in statuses)
@@ -386,6 +440,13 @@ def recover_partial_reviews(
                 (idx for idx, status in enumerate(statuses) if status != 200),
                 None,
             )
+            if str(row.get(IS_BUNDLE) or "").lower() in {"true", "1"} and any(
+                row.get(field) in (None, "")
+                for field in ("star_rating", "count_of_star_ratings", "count_of_reviews")
+            ):
+                # Missing/GraphQL-error statistics need page 1 again, even if
+                # the HTTP response was 200. A later empty page proves nothing.
+                failed_index = 0
             page_no = failed_index + 1 if failed_index is not None else len(statuses) + 1
             total_pages = review_total_pages(resps)
             last_page = min(recovery_max, total_pages or recovery_max)
@@ -480,8 +541,14 @@ def main() -> int:
     kept_rows: list[dict[str, Any]] = []
     spec0 = cfg.SPEC_FIELDS[0]  # product's first spec column = "row has detail" marker
     if args.resume and out_path.exists():
+        bundle_ids = {
+            str(t.get("sku_id") or "").strip() for _, t in valid
+            if is_bundle_product(t.get("retailer_sku_name"))
+        }
         with open(out_path, encoding="utf-8-sig") as fh:
             for r in csv.DictReader(fh):
+                if r.get("sku_id") in bundle_ids and str(r.get(IS_BUNDLE) or "").lower() not in {"true", "1"}:
+                    continue  # Recollect legacy mixed-source bundle ratings.
                 is_review_partial = review_row_is_partial(r)
                 if primary_spec_satisfied(r, cfg) and not is_review_partial:
                     kept_rows.append(r)
@@ -533,7 +600,10 @@ def main() -> int:
                             session.open()
                         detail = session.fetch_pdp_detail(url, sku_id)
                         nav = detail["nav_status"]
-                        candidate = merge_detail(detail["html"], detail, sku_id, cfg)
+                        candidate = merge_detail(
+                            detail["html"], detail, sku_id, cfg,
+                            product_name=t.get("retailer_sku_name"),
+                        )
                         comparison_matched = bool(candidate.pop("_comparison_matched", False))
                         pdp_html: str | None = None
                         if needs_pdp_backfill(candidate, nav, cfg):

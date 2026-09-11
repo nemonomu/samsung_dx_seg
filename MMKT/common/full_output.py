@@ -25,6 +25,7 @@ from typing import Any
 import importlib
 
 from common.config import ACCOUNT_NAME, COUNTRY, PAGE_TYPE, ensure_dirs, read_csv, write_json
+from common.parsers import IS_BUNDLE, is_bundle_product
 
 PRIMARY_SPEC_EXPECTED_NULL = "_primary_spec_expected_null"
 
@@ -93,6 +94,18 @@ def resolve_rating_fields(
     """
     m = main_listing or {}
     b = bsr_listing or {}
+    bundle = _truthy(detail.get(IS_BUNDLE)) or any(
+        is_bundle_product(listing.get("retailer_sku_name")) for listing in (m, b)
+    )
+    if bundle:
+        # Legacy detail rows have mixed-source ratings. Recollect those bundles;
+        # absence of the marker must not turn an old component rating into fact.
+        if not _truthy(detail.get(IS_BUNDLE)):
+            return "", "", ""
+        return tuple(
+            detail[field] if detail.get(field) not in (None, "") else ""
+            for field in ("star_rating", "count_of_star_ratings", "count_of_reviews")
+        )
     listing_star = first(m.get("star_rating"), b.get("star_rating"))
     listing_rating_count = first(
         m.get("count_of_star_ratings"), m.get("count_of_reviews"),

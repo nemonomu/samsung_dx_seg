@@ -23,6 +23,12 @@ MULTI_VALUE_DELIMITER = " ||| "
 # intentionally NULL by policy. It is persisted only in the step02 detail CSV
 # so resume/retry logic can distinguish a valid NULL from a parsing failure.
 PRIMARY_SPEC_EXPECTED_NULL = "_primary_spec_expected_null"
+IS_BUNDLE = "_is_bundle"
+
+
+def is_bundle_product(name: Any) -> bool:
+    """Use the target product title, never another product on the same page."""
+    return bool(re.search(r"\bbundle\b", str(name or ""), re.I))
 
 # German marketing/discount labels → English (딕셔너리 방식, [수집 후 번역 필요]).
 TEXT_TRANSLATIONS = {
@@ -837,6 +843,7 @@ def parse_pdp_html(html: str, sku_id: str, cfg: Any = None) -> dict[str, Any] | 
     spec_extractor = getattr(cfg, "extract_pdp_spec", None) or tv_extract_pdp_spec
     product_name = text_clean(product.get("title") or product.get("name"))
     spec = spec_extractor(features, product_name)
+    bundle = is_bundle_product(product_name)
 
     # delivery_availability = the REAL displayed text (DOM), German + English.
     d_de, d_en = extract_delivery_text(html)
@@ -850,9 +857,14 @@ def parse_pdp_html(html: str, sku_id: str, cfg: Any = None) -> dict[str, Any] | 
     avg = stats["average"] if stats["average"] is not None else ld_rating
     total = stats["total"] if stats["total"] is not None else ld_count
     reviews = _embedded_reviews(apollo)
+    if bundle:
+        # A bundle page also embeds its components. Only its own reviews query
+        # can supply ratings/reviews; page-wide JSON-LD/entities are not scoped.
+        avg, total, reviews = None, None, []
 
     return {
         "sku_id": sku_id,
+        IS_BUNDLE: bundle,
         # No.37-38 delivery / pickup
         "delivery_availability": d_de,
         "delivery_availability_en": d_en,
@@ -883,7 +895,8 @@ def parse_pdp_html(html: str, sku_id: str, cfg: Any = None) -> dict[str, Any] | 
 def _unwrap_data(resp: Any) -> dict[str, Any]:
     """Accept a full GraphQL response ({data:{...}}) or the inner data dict."""
     if isinstance(resp, dict):
-        return resp.get("data", resp) if "data" in resp else resp
+        data = resp.get("data", resp)
+        return data if isinstance(data, dict) else {}
     return {}
 
 
@@ -913,6 +926,8 @@ def _rating_distribution_stats(distribution: Any) -> tuple[int | None, float | N
         if not 1 <= value <= 5 or count < 0:
             return None, None
         pairs.append((value, count))
+    if len(pairs) != 5 or {value for value, _ in pairs} != {1, 2, 3, 4, 5}:
+        return None, None
     total = sum(count for _, count in pairs)
     if total == 0:
         return 0, None
@@ -931,13 +946,34 @@ def parse_product_reviews(resp_pages: Any, *, top: int = 20) -> dict[str, Any]:
     total_results: int | None = None
     distribution_sum: int | None = None
     distribution_average: float | None = None
+    empty_result = False
     merged: dict[str, dict[str, Any]] = {}  # review id -> review
-    for page in pages:
+    for page_index, page in enumerate(pages):
+        if isinstance(page, dict) and page.get("errors"):
+            continue
         data = _unwrap_data(page)
         reviews_obj = data.get("reviews") or {}
+        if not isinstance(reviews_obj, dict):
+            continue
         if total_results is None and reviews_obj.get("totalResults") is not None:
             total_results = reviews_obj.get("totalResults")
-        dist = (reviews_obj.get("rating") or {}).get("distribution") or []
+        rating = reviews_obj.get("rating")
+        dist = rating.get("distribution") if isinstance(rating, dict) else None
+        if page_index == 0:
+            # Explicit successful empty result, not a missing/failed response.
+            # A positive or malformed distribution must never become zero just
+            # because totalResults is zero (ratings-only products exist).
+            empty_result = (
+                reviews_obj.get("totalResults") == 0
+                and reviews_obj.get("reviews") == []
+                and "rating" in reviews_obj
+                and (
+                    rating is None
+                    or rating == {}
+                    or (isinstance(rating, dict) and dist in (None, []))
+                    or _rating_distribution_stats(dist)[0] == 0
+                )
+            )
         if dist and distribution_sum is None:
             distribution_sum, distribution_average = _rating_distribution_stats(dist)
         for rv in reviews_obj.get("reviews") or []:
@@ -969,6 +1005,9 @@ def parse_product_reviews(resp_pages: Any, *, top: int = 20) -> dict[str, Any]:
         "count_of_reviews": total_results,
         "detailed_review_content": _format_reviews(written[:top]),
         "_written_review_count": len(written),
+        "_empty_review_result": (
+            empty_result and not merged and distribution_sum in (None, 0)
+        ),
     }
 
 
@@ -1055,6 +1094,7 @@ def parse_comparison_detail(resp: Any, sku_id: str, cfg: Any = None) -> dict[str
     spec_extractor = getattr(cfg, "extract_pdp_spec", None) or tv_extract_pdp_spec
     product_name = text_clean(pa.get("title") or pa.get("name"))
     spec = spec_extractor(feats, product_name)
+    bundle = is_bundle_product(product_name)
 
     agg = main.get("cofrProductAggregate") or {}
     deliv = (agg.get("cofrDeliveryFeature") or {}).get("delivery") or {}
@@ -1066,6 +1106,8 @@ def parse_comparison_detail(resp: Any, sku_id: str, cfg: Any = None) -> dict[str
     p_en = PICKUP_AVAILABLE_EN if pickable else PICKUP_UNAVAILABLE_EN
     avg = stats.get("averageOverallRating")
     total = stats.get("totalReviewCount")
+    if bundle:
+        avg, total = None, None
 
     similar_titles: list[str] = []
     for o in others:
@@ -1075,6 +1117,7 @@ def parse_comparison_detail(resp: Any, sku_id: str, cfg: Any = None) -> dict[str
 
     return {
         "sku_id": sku_id,
+        IS_BUNDLE: bundle,
         "delivery_availability": d_de, "delivery_availability_en": d_en,
         "pick_up_availability": p_de, "pick_up_availability_en": p_en,
         "sku": _sku_from_features_or_name(feats, product_name),
