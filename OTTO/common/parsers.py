@@ -395,18 +395,19 @@ def extract_summarized_review_content(soup: BeautifulSoup) -> str | None:
 
 def parse_detail_reviews(soup: BeautifulSoup) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-    for item in soup.select("[data-review-id], .js_pdp_cr-item"):
+    row_index_by_id: dict[str, int] = {}
+    # Gallery images and their popups reuse review IDs. Only read cards inside
+    # the review list so an image cannot consume the ID before its actual body.
+    for item in soup.select(
+        "#cr-review-list .pdp_cr-item-content, #cr-review-list .js_pdp_cr-item, "
+        ".js_pdp_cr-list .pdp_cr-item-content, .js_pdp_cr-list .js_pdp_cr-item"
+    ):
         review_id = item.get("data-review-id") or ""
-        if review_id and review_id in seen_ids:
-            continue
-        if review_id:
-            seen_ids.add(review_id)
         text_node = item.select_one(".js_pdp_cr-item__reviewText, .pdp_cr-item__reviewText")
         meta_node = item.select_one(".js_pdp_cr-item__review-metadata")
         title_node = item.select_one(".js_pdp_cr-item__title")
         verified_node = item.select_one("[data-qa='cr-review-verifiedPurchase']")
-        rows.append({
+        row = {
             "review_id": review_id or None,
             "product_id": item.get("data-product-id"),
             "rating": int_or_none(item.get("data-rating")),
@@ -418,7 +419,17 @@ def parse_detail_reviews(soup: BeautifulSoup) -> list[dict[str, Any]]:
             "metadata": text_clean(meta_node.get_text(" ", strip=True)) if meta_node else None,
             "verified_purchase_text": text_clean(verified_node.get_text(" ", strip=True)) if verified_node else None,
             "review_text": text_clean(text_node.get_text(" ", strip=True)) if text_node else None,
-        })
+        }
+        if review_id and review_id in row_index_by_id:
+            index = row_index_by_id[review_id]
+            # Keep ratings-only cards, but let a later copy supply a missing
+            # body. Preserve the original list order and one row per review ID.
+            if not rows[index]["review_text"] and row["review_text"]:
+                rows[index] = row
+            continue
+        if review_id:
+            row_index_by_id[review_id] = len(rows)
+        rows.append(row)
     return rows
 
 def format_detailed_review_content(rows: list[dict[str, Any]], limit: int = 20) -> str | None:
