@@ -12,15 +12,13 @@ def _normalized(value: Any) -> str:
     return "".join(char for char in text if not unicodedata.combining(char))
 
 
-def is_advertisement(row: dict[str, Any]) -> bool:
-    return (
-        _normalized(row.get("sku_status")).strip() in {"sponsored", "gesponsert"}
-        or row.get("listing_card_type") == "sponsored-ad"
-    )
+def is_banner_ad(row: dict[str, Any]) -> bool:
+    """Exclude separate ad tiles, not Sponsored labels on standard products."""
+    return row.get("listing_card_type") == "sponsored-ad"
 
 
 def listing_exclusion_reason(row: dict[str, Any], product: str) -> str | None:
-    if is_advertisement(row):
+    if is_banner_ad(row):
         return "advertisement"
     if str(product).casefold() != "ldy":
         return None

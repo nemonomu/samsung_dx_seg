@@ -55,7 +55,7 @@ with patch.dict(sys.modules, {"common.config": settings, "common.zenrows": trans
     notify = importlib.import_module("common.notify")
 
 
-def page_html(products=(), *, ads=(), shown=12, total=100, more=True, legacy_ads=()):
+def page_html(products=(), *, ads=(), shown=12, total=100, more=True, legacy_ads=(), sponsored=()):
     apollo = {"page": {"__typename": "ProductListPage", "products": []}}
     cards = []
     for sku_id, name in products:
@@ -64,7 +64,8 @@ def page_html(products=(), *, ads=(), shown=12, total=100, more=True, legacy_ads
             "adData": {"campaign": "test"} if sku_id in legacy_ads else None})
         apollo[sku_id] = {"__typename": "GraphqlProduct", "id": sku_id,
                          "title": name, "url": f"/de/product/_test-{sku_id}.html"}
-        cards.append(f'<li><article><a href="/de/product/_test-{sku_id}.html">{escape(name)}</a></article></li>')
+        label = '<span>Gesponsert</span>' if sku_id in sponsored else ''
+        cards.append(f'<li><article>{label}<a href="/de/product/_test-{sku_id}.html">{escape(name)}</a></article></li>')
     for sku_id, name in ads:
         cards.insert(0, f'<li><article data-test="mms-sba-product-tile"><span>Gesponsert</span>'
                      f'<a href="/de/product/_test-{sku_id}.html">{escape(name)}</a></article></li>')
@@ -112,22 +113,59 @@ class ListingPolicyTests(unittest.TestCase):
     def test_ref_category_keeps_refrigerators(self):
         self.assertIsNone(listing_exclusion_reason({"retailer_sku_name": "K\u00fchlschrank"}, "REF"))
 
-    def test_same_sku_organic_occurrence_survives_dom_and_legacy_ads(self):
+    def test_same_sku_standard_card_survives_banner_and_keeps_its_own_status(self):
         for legacy in [(), ("111",)]:
             html = page_html([("111", "Waschmaschine"), ("222", "Waschmaschine")],
                              ads=[("111", "Waschmaschine")], legacy_ads=legacy)
             rows = filter_listing_rows(parse_listing_html(html), "ldy")
             self.assertEqual(["111", "222"], [row["sku_id"] for row in rows])
-            self.assertTrue(all(row["sku_status"] is None for row in rows))
+            self.assertEqual("Sponsored" if legacy else None, rows[0]["sku_status"])
+            self.assertIsNone(rows[1]["sku_status"])
+            self.assertTrue(all(row["listing_card_type"] == "standard" for row in rows))
 
-    def test_ad_only_state_and_dom_rows_do_not_return_via_fallback(self):
+    def test_native_ad_data_is_retained_while_banner_is_excluded(self):
         html = page_html([("111", "Waschmaschine")], legacy_ads=("111",),
                          ads=[("3036864", "K\u00fchlgefrierkombination")])
-        self.assertEqual([], filter_listing_rows(parse_listing_html(html), "ldy"))
+        rows = filter_listing_rows(parse_listing_html(html), "ldy")
+        self.assertEqual(["111"], [row["sku_id"] for row in rows])
+        self.assertEqual("Sponsored", rows[0]["sku_status"])
+
+    def test_sponsored_labels_on_standard_cards_are_retained_for_all_categories(self):
+        html = page_html([("111", "Waschmaschine")], sponsored=("111",),
+                         ads=[("222", "Waschmaschine")])
+        for category in ("tv", "ref", "ldy"):
+            with self.subTest(category=category):
+                rows = filter_listing_rows(parse_listing_html(html), category)
+                self.assertEqual(["111"], [row["sku_id"] for row in rows])
+                self.assertEqual("Sponsored", rows[0]["sku_status"])
+
+    def test_legacy_csv_without_card_type_does_not_exclude_sponsored_products(self):
+        row = {"sku_id": "111", "retailer_sku_name": "Waschmaschine", "sku_status": "Sponsored"}
+        self.assertEqual([row], filter_listing_rows([row], "ldy"))
+
+    def test_sponsored_status_does_not_override_laundry_type_exclusions(self):
+        for name, reason in [("Trockner", "standalone_dryer"), ("K\u00fchlschrank", "refrigerator")]:
+            row = {"sku_status": "Sponsored", "listing_card_type": "standard", "retailer_sku_name": name}
+            self.assertEqual(reason, listing_exclusion_reason(row, "ldy"))
 
     def test_ad_card_without_visible_label_is_excluded(self):
         html = page_html(ads=[("111", "Waschmaschine")]).replace("<span>Gesponsert</span>", "")
         self.assertEqual([], filter_listing_rows(parse_listing_html(html), "ldy"))
+
+    def test_banner_inside_wrapper_is_still_excluded(self):
+        html = page_html(ads=[("111", "Waschmaschine")]).replace(
+            '<article data-test="mms-sba-product-tile">', '<article><div data-test="mms-sba-product-tile">'
+        ).replace('</article>', '</div></article>')
+        self.assertEqual([], filter_listing_rows(parse_listing_html(html), "ldy"))
+
+    def test_state_fallback_keeps_native_sponsored_but_not_known_banner(self):
+        html = page_html([("111", "Waschmaschine"), ("222", "Waschmaschine")],
+                         ads=[("222", "Waschmaschine")], legacy_ads=("111",))
+        for sku_id in ("111", "222"):
+            html = html.replace(f'<li><article><a href="/de/product/_test-{sku_id}.html">Waschmaschine</a></article></li>', '')
+        rows = filter_listing_rows(parse_listing_html(html), "ldy")
+        self.assertEqual(["111"], [row["sku_id"] for row in rows])
+        self.assertEqual("Sponsored", rows[0]["sku_status"])
 
     def test_multi_product_ad_cannot_reenter_through_state_fallback(self):
         html = page_html([("111", "Waschmaschine"), ("222", "Waschmaschine")],
@@ -139,7 +177,7 @@ class ListingPolicyTests(unittest.TestCase):
         self.assertEqual(["111"], [r["sku_id"] for r in rows])
 
     def test_legacy_csv_filter_renumbers_only_when_rows_are_removed(self):
-        rows = [{"sku_id": "1", "rank": "1", "sku_status": "Sponsored"},
+        rows = [{"sku_id": "1", "rank": "1", "sku_status": "Sponsored", "listing_card_type": "sponsored-ad"},
                 {"sku_id": "1", "rank": "2", "sku_status": ""}]
         result = filter_listing_rows(rows, "ldy", renumber=True)
         self.assertEqual([{"sku_id": "1", "rank": "1", "position": "1", "sku_status": ""}], result)
@@ -158,11 +196,12 @@ class CollectionTests(unittest.TestCase):
             return response(page_html([(str(page), "Waschmaschine"),
                                        (str(1000 + page), "W\u00e4rmepumpentrockner")],
                                       ads=[("9999", "Waschmaschine")], shown=page * 2,
-                                      total=1000, more=True))
+                                      total=1000, more=True, sponsored=(str(page),)))
         rows, log, reason = self.collect(fetch)
         self.assertEqual("target_reached", reason)
         self.assertEqual(list(range(1, 301)), calls)
         self.assertEqual(300, len(rows))
+        self.assertTrue(all(row["sku_status"] == "Sponsored" for row in rows))
         self.assertEqual({"advertisement": 1, "standalone_dryer": 1}, log[0]["excluded"])
 
     def test_bsr_stops_at_100_and_trims_the_last_page(self):
@@ -170,10 +209,12 @@ class CollectionTests(unittest.TestCase):
         def fetch(page):
             calls.append(page)
             products = [(str(n), "Waschmaschine") for n in range((page - 1) * 12 + 1, page * 12 + 1)]
-            return response(page_html(products, ads=[("9999", "Waschmaschine")], shown=page * 12, total=600))
+            return response(page_html(products, ads=[("9999", "Waschmaschine")], shown=page * 12, total=600,
+                                      sponsored=tuple(sku_id for sku_id, _ in products)))
         rows, _, reason = self.collect(fetch, target=100)
         self.assertEqual((100, 9, "target_reached"), (len(rows), len(calls), reason))
         self.assertEqual("100", rows[-1]["sku_id"])
+        self.assertTrue(all(row["sku_status"] == "Sponsored" for row in rows))
 
     def test_last_page_keeps_a_partial_result_including_bundles(self):
         fetch = Mock(return_value=response(page_html([
@@ -251,7 +292,7 @@ class SavedOutputTests(unittest.TestCase):
             session = Mock(warmup_status=200)
             session.navigate.side_effect = [
                 {"html": page_html([("1", "Waschmaschine"), ("2", "Trockner")],
-                                   ads=[("3", "Waschmaschine")], shown=2, total=3),
+                                   ads=[("3", "Waschmaschine")], sponsored=("1",), shown=2, total=3),
                  "blocked": False, "error": None},
                 {"html": page_html([("4", "Waschmaschine und Trockner Bundle")],
                                    shown=3, total=3, more=False), "blocked": False, "error": None}]
@@ -265,11 +306,18 @@ class SavedOutputTests(unittest.TestCase):
             rows = read_csv(root / "mmkt_listing_bsr.csv")
             self.assertEqual(["1", "4"], [r["sku_id"] for r in rows])
             self.assertEqual(["1", "2"], [r["rank"] for r in rows])
-            self.assertTrue(all(not r["sku_status"] for r in rows))
+            self.assertEqual(["Sponsored", ""], [r["sku_status"] for r in rows])
+            self.assertEqual(["standard", "standard"], [r["listing_card_type"] for r in rows])
+            self.assertEqual(rows, filter_listing_rows(rows, "ldy"))
             manifest = json.loads((root / "mmkt_step01_listing_bsr_manifest.json").read_text())
             self.assertEqual((100, 2, "last_page", True),
                              (manifest["target"], manifest["pages_fetched"],
                               manifest["stop_reason"], manifest["success"]))
+            monitoring = manifest["sponsored_monitoring"]
+            self.assertEqual(1, monitoring["final_sponsored_rows"])
+            self.assertEqual(0, monitoring["final_banner_ad_rows"])
+            self.assertFalse(monitoring["warning_advertisements_collected"])
+            self.assertEqual(1, monitoring["excluded_rows"])
             session.close.assert_called_once()
 
     def test_detail_resume_removes_excluded_rows_and_keeps_good_rows_outside_slice(self):
@@ -279,7 +327,8 @@ class SavedOutputTests(unittest.TestCase):
                      "Trockner", "K\u00fchlschrank", "Waschmaschine"]
             targets = [{"sku_id": str(i), "product_url": f"https://example.invalid/{i}",
                         "retailer_sku_name": name, "rank": str(i),
-                        "sku_status": "Sponsored" if i == 6 else ""}
+                        "sku_status": "Sponsored" if i in (1, 6) else "",
+                        "listing_card_type": "sponsored-ad" if i == 6 else "standard"}
                        for i, name in enumerate(names, 1)]
             write_csv(root / "mmkt_listing_main.csv", targets)
             cached = [{"sku_id": row["sku_id"], "rank": row["rank"], "ldy_capacity": "8kg",
@@ -334,10 +383,12 @@ class SavedOutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             common = {"batch_id": "test", "crawl_strdatetime": "2026-09-15 00:00:00", "calendar_week": "w38"}
-            rows = [dict(common, sku_id="1", retailer_sku_name="Waschmaschine", rank="1", position="1", sku_status="Sponsored"),
+            rows = [dict(common, sku_id="1", retailer_sku_name="Waschmaschine", rank="1", position="1", sku_status="Sponsored", listing_card_type="sponsored-ad"),
                     dict(common, sku_id="2", retailer_sku_name="Trockner", rank="2", position="2", sku_status=""),
-                    dict(common, sku_id="3", retailer_sku_name="Waschmaschine und Trockner Bundle", rank="3", position="3", sku_status="")]
-            bsr = [dict(rows[0], sku_status=""), dict(rows[1], sku_id="4", retailer_sku_name="K\u00fchlschrank")]
+                    dict(common, sku_id="3", retailer_sku_name="Waschmaschine und Trockner Bundle", rank="3", position="3", sku_status=""),
+                    dict(common, sku_id="5", retailer_sku_name="Waschmaschine", rank="4", position="4", sku_status="Sponsored", listing_card_type="standard")]
+            bsr = [dict(rows[0], sku_status="", listing_card_type="standard"),
+                   dict(rows[1], sku_id="4", retailer_sku_name="K\u00fchlschrank")]
             write_csv(root / "mmkt_listing_main.csv", rows)
             write_csv(root / "mmkt_listing_bsr.csv", bsr)
             cfg = SimpleNamespace(OUTPUT_ROOT=root, PRODUCT="LDY", SPEC_FIELDS=["ldy_loading_type", "ldy_capacity"])
@@ -345,25 +396,29 @@ class SavedOutputTests(unittest.TestCase):
             with patch.object(full_output, "parse_args", return_value=args), patch.object(full_output, "load_cfg", return_value=cfg), patch("sys.stdout", new=io.StringIO()):
                 self.assertEqual(0, full_output.main())
             result = read_csv(root / "mmkt_full_output.csv")
-            self.assertEqual(["3", "1"], [r["item"] for r in result])
+            self.assertEqual(["3", "5", "1"], [r["item"] for r in result])
             self.assertEqual("1", result[0]["main_rank"])
-            self.assertEqual("1", result[1]["bsr_rank"])
+            self.assertEqual("2", result[1]["main_rank"])
+            self.assertEqual("Sponsored", result[1]["sku_status"])
+            self.assertEqual("1", result[2]["bsr_rank"])
+            self.assertNotIn("listing_card_type", result[0])
 
     def test_db_dry_run_applies_the_same_filter_without_connecting(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             rows = [{"item": "1", "retailer_sku_name": "Waschmaschine", "sku_status": "Sponsored"},
                     {"item": "2", "retailer_sku_name": "Trockner", "sku_status": ""},
-                    {"item": "3", "retailer_sku_name": "Waschmaschine und Trockner Bundle", "sku_status": ""}]
+                    {"item": "3", "retailer_sku_name": "Waschmaschine und Trockner Bundle", "sku_status": ""},
+                    {"item": "4", "retailer_sku_name": "Waschmaschine", "sku_status": "Sponsored", "listing_card_type": "sponsored-ad"}]
             write_csv(root / "mmkt_full_output.csv", rows)
             cfg = SimpleNamespace(OUTPUT_ROOT=root, PRODUCT="LDY", DB_TABLE=("test", "test"), SPEC_FIELDS=[])
             args = SimpleNamespace(product="ldy", input="", dry_run=True)
             with patch.object(db_save, "parse_args", return_value=args), patch.object(db_save, "load_cfg", return_value=cfg), patch.object(db_save, "db_config", side_effect=AssertionError("DB access")), patch("sys.stdout", new=io.StringIO()):
                 self.assertEqual(0, db_save.main())
             manifest = json.loads((root / "step14_db_save_manifest.json").read_text())
-            self.assertEqual((1, 2, True), (manifest["csv_rows"], manifest["excluded_rows"], manifest["dry_run"]))
+            self.assertEqual((2, 2, True), (manifest["csv_rows"], manifest["excluded_rows"], manifest["dry_run"]))
 
-    def test_report_accepts_short_last_page_and_zero_advertisements(self):
+    def test_report_accepts_short_last_page_with_or_without_standard_sponsored_rows(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for sort, target in [("main", 300), ("bsr", 100)]:
@@ -371,12 +426,30 @@ class SavedOutputTests(unittest.TestCase):
                     "success": True, "stop_reason": "last_page", "written_rows": 1, "target": target,
                     "sponsored_monitoring": {"visible_label_occurrences": 2, "excluded_rows": 2}})
             cfg = SimpleNamespace(OUTPUT_ROOT=root, PRODUCT="LDY", MAIN_TARGET_UNIQUE=300, BSR_TARGET_RANK=100, SPEC_FIELDS=[])
-            rows = [{"main_rank": "1", "bsr_rank": "1", "sku": "test", "sku_status": ""}]
+            for status in ("", "Sponsored"):
+                rows = [{"main_rank": "1", "bsr_rank": "1", "sku": "test", "sku_status": status}]
+                with patch.object(notify, "env_value", side_effect=lambda key, default=None: default):
+                    subject, report = notify.build_report(cfg, rows)
+                self.assertNotIn("[CHECK]", subject)
+                self.assertIn("main - last_page", report)
+                self.assertIn("main excluded - 2", report)
+                self.assertIn(f"final sku_status=Sponsored - {int(bool(status))}/1", report)
+
+    def test_report_still_warns_if_a_banner_card_is_collected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for sort in ("main", "bsr"):
+                write_json(root / f"mmkt_step01_listing_{sort}_manifest.json", {
+                    "success": True, "stop_reason": "target_reached", "target": 1,
+                    "sponsored_monitoring": {"final_banner_ad_rows": 1}})
+            cfg = SimpleNamespace(OUTPUT_ROOT=root, PRODUCT="LDY", MAIN_TARGET_UNIQUE=300,
+                                  BSR_TARGET_RANK=100, SPEC_FIELDS=[])
+            rows = [{"main_rank": "1", "bsr_rank": "1", "sku": "test", "sku_status": "Sponsored"}]
             with patch.object(notify, "env_value", side_effect=lambda key, default=None: default):
                 subject, report = notify.build_report(cfg, rows)
-            self.assertNotIn("[CHECK]", subject)
-            self.assertIn("main - last_page", report)
-            self.assertIn("main excluded - 2", report)
+            self.assertIn("[CHECK]", subject)
+            self.assertIn("main listing contains banner advertisements: 1", report)
+            self.assertIn("bsr listing contains banner advertisements: 1", report)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from common.config import ACCOUNT_NAME, env_value, read_csv, write_json
+from common.listing_policy import is_banner_ad
 
 # Fields whose all-null state is worth flagging (MMKT set — excludes OTTO-only
 # sku_popularity / recommendation_intent which MMKT never collects).
@@ -113,8 +114,13 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     for name, manifest in (("main", listing), ("bsr", bsr_listing)):
         if manifest.get("success") is False:
             issues.append(f"{name} listing failed: {manifest.get('stop_reason') or 'unknown'}")
-    if final_sponsored_rows:
-        issues.append(f"advertisements remain in final output: {final_sponsored_rows}")
+    final_banner_rows = sum(is_banner_ad(row) for row in rows)
+    if final_banner_rows:
+        issues.append(f"banner advertisements remain in final output: {final_banner_rows}")
+    for name, manifest in (("main", listing), ("bsr", bsr_listing)):
+        count = int((manifest.get("sponsored_monitoring") or {}).get("final_banner_ad_rows") or 0)
+        if count:
+            issues.append(f"{name} listing contains banner advertisements: {count}")
     if unmatched_sponsored_ids:
         issues.append(
             f"sponsored product-id mapping mismatch {unmatched_sponsored_ids} id(s)"
@@ -177,7 +183,7 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         "Listing completion",
         f"  main - {listing.get('stop_reason') or 'legacy/unknown'}",
         f"  bsr - {bsr_listing.get('stop_reason') or 'legacy/unknown'}", "",
-        "Advertisement exclusions",
+        "Banner advertisement exclusions (standard Sponsored products retained)",
         f"  main excluded - {sponsored_monitoring.get('excluded_rows', 0)}",
         f"  bsr excluded - {(bsr_listing.get('sponsored_monitoring') or {}).get('excluded_rows', 0)}",
         f"  excluded product types (main/bsr) - {listing.get('excluded_product_rows', 0)}/{bsr_listing.get('excluded_product_rows', 0)}",

@@ -28,7 +28,7 @@ import importlib
 
 from common.config import REFERENCES_ROOT, ensure_dirs, page_url, write_json
 from common.listing_retention import LISTING_ARCHIVE_RETENTION_HOURS, cleanup_listing_archives
-from common.listing_policy import is_advertisement, listing_exclusion_reason
+from common.listing_policy import is_banner_ad, listing_exclusion_reason
 from common.parsers import extract_listing_pagination, extract_sponsored_diagnostics, parse_listing_html
 
 
@@ -46,6 +46,7 @@ CSV_COLUMNS = [
     "original_sku_price",
     "savings",
     "sku_status",
+    "listing_card_type",
     "discount_type",
     "discount_type_en",
     "star_rating",
@@ -112,7 +113,7 @@ def collect_pages(fetch_page, *, product: str, target: int, retries: int = 2,
                     error = "parse_failed: " + type(exc).__name__
             fingerprint = tuple(dict.fromkeys(
                 str(row.get("sku_id") or "").strip() for row in rows
-                if row.get("sku_id") and not is_advertisement(row)
+                if row.get("sku_id") and not is_banner_ad(row)
             ))
             signature = fingerprint or (
                 "empty_listing", str(pagination.get("shown")), str(pagination.get("total"))
@@ -126,7 +127,7 @@ def collect_pages(fetch_page, *, product: str, target: int, retries: int = 2,
                 failure = "repeated_page"
             elif not fingerprint and not pagination["last_page"] and pagination["has_next"] is not True:
                 failure = "parse_failed"
-            elif any(not row.get("product_url") for row in rows if not is_advertisement(row)):
+            elif any(not row.get("product_url") for row in rows if not is_banner_ad(row)):
                 failure = "parse_failed"
 
             excluded: dict[str, int] = {}
@@ -266,6 +267,7 @@ def main() -> int:
     final_sponsored_rows = sum(
         1 for row in ordered if row.get("sku_status") == "Sponsored"
     )
+    final_banner_rows = sum(is_banner_ad(row) for row in ordered)
     listing_sponsored_labels = sum(
         int(page_info.get("visible_label_occurrences") or 0)
         for page_info in page_log
@@ -290,9 +292,11 @@ def main() -> int:
             for page_info in page_log
         ),
         "final_sponsored_rows": final_sponsored_rows,
+        "final_banner_ad_rows": final_banner_rows,
+        "exclusion_policy": "banner_cards_only",
         "excluded_rows": sum(info.get("excluded", {}).get("advertisement", 0) for info in page_log),
         "warning_zero_collected": False,
-        "warning_advertisements_collected": bool(final_sponsored_rows),
+        "warning_advertisements_collected": bool(final_banner_rows),
     }
 
     out_path = Path(args.output) if args.output else cfg.OUTPUT_ROOT / f"mmkt_listing_{args.sort}.csv"

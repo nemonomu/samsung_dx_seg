@@ -282,6 +282,7 @@ def extract_rendered_listing_rows(html: str) -> tuple[list[dict[str, Any]], dict
         "mapped_label_occurrences": 0,
         "unmapped_label_occurrences": 0,
         "sponsored_product_ids": [],
+        "banner_product_ids": [],
         "rendered_listing_rows": 0,
     }
     try:
@@ -321,10 +322,12 @@ def extract_rendered_listing_rows(html: str) -> tuple[list[dict[str, Any]], dict
 
     rows: list[dict[str, Any]] = []
     sponsored_ids: set[str] = set()
+    banner_ids: set[str] = set()
     for item in product_list.find_all("li", recursive=False):
-        sponsored = _has_sponsored_label(item) or item.find(
+        banner = "mms-sba-product-tile" in str(item.get("data-test") or "") or item.find(
             attrs={"data-test": lambda value: "mms-sba-product-tile" in str(value or "")}
         ) is not None
+        sponsored = _has_sponsored_label(item) or banner
         if sponsored:
             diagnostics["visible_label_occurrences"] += 1
         product_ids = {
@@ -334,6 +337,8 @@ def extract_rendered_listing_rows(html: str) -> tuple[list[dict[str, Any]], dict
         }
         if sponsored:
             sponsored_ids.update(product_ids)
+        if banner:
+            banner_ids.update(product_ids)
         if len(product_ids) != 1:
             if sponsored:
                 diagnostics["unmapped_label_occurrences"] += 1
@@ -378,9 +383,7 @@ def extract_rendered_listing_rows(html: str) -> tuple[list[dict[str, Any]], dict
         count_node = item.find(attrs={"data-test": "mms-customer-rating-count"})
         count_text = count_node.get_text(" ", strip=True) if count_node else ""
         count_match = re.search(r"[\d.]+", count_text)
-        article = item.find("article")
-        article_data_test = str(article.get("data-test") or "") if article else ""
-        card_type = "sponsored-ad" if "mms-sba-product-tile" in article_data_test else "standard"
+        card_type = "sponsored-ad" if banner else "standard"
 
         rows.append({
             "sku_id": pid,
@@ -406,6 +409,7 @@ def extract_rendered_listing_rows(html: str) -> tuple[list[dict[str, Any]], dict
         })
 
     diagnostics["sponsored_product_ids"] = sorted(sponsored_ids)
+    diagnostics["banner_product_ids"] = sorted(banner_ids)
     diagnostics["rendered_listing_rows"] = len(rows)
     return rows, diagnostics
 
@@ -429,6 +433,7 @@ def parse_listing_html(
     """Parse one MediaMarkt listing page into ordered per-SKU Main-field rows."""
     rendered_rows, sponsored_diagnostics = extract_rendered_listing_rows(html)
     sponsored_ids = set(sponsored_diagnostics["sponsored_product_ids"])
+    banner_ids = set(sponsored_diagnostics["banner_product_ids"])
     if diagnostics is not None:
         diagnostics.update(sponsored_diagnostics)
 
@@ -460,6 +465,8 @@ def parse_listing_html(
     if not ordered:  # fallback: JSON-LD order
         ordered = [(pid, {}) for pid in sorted(jsonld, key=lambda k: jsonld[k].get("position") or 0)]
 
+    legacy_sponsored_ids = {pid for pid, entry in ordered if entry.get("adData")}
+
     if diagnostics is not None:
         diagnostics["state_listing_rows"] = len(ordered)
         diagnostics["legacy_ad_data_rows"] = sum(
@@ -490,6 +497,7 @@ def parse_listing_html(
                 "original_sku_price": format_euro(pf["original"]),
                 "savings": pf["savings"],
                 "sku_status": "Sponsored" if is_sponsored else None,
+                "listing_card_type": "sponsored-ad" if pid in banner_ids else "standard",
                 "discount_type": raw_dt,
                 "discount_type_en": eng_dt,
                 "star_rating": round(ld["rating_value"], 1) if ld.get("rating_value") is not None else None,
@@ -508,7 +516,7 @@ def parse_listing_html(
         row = dict(state_row or rendered)
         # DOM labels belong to this occurrence, not every appearance of its SKU.
         row["sku_status"] = rendered.get("sku_status") or (
-            None if pid in sponsored_ids else row.get("sku_status")
+            "Sponsored" if pid in legacy_sponsored_ids else None
         )
         row["listing_card_type"] = rendered.get("listing_card_type")
         row["position"] = base_rank + len(rows) + 1
