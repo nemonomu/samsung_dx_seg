@@ -17,6 +17,18 @@ TRANSLATED_FIELDS = {
     "screen_size",
     "ref_refrigerator_type",
 }
+
+_DISCOUNT_TYPE_EXACT = {
+    "limited time offer": "Limited Time Offer",
+    "hot deal": "Hot deal",
+    "limited time deal": "Limited time deal",
+    "befristetes angebot": "Limited Time Offer",
+    "zeitlich begrenztes angebot": "Limited Time Offer",
+}
+_DISCOUNT_TYPE_ENDS_IN_RE = re.compile(
+    r"^(?:(?:angebot|offer)\s+)?(?:endet\s+in|ends\s+in)(?:\s+(.+))?$",
+    flags=re.IGNORECASE,
+)
 _WEEKDAYS = {
     "montag": "Monday",
     "dienstag": "Tuesday",
@@ -117,6 +129,27 @@ def _clean(value: Any) -> str | None:
         return None
     text = re.sub(r"\s+", " ", str(value)).strip()
     return text or None
+
+
+def normalize_discount_type(value: Any) -> str | None:
+    """Keep only the supported Amazon deal labels in canonical English.
+
+    Amazon.de renders the same deal concepts in German, while coupon price
+    messages use separate text such as ``Du zahlst ... Coupon ...``.  Rejecting
+    everything outside this allowlist prevents coupon and popularity labels
+    from reaching JSONL/CSV/DB output even if an XPath becomes too broad.
+    """
+    text = _clean(value)
+    if text is None:
+        return None
+    exact = _DISCOUNT_TYPE_EXACT.get(text.casefold())
+    if exact:
+        return exact
+    match = _DISCOUNT_TYPE_ENDS_IN_RE.fullmatch(text)
+    if not match:
+        return None
+    timer = _clean(match.group(1))
+    return "Ends in" if timer is None else f"Ends in {timer}"
 
 
 def _replace_case_insensitive(text: str, pattern: str, repl: str) -> str:
@@ -283,6 +316,8 @@ def translate_field(field: str, value: Any) -> str | None:
         return None
     if field not in TRANSLATED_FIELDS:
         return text
+    if field == "discount_type":
+        return normalize_discount_type(text)
     if field == "sku_popularity":
         normalized = re.sub(r"\s+", " ", text).strip()
         folded = normalized.casefold()

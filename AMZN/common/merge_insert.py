@@ -11,7 +11,7 @@ from common.full_output import BASE_FIELDS
 from common.io_util import ACCOUNT_NAME, COUNTRY, RETAILER, category_output_root, db_config, split_table, write_csv, write_json
 from common.jsonl import read_jsonl
 from common.last_known_db import empty_stats, safe_backfill_from_retail_history
-from common.translations import translate_record_fields
+from common.translations import normalize_discount_type, translate_record_fields
 from common.ref_type_policy import apply_ref_type_policy
 
 INT_COLUMNS = {"main_rank", "bsr_rank"}
@@ -53,6 +53,9 @@ def _db_value(value: Any, column: str) -> Any:
         return _as_int(value)
     if column in BOOL_COLUMNS:
         return _as_bool(value)
+    if column == "discount_type":
+        # Final write-boundary guard for callers that bypass make_row().
+        return normalize_discount_type(value)
     return None if value in ("", None) else value
 
 
@@ -131,6 +134,12 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
     redirect_use_landing = detail_rec.get("_redirect_use_landing") is True and detail_rec.get("redirect") is True
     detail_first = redirect_use_landing
     detail_values = {} if redirect_listing_only else detail_rec
+    # Filter each source before choosing priority. An invalid listing coupon
+    # must not hide a valid deal label collected from the detail page.
+    discount_type = _first(
+        normalize_discount_type(primary.get("discount_type")),
+        normalize_discount_type(detail_values.get("discount_type")),
+    )
     crawl_dt = _first(detail_rec.get("crawl_datetime"), primary.get("crawl_datetime"), detail_rec.get("crawl_strdatetime"))
     item = _first(detail_rec.get("item"), detail_rec.get("landing_asin"), primary.get("item"), primary.get("asin"))
     if redirect_listing_only:
@@ -171,7 +180,7 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
         "available_quantity_for_purchase": parsers.normalize_available_quantity(
             (main_rec or {}).get("available_quantity_for_purchase")
         ),
-        "discount_type": _first(primary.get("discount_type"), detail_values.get("discount_type")),
+        "discount_type": discount_type,
     }
     detail_fields = [
         "delivery_availability", "fastest_delivery",

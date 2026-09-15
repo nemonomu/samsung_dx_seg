@@ -614,7 +614,17 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
             data["final_sku_price"] = normalize_field(
                 "final_sku_price", parsed_fallback.get("final_sku_price")
             )
-        for field in ("sku", "screen_size", "model_year", "estimated_annual_electricity_use", "retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity", "number_of_units_purchased_past_month"):
+        for field in (
+            "sku",
+            "screen_size",
+            "model_year",
+            "estimated_annual_electricity_use",
+            "retailer_sku_name_similar",
+            "ref_refrigerator_type",
+            "ref_capacity",
+            "number_of_units_purchased_past_month",
+            "discount_type",
+        ):
             if is_ref and field in {"retailer_sku_name_similar", "ref_refrigerator_type", "ref_capacity"}:
                 continue
             if field == "sku" and parsed_fallback.get(field) not in (None, ""):

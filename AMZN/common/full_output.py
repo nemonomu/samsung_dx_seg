@@ -4,7 +4,7 @@ from __future__ import annotations
 from common import parsers, siel_logging
 from common.config import run_meta
 from common.io_util import ACCOUNT_NAME, COUNTRY, category_output_root, read_csv, write_csv, write_json
-from common.translations import translate_record_fields
+from common.translations import normalize_discount_type, translate_record_fields
 
 BASE_FIELDS = [
     "account_name", "product", "country", "page_type", "crawl_strdatetime", "calendar_week", "batch_id",
@@ -58,7 +58,10 @@ def run(cfg) -> dict:
                 target.get("number_of_units_purchased_past_month"),
             ),
             "sku_status": target.get("sku_status"),
-            "discount_type": target.get("discount_type"),
+            "discount_type": first(
+                normalize_discount_type(target.get("discount_type")),
+                normalize_discount_type(detail.get("discount_type")),
+            ),
             "available_quantity_for_purchase": parsers.normalize_available_quantity(
                 target.get("available_quantity_for_purchase")
             ) if target.get("main_rank") not in (None, "") else None,

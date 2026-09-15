@@ -23,7 +23,7 @@ from selenium.webdriver.common.by import By
 
 from common import parsers
 from common.io_util import db_config
-from common.translations import translate_field
+from common.translations import normalize_discount_type, translate_field
 
 
 PRODUCT_CONFIGS = {
@@ -149,29 +149,8 @@ def _clean(value: Any) -> str | None:
 
 
 def normalize_allowed_discount(value: Any) -> str | None:
-    """Return the agreed canonical value, or None for every other promotion."""
-    text = _clean(value)
-    if not text:
-        return None
-    folded = text.casefold()
-    fixed = {
-        "limited time offer": "Limited Time Offer",
-        "hot deal": "Hot deal",
-        "limited time deal": "Limited time deal",
-        "befristetes angebot": "Limited Time Offer",
-        "zeitlich begrenztes angebot": "Limited Time Offer",
-    }
-    if folded in fixed:
-        return fixed[folded]
-    match = re.fullmatch(
-        r"(?:angebot\s+)?(?:endet\s+in|ends\s+in)(?:\s+(.*))?",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if match:
-        suffix = _clean(match.group(1))
-        return "Ends in" if not suffix else f"Ends in {suffix}"
-    return None
+    """Use the production allowlist so the smoke test cannot drift from it."""
+    return normalize_discount_type(value)
 
 
 def _read_active_selectors(product: str, stage: str) -> dict[str, dict[str, str | None]]:
