@@ -322,7 +322,9 @@ def extract_rendered_listing_rows(html: str) -> tuple[list[dict[str, Any]], dict
     rows: list[dict[str, Any]] = []
     sponsored_ids: set[str] = set()
     for item in product_list.find_all("li", recursive=False):
-        sponsored = _has_sponsored_label(item)
+        sponsored = _has_sponsored_label(item) or item.find(
+            attrs={"data-test": lambda value: "mms-sba-product-tile" in str(value or "")}
+        ) is not None
         if sponsored:
             diagnostics["visible_label_occurrences"] += 1
         product_ids = {
@@ -330,6 +332,8 @@ def extract_rendered_listing_rows(html: str) -> tuple[list[dict[str, Any]], dict
             for link in item.find_all("a", href=True)
             if (pid := _product_id_from_href(link.get("href")))
         }
+        if sponsored:
+            sponsored_ids.update(product_ids)
         if len(product_ids) != 1:
             if sponsored:
                 diagnostics["unmapped_label_occurrences"] += 1
@@ -480,6 +484,7 @@ def parse_listing_html(
                 "position": base_rank + idx,
                 "sku_id": pid,
                 "retailer_sku_name": text_clean(prod.get("title")) or text_clean(ld.get("name")),
+                "product_type": _resolve_features(apollo, prod).get("Produkttyp"),
                 "manufacturer": text_clean(prod.get("manufacturer")),
                 "final_sku_price": format_euro(pf["final"] if pf["final"] is not None else ld.get("price")),
                 "original_sku_price": format_euro(pf["original"]),
@@ -501,8 +506,10 @@ def parse_listing_html(
         pid = rendered["sku_id"]
         state_row = state_by_id.get(pid)
         row = dict(state_row or rendered)
-        if rendered.get("sku_status") == "Sponsored":
-            row["sku_status"] = "Sponsored"
+        # DOM labels belong to this occurrence, not every appearance of its SKU.
+        row["sku_status"] = rendered.get("sku_status") or (
+            None if pid in sponsored_ids else row.get("sku_status")
+        )
         row["listing_card_type"] = rendered.get("listing_card_type")
         row["position"] = base_rank + len(rows) + 1
         rows.append(row)
@@ -520,6 +527,38 @@ def parse_listing_html(
             1 for row in rows if row.get("sku_status") == "Sponsored"
         )
     return rows
+
+
+def extract_listing_pagination(html: str) -> dict[str, Any]:
+    """Read MediaMarkt's listing counter (e.g. '12 von 590'), not review counts."""
+    from bs4 import BeautifulSoup
+
+    state = extract_preloaded_state(html)
+    soup = BeautifulSoup(html, "html.parser")
+    root = soup.find(id="mms-search-productlist") or soup.find(
+        attrs={"data-test": "mms-search-srp-productlist"}
+    )
+    result = {"listing_valid": bool(state and root is not None),
+              "has_next": None, "shown": None, "total": None, "last_page": False}
+    if root is None or not state:
+        return result
+    for node in root.find_all(["div", "span", "p"]):
+        if node.find_parent("li") or node.find_parent(["script", "style"]):
+            continue
+        match = re.fullmatch(r"\s*([\d.]+)\s+von\s+([\d.]+)\s*", node.get_text(" ", strip=True))
+        if match:
+            shown, total = (int(value.replace(".", "")) for value in match.groups())
+            result.update(shown=shown, total=total, has_next=shown < total,
+                          last_page=shown >= total)
+            break
+    for control in root.find_all(["button", "a"]):
+        label = control.get_text(" ", strip=True)
+        if re.search(r"weitere\s+Produkte\s+anzeigen", label, re.I):
+            enabled = not control.has_attr("disabled") and control.get("aria-disabled") != "true"
+            if enabled:
+                result.update(has_next=True, last_page=False)
+            break
+    return result
 
 
 # ---------------------------------------------------------------------------

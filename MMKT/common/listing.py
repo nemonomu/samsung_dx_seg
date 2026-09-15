@@ -6,7 +6,7 @@ display order, and stops once MAIN_TARGET_UNIQUE unique SKUs are collected.
 
   python MMKT/step01_listing.py                 # 300 SKUs, Beste Ergebnisse sort
   python MMKT/step01_listing.py --sort bsr      # Topseller order (for bsr_rank)
-  python MMKT/step01_listing.py --target 36 --max-pages 3
+  python MMKT/step01_listing.py --target 36
 
 Raw HTML for each page is saved under references/listing/<stamp>/ for
 reproducibility. Inactive timestamped raw-HTML directories older than 48 hours
@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import csv
 import io
-import math
 import sys
 import time
 from datetime import datetime
@@ -27,9 +26,10 @@ from typing import Any
 
 import importlib
 
-from common.config import LISTING_PAGE_SIZE, REFERENCES_ROOT, ensure_dirs, page_url, write_json
+from common.config import REFERENCES_ROOT, ensure_dirs, page_url, write_json
 from common.listing_retention import LISTING_ARCHIVE_RETENTION_HOURS, cleanup_listing_archives
-from common.parsers import extract_sponsored_diagnostics, parse_listing_html
+from common.listing_policy import is_advertisement, listing_exclusion_reason
+from common.parsers import extract_listing_pagination, extract_sponsored_diagnostics, parse_listing_html
 
 
 def load_cfg(product: str):
@@ -66,7 +66,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--target", type=int, default=0,
                    help="stop after this many unique SKUs (0 = product default)")
     p.add_argument("--max-pages", type=int, default=0,
-                   help="hard page cap (0 = derive from target)")
+                   help="deprecated and ignored; collect until target or actual last page")
+    p.add_argument("--page-retries", type=int, default=2,
+                   help="retry a failed/repeated page without skipping to the next page")
     p.add_argument("--sleep", type=float, default=1.0)
     p.add_argument("--render-settle", type=float, default=15.0,
                    help="seconds to wait for lazy sponsored listing cards before capture")
@@ -83,6 +85,85 @@ def now_stamp() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
+def collect_pages(fetch_page, *, product: str, target: int, retries: int = 2,
+                  sleep_s: float = 0, save_page=None) -> tuple[list[dict], list[dict], str]:
+    """Count eligible unique products; only explicit pagination proves the end."""
+    seen: dict[str, dict[str, Any]] = {}
+    fingerprints: set[tuple[str, ...]] = set()
+    page_log = []
+    page = 1
+    while True:
+        for attempt in range(1, max(0, retries) + 2):
+            print(f"[step01] page={page} attempt={attempt} unique={len(seen)}/{target}", flush=True)
+            try:
+                html, status, elapsed, error, extra_wait = fetch_page(page)
+            except Exception as exc:
+                html, status, elapsed, error, extra_wait = "", None, 0, type(exc).__name__, 0
+            if save_page is not None:
+                save_page(page, attempt, html)
+            diagnostics: dict[str, Any] = {}
+            pagination = {"listing_valid": False, "last_page": False, "has_next": None}
+            rows = []
+            if status == 200:
+                try:
+                    rows = parse_listing_html(html, page=page, diagnostics=diagnostics)
+                    pagination = extract_listing_pagination(html)
+                except Exception as exc:
+                    error = "parse_failed: " + type(exc).__name__
+            fingerprint = tuple(dict.fromkeys(
+                str(row.get("sku_id") or "").strip() for row in rows
+                if row.get("sku_id") and not is_advertisement(row)
+            ))
+            signature = fingerprint or (
+                "empty_listing", str(pagination.get("shown")), str(pagination.get("total"))
+            )
+            failure = None
+            if status != 200 or error:
+                failure = "fetch_failed"
+            elif not pagination["listing_valid"]:
+                failure = "parse_failed"
+            elif signature in fingerprints:
+                failure = "repeated_page"
+            elif not fingerprint and not pagination["last_page"] and pagination["has_next"] is not True:
+                failure = "parse_failed"
+            elif any(not row.get("product_url") for row in rows if not is_advertisement(row)):
+                failure = "parse_failed"
+
+            excluded: dict[str, int] = {}
+            new = 0
+            if not failure:
+                fingerprints.add(signature)
+                for row in rows:
+                    reason = listing_exclusion_reason(row, product)
+                    if reason:
+                        excluded[reason] = excluded.get(reason, 0) + 1
+                        continue
+                    sku_id = str(row.get("sku_id") or "").strip()
+                    if sku_id and sku_id not in seen:
+                        row["sku_id"] = sku_id
+                        row["page"] = page
+                        seen[sku_id] = row
+                        new += 1
+            page_log.append({
+                "page": page, "attempt": attempt, "status": status, "parsed": len(rows),
+                "new_unique": new, "elapsed": elapsed, "sponsored_extra_wait": extra_wait,
+                "error": error or failure, "excluded": excluded, **diagnostics, **pagination,
+            })
+            if not failure:
+                break
+            if attempt == max(0, retries) + 1:
+                return list(seen.values())[:target], page_log, failure
+            if sleep_s > 0:
+                time.sleep(sleep_s)
+        if len(seen) >= target:
+            return list(seen.values())[:target], page_log, "target_reached"
+        if pagination["last_page"]:
+            return list(seen.values()), page_log, "last_page"
+        page += 1
+        if sleep_s > 0:
+            time.sleep(sleep_s)
+
+
 def main() -> int:
     if hasattr(sys.stdout, "buffer"):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -90,9 +171,10 @@ def main() -> int:
     cfg = load_cfg(args.product)
     ensure_dirs(cfg.OUTPUT_ROOT, REFERENCES_ROOT)
 
-    target = args.target or cfg.MAIN_TARGET_UNIQUE
+    target = args.target or (cfg.BSR_TARGET_RANK if args.sort == "bsr" else cfg.MAIN_TARGET_UNIQUE)
     base_url = cfg.BSR_URL if args.sort == "bsr" else cfg.LISTING_URL
-    max_pages = args.max_pages or max(1, math.ceil(target / LISTING_PAGE_SIZE) + 2)
+    if target <= 0:
+        raise ValueError("listing target must be positive")
     stamp = now_stamp()
     # Run meta mirrors OTTO step09 (batch_id prefix "m_" for MediaMarkt).
     run_now = datetime.now()
@@ -114,10 +196,6 @@ def main() -> int:
 
     raw_dir = listing_root / f"{args.sort}_{stamp}"
     raw_dir.mkdir(parents=True, exist_ok=True)
-
-    seen: dict[str, dict[str, Any]] = {}  # sku_id -> row (first occurrence wins)
-    page_log: list[dict[str, Any]] = []
-    bad_pages = 0
 
     # Transport: local UC (default, ZenRows-free) or legacy ZenRows GET.
     uc_session = None
@@ -152,56 +230,22 @@ def main() -> int:
         body = res["body"]
         return body.decode("utf-8", errors="replace"), res["status"], res["elapsed"], res["error"], 0.0
 
-    for page in range(1, max_pages + 1):
-        url = page_url(base_url, page)
-        print(f"[step01] sort={args.sort} page={page:>2}/{max_pages} fetching "
-              f"(unique={len(seen)}/{target}) ...", flush=True)
-        html, status, elapsed, err, sponsored_extra_wait = fetch_page(url)
-        (raw_dir / f"page_{page:02d}.html").write_text(html, encoding="utf-8")
-        sponsored_diagnostics: dict[str, Any] = {}
-        rows = (
-            parse_listing_html(html, page=page, diagnostics=sponsored_diagnostics)
-            if status == 200 else []
+    def save_page(page: int, attempt: int, html: str) -> None:
+        suffix = "" if attempt == 1 else f"_attempt_{attempt}"
+        (raw_dir / f"page_{page:02d}{suffix}.html").write_text(html, encoding="utf-8")
+
+    try:
+        ordered, page_log, stop_reason = collect_pages(
+            lambda page: fetch_page(page_url(base_url, page)), product=args.product,
+            target=target, retries=args.page_retries, sleep_s=args.sleep, save_page=save_page,
         )
-        new = 0
-        for row in rows:
-            sku_id = row.get("sku_id")
-            if not sku_id or sku_id in seen:
-                continue
-            row["page"] = page
-            row.update(run_meta)
-            seen[sku_id] = row
-            new += 1
-        page_log.append({
-            "page": page,
-            "status": status,
-            "parsed": len(rows),
-            "new_unique": new,
-            "elapsed": elapsed,
-            "sponsored_extra_wait": sponsored_extra_wait,
-            "error": err,
-            **sponsored_diagnostics,
-        })
-        print(f"[step01] sort={args.sort} page={page:>2} status={status} "
-              f"parsed={len(rows):>2} new={new:>2} total_unique={len(seen)} ({elapsed}s)", flush=True)
-        if status != 200 or not rows:
-            bad_pages += 1
-            if bad_pages >= 3:
-                print(f"[step01] stopping: {bad_pages} consecutive empty/failed pages")
-                break
-        else:
-            bad_pages = 0
-        if len(seen) >= target:
-            break
-        if args.sleep > 0:
-            time.sleep(args.sleep)
-
-    if uc_session is not None:
-        uc_session.close()
-
-    ordered = list(seen.values())[: target]
+    finally:
+        if uc_session is not None:
+            uc_session.close()
+    success = stop_reason in {"target_reached", "last_page"}
     # renumber position 1..N contiguously after dedup/trim
     for i, row in enumerate(ordered, start=1):
+        row.update(run_meta)
         row["position"] = i
         row["rank"] = i
 
@@ -246,9 +290,9 @@ def main() -> int:
             for page_info in page_log
         ),
         "final_sponsored_rows": final_sponsored_rows,
-        "warning_zero_collected": bool(
-            listing_sponsored_labels and final_sponsored_rows == 0
-        ),
+        "excluded_rows": sum(info.get("excluded", {}).get("advertisement", 0) for info in page_log),
+        "warning_zero_collected": False,
+        "warning_advertisements_collected": bool(final_sponsored_rows),
     }
 
     out_path = Path(args.output) if args.output else cfg.OUTPUT_ROOT / f"mmkt_listing_{args.sort}.csv"
@@ -266,9 +310,17 @@ def main() -> int:
         "base_url": base_url,
         "sort": args.sort,
         "target": target,
-        "pages_fetched": len(page_log),
-        "unique_collected": len(seen),
+        "pages_fetched": len({info["page"] for info in page_log}),
+        "request_attempts": len(page_log),
+        "unique_collected": sum(info["new_unique"] for info in page_log),
         "written_rows": len(ordered),
+        "success": success,
+        "stop_reason": stop_reason,
+        "target_reached": len(ordered) >= target,
+        "excluded_product_rows": sum(
+            sum(count for reason, count in info.get("excluded", {}).items() if reason != "advertisement")
+            for info in page_log
+        ),
         "raw_dir": str(raw_dir.relative_to(REFERENCES_ROOT.parent)),
         "output_csv": str(out_path),
         "sponsored_monitoring": sponsored_monitoring,
@@ -277,9 +329,9 @@ def main() -> int:
     manifest_path = cfg.OUTPUT_ROOT / f"mmkt_step01_listing_{args.sort}_manifest.json"
     write_json(manifest_path, manifest)
 
-    print(f"[step01] DONE unique={len(seen)} written={len(ordered)} -> {out_path}")
+    print(f"[step01] DONE written={len(ordered)} reason={stop_reason} -> {out_path}")
     print(f"[step01] manifest={manifest_path}")
-    return 0 if len(ordered) >= min(target, 1) else 1
+    return 0 if success else 1
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ import importlib
 
 from common.config import ACCOUNT_NAME, COUNTRY, PAGE_TYPE, ensure_dirs, read_csv, write_json
 from common.parsers import IS_BUNDLE, is_bundle_product
+from common.listing_policy import filter_listing_rows
 
 PRIMARY_SPEC_EXPECTED_NULL = "_primary_spec_expected_null"
 
@@ -132,9 +133,13 @@ def main() -> int:
     listing = read_csv(Path(args.listing))
     bsr = read_csv(Path(args.bsr))
     detail = read_csv(Path(args.detail))
-    if not listing:
+    if not Path(args.listing).is_file():
         print(f"[step09] no listing rows in {args.listing}; run step01 first.")
         return 1
+
+    source_meta = (listing or bsr or [{}])[0]
+    listing = filter_listing_rows(listing, args.product, renumber=True)
+    bsr = filter_listing_rows(bsr, args.product, renumber=True)
 
     detail_by_id = {(d.get("sku_id") or "").strip(): d for d in detail if d.get("sku_id")}
     policy_null_ids = {
@@ -153,9 +158,9 @@ def main() -> int:
     # One batch per dataset: use the main listing run's meta for every row
     # (the BSR-only row was a separate pass but belongs to the same crawl batch).
     run_meta = {
-        "crawl_strdatetime": listing[0].get("crawl_strdatetime"),
-        "calendar_week": listing[0].get("calendar_week"),
-        "batch_id": listing[0].get("batch_id"),
+        "crawl_strdatetime": source_meta.get("crawl_strdatetime"),
+        "calendar_week": source_meta.get("calendar_week"),
+        "batch_id": source_meta.get("batch_id"),
     }
 
     # Output is the UNION of main and BSR SKUs:
@@ -237,7 +242,7 @@ def main() -> int:
         "rows_with_missing_specs": rows_with_missing_specs,
         "rows_missing_primary_spec": rows_missing_primary_spec,
         "spec_missing_counts": spec_missing_counts,
-        "rows_with_fetch_error": len(detail_fetch_error_ids),
+        "rows_with_fetch_error": len(detail_fetch_error_ids.intersection(union_ids)),
         "output_csv": str(out_path),
     }
     write_json(cfg.OUTPUT_ROOT / "step09_full_output_manifest.json", manifest)

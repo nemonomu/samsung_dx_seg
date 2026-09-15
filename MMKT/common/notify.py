@@ -25,7 +25,7 @@ from common.config import ACCOUNT_NAME, env_value, read_csv, write_json
 # sku_popularity / recommendation_intent which MMKT never collects).
 NULL_BASE = [
     "item", "product_url", "retailer_sku_name", "final_sku_price", "original_sku_price",
-    "savings", "sku_status", "discount_type",
+    "savings", "discount_type",
     "delivery_availability", "pick_up_availability", "sku",
 ]
 NULL_TAIL = [
@@ -60,12 +60,13 @@ def _detail_present(r: dict, spec_fields: list[str]) -> bool:
 def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     out = cfg.OUTPUT_ROOT
     listing = _read_json(out / "mmkt_step01_listing_main_manifest.json")
+    bsr_listing = _read_json(out / "mmkt_step01_listing_bsr_manifest.json")
     step02 = _read_json(out / "mmkt_step02_pdp_detail_manifest.json")
     full = _read_json(out / "step09_full_output_manifest.json")
     db = _read_json(out / "step14_db_save_manifest.json")
     total = len(rows)
-    main_expected = cfg.MAIN_TARGET_UNIQUE
-    bsr_expected = cfg.BSR_TARGET_RANK
+    main_expected = listing.get("target", cfg.MAIN_TARGET_UNIQUE)
+    bsr_expected = bsr_listing.get("target", cfg.BSR_TARGET_RANK)
     main_present = sum(1 for r in rows if (r.get("main_rank") or "").strip())
     bsr_present = sum(1 for r in rows if (r.get("bsr_rank") or "").strip())
 
@@ -95,20 +96,25 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     )
 
     issues = []
-    if main_present != main_expected:
+    main_complete_count = (listing.get("written_rows")
+                           if listing.get("success") and listing.get("stop_reason") == "last_page"
+                           else main_expected)
+    bsr_complete_count = (bsr_listing.get("written_rows")
+                          if bsr_listing.get("success") and bsr_listing.get("stop_reason") == "last_page"
+                          else bsr_expected)
+    if main_present != main_complete_count:
         issues.append(f"main_rank {main_present}/{main_expected}")
-    if bsr_present != bsr_expected:
+    if bsr_present != bsr_complete_count:
         issues.append(f"bsr_rank {bsr_present}/{bsr_expected}")
     if total and detail_ratio < min_ratio:
         issues.append(f"detail collection low {detail_present}/{total} ({detail_ratio:.0%})")
     if review_partial:
         issues.append(f"review_partial {review_partial}/{total}")
-    if visible_sponsored_labels and final_sponsored_rows == 0:
-        issues.append(
-            "sku_status Sponsored 0 despite Gesponsert in product list "
-            f"(raw={raw_gesponsert}, visible={visible_sponsored_labels}, "
-            f"mapped_ids={mapped_sponsored_ids})"
-        )
+    for name, manifest in (("main", listing), ("bsr", bsr_listing)):
+        if manifest.get("success") is False:
+            issues.append(f"{name} listing failed: {manifest.get('stop_reason') or 'unknown'}")
+    if final_sponsored_rows:
+        issues.append(f"advertisements remain in final output: {final_sponsored_rows}")
     if unmatched_sponsored_ids:
         issues.append(
             f"sponsored product-id mapping mismatch {unmatched_sponsored_ids} id(s)"
@@ -168,7 +174,13 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         f"  main_rank - {main_present}/{main_expected}",
         f"  bsr_rank - {bsr_present}/{bsr_expected}",
         f"  detail(PDP) - {detail_present}/{total} ({detail_ratio:.0%})", "",
-        "Sponsored monitoring",
+        "Listing completion",
+        f"  main - {listing.get('stop_reason') or 'legacy/unknown'}",
+        f"  bsr - {bsr_listing.get('stop_reason') or 'legacy/unknown'}", "",
+        "Advertisement exclusions",
+        f"  main excluded - {sponsored_monitoring.get('excluded_rows', 0)}",
+        f"  bsr excluded - {(bsr_listing.get('sponsored_monitoring') or {}).get('excluded_rows', 0)}",
+        f"  excluded product types (main/bsr) - {listing.get('excluded_product_rows', 0)}/{bsr_listing.get('excluded_product_rows', 0)}",
         f"  raw Gesponsert occurrences - {raw_gesponsert}",
         f"  product-list labels - {visible_sponsored_labels}",
         f"  unmapped product-list labels - {unmapped_sponsored_labels}",

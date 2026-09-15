@@ -65,10 +65,13 @@ def main() -> int:
                      "--concurrency", str(args.concurrency), *extra)
     if "full" in steps:
         run_selected("full", "common.full_output", *P)
-    if "db" in steps:
+    listing_failed = any(label in {"listing", "bsr", "full"} for label, _ in failures)
+    if "db" in steps and not listing_failed:
         # db_save is insert-only; it never deletes existing rows.
         db_args = ["--dry-run"] if args.dry_db else []
         run_selected("db", "common.db_save", *P, *db_args)
+    elif "db" in steps:
+        print("[run] DB insert skipped because listing/BSR/full output failed.", flush=True)
     if "notify" in steps:
         run_selected("notify", "common.notify", *P)
 

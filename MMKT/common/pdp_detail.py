@@ -28,6 +28,7 @@ from typing import Any
 import importlib
 
 from common.config import REFERENCES_ROOT, ensure_dirs, write_json
+from common.listing_policy import filter_listing_rows
 from common.parsers import (
     IS_BUNDLE,
     PRIMARY_SPEC_EXPECTED_NULL,
@@ -513,14 +514,14 @@ def main() -> int:
     bsr_csv = args.bsr or str(cfg.OUTPUT_ROOT / "mmkt_listing_bsr.csv")
 
     with open(input_csv, encoding="utf-8-sig") as fh:
-        targets = list(csv.DictReader(fh))
+        targets = filter_listing_rows(list(csv.DictReader(fh)), args.product, renumber=True)
     # Union in BSR-only SKUs (top sellers that fall outside the main listing) so
     # they also get PDP detail. Main rows keep their order; BSR-only ones append.
     seen_ids = {(t.get("sku_id") or "").strip() for t in targets}
     bsr_path = Path(bsr_csv)
     if bsr_path.exists():
         with bsr_path.open(encoding="utf-8-sig") as fh:
-            extra = [r for r in csv.DictReader(fh)
+            extra = [r for r in filter_listing_rows(list(csv.DictReader(fh)), args.product, renumber=True)
                      if (r.get("sku_id") or "").strip() not in seen_ids]
         if extra:
             print(f"[step02] union: +{len(extra)} BSR-only SKUs added to targets", flush=True)
@@ -541,12 +542,15 @@ def main() -> int:
     kept_rows: list[dict[str, Any]] = []
     spec0 = cfg.SPEC_FIELDS[0]  # product's first spec column = "row has detail" marker
     if args.resume and out_path.exists():
+        target_ids = {str(t.get("sku_id") or "").strip() for t in targets}
         bundle_ids = {
-            str(t.get("sku_id") or "").strip() for _, t in valid
+            str(t.get("sku_id") or "").strip() for t in targets
             if is_bundle_product(t.get("retailer_sku_name"))
         }
         with open(out_path, encoding="utf-8-sig") as fh:
             for r in csv.DictReader(fh):
+                if str(r.get("sku_id") or "").strip() not in target_ids:
+                    continue
                 if r.get("sku_id") in bundle_ids and str(r.get(IS_BUNDLE) or "").lower() not in {"true", "1"}:
                     continue  # Recollect legacy mixed-source bundle ratings.
                 is_review_partial = review_row_is_partial(r)
@@ -843,7 +847,7 @@ def main() -> int:
     print(f"[step02] DONE rows={len(rows)} specs={filled} policy_null={expected_null} "
           f"satisfied={satisfied} missing_primary={rows_missing_primary_spec} "
           f"fetch_error={rows_with_fetch_error} similar={with_sim} summary={with_sum} -> {out_path}", flush=True)
-    return 0 if rows and satisfied == len(rows) else 1
+    return 0 if (rows and satisfied == len(rows)) or not targets else 1
 
 
 if __name__ == "__main__":

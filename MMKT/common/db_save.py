@@ -23,6 +23,7 @@ import importlib
 
 from common.config import ACCOUNT_NAME, db_config, read_csv, write_json
 from common.last_known_db import safe_backfill_from_retail_history
+from common.listing_policy import filter_listing_rows
 
 
 def load_cfg(product: str):
@@ -110,7 +111,8 @@ def main() -> int:
     cfg = load_cfg(args.product)
     schema, table = cfg.DB_TABLE
     input_path = Path(args.input or (cfg.OUTPUT_ROOT / "mmkt_full_output.csv"))
-    rows = read_csv(input_path)
+    input_rows = read_csv(input_path)
+    rows = filter_listing_rows(input_rows, args.product)
     csv_fields = list(rows[0].keys()) if rows else []
     batch_ids = sorted({(r.get("batch_id") or "").strip() for r in rows if (r.get("batch_id") or "").strip()})
 
@@ -122,16 +124,18 @@ def main() -> int:
         "table": table,
         "account_name": ACCOUNT_NAME,
         "csv_rows": len(rows),
+        "excluded_rows": len(input_rows) - len(rows),
         "batch_ids": batch_ids,
         "dry_run": args.dry_run,
     }
 
     if not rows:
-        manifest["success"] = False
-        manifest["reason"] = "no input rows (run step09 first)"
+        success = input_path.is_file()
+        manifest.update(success=success, skipped=True, inserted=0,
+                        reason="no eligible input rows" if success else "missing input CSV (run step09 first)")
         write_json(cfg.OUTPUT_ROOT / "step14_db_save_manifest.json", manifest)
         print(f"[step14] no rows in {input_path}; nothing to load.")
-        return 1
+        return 0 if success else 1
 
     spec_fields = list(getattr(cfg, "SPEC_FIELDS", []) or [])
     policy_null_ids = _policy_null_ids(cfg)
