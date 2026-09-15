@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 from common import datasheet, raw_html
 from common.io_util import category_output_root
 from common.parsers import format_detailed_review_content, parse_review_html
+from common.ref_type_policy import apply_ref_type_policy
 
 REVIEW_DETAIL_LIMIT = 20  # detailed_review_content collects up to this many written reviews
 SUMMARY_RANK_LIMIT = 20  # the client requirement limits review-summary QA/retries to main top 20
@@ -341,6 +342,8 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             ctx_sku = cfg.extract_sku(target, ds, ctx) if hasattr(cfg, "extract_sku") else None
             sku = first(ds.get("sku") if ds else None, ctx_sku, sku_from_name(target.get("retailer_sku_name")))
             spec = cfg.extract_spec(target, ds, ctx, sku=sku)
+            if apply_ref_type_policy(spec):
+                spec["_policy_null_fields"] = sorted(_policy_null_fields(spec) | {"ref_refrigerator_type"})
 
             reco = fetch_similar_product_names(target.get("variation_id"), timeout=timeout)
             pid = (target.get("product_id") or "").strip() or product_id_from_url(target.get("product_url")) or str(target.get("main_rank"))
@@ -394,6 +397,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                         if pdp.get("detail_present"):
                             soup = BeautifulSoup(pdp_body.decode("utf-8", errors="replace"), "lxml")
                             pdp_spec = cfg.extract_pdp_spec(soup)
+                            apply_ref_type_policy(pdp_spec)
                             for key in pdp_target_fields:
                                 value = pdp_spec.get(key)
                                 if not has_value(value):

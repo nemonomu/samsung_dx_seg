@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from common.ref_type_policy import apply_ref_type_policy
+
 _EURO = chr(8364)
 
 TRANSLATED_FIELDS = {
@@ -305,7 +307,7 @@ def translate_record_fields(record: dict[str, Any]) -> dict[str, Any]:
     for field in TRANSLATED_FIELDS - {"ref_refrigerator_type"}:
         if field in record:
             record[field] = translate_field(field, record.get(field))
-    if "ref_refrigerator_type" in record:
+    if "ref_refrigerator_type" in record and not apply_ref_type_policy(record):
         record["ref_refrigerator_type"] = resolve_ref_refrigerator_type(
             record.get("retailer_sku_name"),
             record.get("ref_refrigerator_type"),

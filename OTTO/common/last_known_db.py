@@ -6,6 +6,8 @@ import unicodedata
 from collections import Counter, defaultdict
 from typing import Any, Iterable
 
+from common.ref_type_policy import is_excluded_ref_type
+
 
 def _quote(identifier: str) -> str:
     return '"' + str(identifier).replace('"', '""') + '"'
@@ -141,6 +143,8 @@ def backfill_from_retail_history(
                 continue
             for candidate in candidates:
                 value = _text(candidate.get(field))
+                if field == "ref_refrigerator_type" and is_excluded_ref_type(value):
+                    continue
                 if value:
                     row[field] = value
                     recovered_counts[field] += 1

@@ -12,6 +12,7 @@ from typing import Any
 
 from common.io_util import category_output_root, db_config, read_csv, split_table, write_csv, write_json
 from common.last_known_db import safe_backfill_from_retail_history
+from common.ref_type_policy import apply_ref_type_policy
 
 INT_COLUMNS = {"main_rank", "bsr_rank"}
 
@@ -46,6 +47,8 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
     out = category_output_root(cfg.PRODUCT.lower())
     input_csv = out / "otto_full_output.csv"
     rows = read_csv(input_csv) if input_csv.exists() else []
+    for row in rows:
+        apply_ref_type_policy(row)
     schema, table = split_table(cfg.DB_TABLE)
     if dry_run is None:
         dry_run = os.getenv("OTTO_DB_DRY_RUN", "0").strip().lower() in {"1", "true", "yes", "y"}

@@ -24,6 +24,7 @@ import importlib
 from common.config import ACCOUNT_NAME, db_config, read_csv, write_json
 from common.last_known_db import safe_backfill_from_retail_history
 from common.listing_policy import filter_listing_rows
+from common.ref_type_policy import apply_ref_type_policy
 
 
 def load_cfg(product: str):
@@ -113,6 +114,9 @@ def main() -> int:
     input_path = Path(args.input or (cfg.OUTPUT_ROOT / "mmkt_full_output.csv"))
     input_rows = read_csv(input_path)
     rows = filter_listing_rows(input_rows, args.product)
+    excluded_ref_type_ids = {
+        str(row.get("item") or "").strip() for row in rows if apply_ref_type_policy(row)
+    }
     csv_fields = list(rows[0].keys()) if rows else []
     batch_ids = sorted({(r.get("batch_id") or "").strip() for r in rows if (r.get("batch_id") or "").strip()})
 
@@ -138,7 +142,7 @@ def main() -> int:
         return 0 if success else 1
 
     spec_fields = list(getattr(cfg, "SPEC_FIELDS", []) or [])
-    policy_null_ids = _policy_null_ids(cfg)
+    policy_null_ids = _policy_null_ids(cfg) | excluded_ref_type_ids
     spec_missing_counts = {field: sum(1 for row in rows if not _has_value(row.get(field))) for field in spec_fields}
     primary = spec_fields[0] if spec_fields else None
     rows_missing_primary_spec = sum(

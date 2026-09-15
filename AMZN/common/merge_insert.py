@@ -12,6 +12,7 @@ from common.io_util import ACCOUNT_NAME, COUNTRY, RETAILER, category_output_root
 from common.jsonl import read_jsonl
 from common.last_known_db import empty_stats, safe_backfill_from_retail_history
 from common.translations import translate_record_fields
+from common.ref_type_policy import apply_ref_type_policy
 
 INT_COLUMNS = {"main_rank", "bsr_rank"}
 BOOL_COLUMNS = {"redirect"}
@@ -247,6 +248,8 @@ def _safe_item_mst_upsert(conn, schema: str, product_lower: str, rows: list[dict
 
 def insert_rows(cfg, rows: list[dict[str, Any]], *, dry_run: bool = False,
                 manifest_name: str = "step14_jsonl_db_save_manifest.json") -> dict[str, Any]:
+    for row in rows:
+        apply_ref_type_policy(row)
     out = category_output_root(cfg.PRODUCT)
     schema, table = split_table(cfg.DB_TABLE)
     batch_ids = sorted({str(r.get("batch_id") or "").strip() for r in rows if r.get("batch_id")})
@@ -406,6 +409,7 @@ class StreamingRetailInserter:
                 self.insert_row(row)
 
     def insert_row(self, row: dict[str, Any]) -> None:
+        apply_ref_type_policy(row)
         if self.dry_run:
             self.inserted += 1
             return

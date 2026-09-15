@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,7 +20,13 @@ def load_module(path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    spec.loader.exec_module(module)
+    policy_spec = importlib.util.spec_from_file_location(
+        "common.ref_type_policy", path.with_name("ref_type_policy.py")
+    )
+    policy = importlib.util.module_from_spec(policy_spec)
+    policy_spec.loader.exec_module(policy)
+    with patch.dict(sys.modules, {"common.ref_type_policy": policy}):
+        spec.loader.exec_module(module)
     return module
 
 

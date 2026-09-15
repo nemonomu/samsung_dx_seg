@@ -27,6 +27,7 @@ import importlib
 from common.config import ACCOUNT_NAME, COUNTRY, PAGE_TYPE, ensure_dirs, read_csv, write_json
 from common.parsers import IS_BUNDLE, is_bundle_product
 from common.listing_policy import filter_listing_rows
+from common.ref_type_policy import apply_ref_type_policy
 
 PRIMARY_SPEC_EXPECTED_NULL = "_primary_spec_expected_null"
 
@@ -210,6 +211,10 @@ def main() -> int:
             "summarized_review_content": d.get("summarized_review_content"),
             "detailed_review_content": d.get("detailed_review_content"),
         })
+
+    for row in rows:
+        if apply_ref_type_policy(row):
+            policy_null_ids.add(str(row.get("item") or "").strip())
 
     out_path = Path(args.output)
     with out_path.open("w", encoding="utf-8-sig", newline="") as fh:
