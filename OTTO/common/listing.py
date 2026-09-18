@@ -17,6 +17,7 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 from common import translate
+from common.parsers import ensure_variation_query
 from common.discount_stickers import sticker_fields, sticker_diagnostics
 from common.io_util import REFERENCES_ROOT, category_output_root, ensure_dirs, write_csv, write_json
 
@@ -231,7 +232,7 @@ def compose_rows(page: int, offset: int, data: Any) -> list[dict[str, Any]]:
             "exposure_type": exposure, "is_listing_target": True,
             "product_id": _text(product.get("id")), "variation_id": vid,
             "origin": "sponsored" if exposure == "sponsored" else None,
-            "product_url": _abs_url(product.get("variationPath")),
+            "product_url": ensure_variation_query(_abs_url(product.get("variationPath")), vid),
             "retailer_sku_name": _text(product.get("name")),
         })
     return rows

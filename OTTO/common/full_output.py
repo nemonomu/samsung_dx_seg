@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from common import datasheet, raw_html
 from common.discount_stickers import refresh_sticker_fields, sticker_diagnostics
 from common.io_util import category_output_root
-from common.parsers import format_detailed_review_content, parse_review_html
+from common.parsers import ensure_variation_query, format_detailed_review_content, parse_review_html
 from common.ref_type_policy import apply_ref_type_policy
 
 REVIEW_DETAIL_LIMIT = 20  # detailed_review_content collects up to this many written reviews
@@ -293,6 +293,9 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
     end_i = len(targets) if limit <= 0 else min(len(targets), start_i + limit)
     selected = targets[start_i:end_i]
     for target in selected:
+        # Also repair links when resuming from targets collected before option URLs
+        # were preserved in the listing step.
+        target["product_url"] = ensure_variation_query(target.get("product_url"), target.get("variation_id"))
         refresh_sticker_fields(target)
     discount_stickers = sticker_diagnostics(selected, product=cfg.PRODUCT, log=True)
 
@@ -456,6 +459,8 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                 row[f] = spec.get(f)
             rows.append(row)
             attempts.append({"rank": target.get("main_rank"), "item": target.get("product_id"),
+                             "variation_id": target.get("variation_id"),
+                             "sku_failure_reason": None if has_value(sku) else "no_model_in_option_sources",
                              "product_url": target.get("product_url"), "datasheet_status": ds_status,
                              "reco": reco.get("similar_count"), "review_status": review_resp.get("status"),
                              "summary_required": review.get("_summary_required", summary_required),

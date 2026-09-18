@@ -31,6 +31,12 @@ def _clean(value: str | None) -> str | None:
     return cleaned or None
 
 
+def _present(value: str | None) -> bool:
+    return bool(value) and str(value).strip().casefold() not in {
+        "", "-", "--", "—", "–", "k.a.", "n/a", "keine angabe",
+    }
+
+
 def _fetch(variation_ids: list[str], timeout: int, retries: int = 1) -> str | None:
     from common import raw_html
     url = VERGLEICH_URL + "?" + urlencode({"variationIds": ",".join(variation_ids)})
@@ -189,29 +195,29 @@ def characteristics_map(variation_ids: list[str], labels: list[str], *, timeout:
     groups an either/or intent (e.g. Gesamtrauminhalt OR Gesamtnutzinhalt) so a fridge that
     genuinely carries one is not endlessly retried for the other. Labels that stay missing
     after the per-id pass are genuinely absent on OTTO."""
-    ids = [str(v) for v in variation_ids if v]
+    ids = list(dict.fromkeys(str(v).strip() for v in variation_ids if str(v or "").strip()))
     result = _multi_pass(ids, labels, timeout, sleep)
 
     def _incomplete(vid: str, include_any: bool = True) -> bool:
         d = result.get(vid, {})
-        rendered = bool(d.get(NAME_KEY)) or any(v for k, v in d.items() if k != NAME_KEY)
+        rendered = bool(d.get(NAME_KEY)) or any(_present(v) for k, v in d.items() if k != NAME_KEY)
         if not rendered:
             return True
-        if required and not all(d.get(lbl) for lbl in required):
+        if required and not all(_present(d.get(lbl)) for lbl in required):
             return True
         # required_any (e.g. a capacity either/or group) drives only the cheap BATCHED
         # retries: an intermittently-dropped cell usually re-renders within a couple of
         # batched passes. It must NOT drive the per-id pass — that would fetch one page for
         # every item that GENUINELY lacks the group (most fridges get capacity from the
         # datasheet), which is prohibitively slow.
-        if include_any and required_any and any(not any(d.get(lbl) for lbl in grp) for grp in required_any):
+        if include_any and required_any and any(not any(_present(d.get(lbl)) for lbl in grp) for grp in required_any):
             return True
         return False
 
     def _merge(passed: dict[str, dict[str, str | None]]) -> None:
         for vid, vals in passed.items():
             for key, val in vals.items():
-                if val and not result[vid].get(key):
+                if _present(val) and not _present(result[vid].get(key)):
                     result[vid][key] = val
 
     for _ in range(retry_rounds):
@@ -222,4 +228,9 @@ def characteristics_map(variation_ids: list[str], labels: list[str], *, timeout:
     if final_individual:
         missing = [v for v in ids if _incomplete(v, include_any=False)]
         _merge(_multi_pass(missing, labels, timeout, retry_sleep, batch_size=1))
+    for vid in ids:
+        if _incomplete(vid, include_any=False):
+            missing_labels = [label for label in (required or labels) if not _present(result[vid].get(label))]
+            print(f"[compare][WARN] variation_id={vid} reason=missing_after_retries "
+                  f"labels={missing_labels}", flush=True)
     return result

@@ -280,8 +280,8 @@ def _top_info_map(target: dict[str, Any]) -> dict[str, str]:
 
 
 def _ctx_values(target: dict[str, Any], ctx: dict[str, Any] | None) -> dict[str, str]:
-    pid = str(target.get("product_id") or "")
-    values = ((ctx or {}).get("model", {}) or {}).get(pid, {})
+    vid = str(target.get("variation_id") or "").strip()
+    values = ((ctx or {}).get("model", {}) or {}).get(vid, {})
     return values if isinstance(values, dict) else {}
 
 
@@ -375,7 +375,7 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
 
 def prepare_context(targets=None) -> dict[str, Any]:
     # /vergleich/ Modellbezeichnung (sku fallback) + Gesamtrauminhalt (capacity for beverage
-    # coolers the datasheet/structured comparison page miss), on current bestVariationIds.
+    # coolers the datasheet/structured comparison page miss), on the original option IDs.
     # NOTE: we deliberately do NOT force a capacity re-fetch here (model_context supports
     # required_any). ~70 household fridges legitimately lack a /vergleich/ volume label (their
     # capacity comes from the datasheet), so retrying the whole capacity-missing set would add

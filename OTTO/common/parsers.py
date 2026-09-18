@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 from common.discount_stickers import sticker_fields
@@ -60,10 +60,17 @@ def decode_base64_url(value: str | None) -> str | None:
 
 
 def ensure_variation_query(url: str | None, variation_id: str | None) -> str | None:
-    if not url or not variation_id or "variationId=" in url:
+    if not url or not variation_id:
         return url
-    separator = "&" if "?" in url else "?"
-    return f"{url}{separator}variationId={variation_id}"
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "variationId"]
+    query.append(("variationId", str(variation_id).strip()))
+    # Older OTTO links can also select a variation in the fragment.
+    fragment = parts.fragment
+    if "variationId=" in fragment:
+        fragment = urlencode([(k, v) for k, v in parse_qsl(fragment, keep_blank_values=True)
+                              if k != "variationId"])
+    return urlunsplit(parts._replace(query=urlencode(query), fragment=fragment))
 
 
 def first_decoded_link(tile) -> str | None:

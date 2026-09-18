@@ -58,12 +58,19 @@ _MODEL_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9/_.+\-]*")
 _MODEL_STOP_WORDS = {
     "address", "adresse", "anschrift", "supplier", "lieferant", "lieferanten",
     "energieeffizienzklasse", "energy", "class", "bildschirmdiagonale",
-    "screen", "leistungsaufnahme", "power", "name",
+    "screen", "leistungsaufnahme", "power", "name", "art", "type",
+    "allgemeine", "general", "parameter", "bauart", "eei", "eprel", "ean",
 }
+_MODEL_NEXT_FIELD_RE = re.compile(
+    r"\b(?:Name|Anschrift|Address|Supplier|Art des|Type of|Bauart|Parameter|"
+    r"Allgemeine Produktparameter|General product parameters|Energieeffizienzklasse|"
+    r"Energy efficiency|Bildschirmdiagonale|Screen diagonal|Leistungsaufnahme|Power demand|"
+    r"Nennkapazität|Rated capacity|Gesamtrauminhalt|Total volume|EEI|EPREL|EAN)\b", re.I,
+)
 
 
 def _valid_model(value: str | None) -> str | None:
-    """Return a model identifier, preserving short space-separated suffixes.
+    """Validate the entire model field, including letter and number-only segments.
 
     PDF table extraction sometimes merges neighbouring rows. Only caller-selected
     text after the Modellkennung label should be passed here; then a value like
@@ -75,23 +82,18 @@ def _valid_model(value: str | None) -> str | None:
     if not raw:
         return None
     raw = _MODEL_LABEL_RE.sub(" ", raw, count=1).strip(" :;,.|\t\r\n")
+    raw = re.sub(r"^\([a-z]\)\s*[:;]?\s*", "", raw)
+    raw = _MODEL_NEXT_FIELD_RE.split(raw, maxsplit=1)[0]
     tokens = _MODEL_TOKEN_RE.findall(raw)
     picked: list[str] = []
     for token in tokens:
         folded = token.casefold()
         if folded in _MODEL_STOP_WORDS:
             break
-        if not picked:
-            if len(token) < 4 or not (any(c.isdigit() for c in token) and any(c.isalpha() for c in token)):
-                continue
-        else:
-            # Keep compact model suffixes such as "PRO" or "WPS", but stop on prose.
-            if len(picked) >= 4:
-                break
-            if not (any(c.isdigit() for c in token) or token.isupper()):
-                break
-            if len(token) < 2:
-                break
+        # PRGF + 6421 + XP4E and WAM + 914 + A are each one model.
+        # Do not skip a prefix merely because its digits are in the next segment.
+        if not (any(c.isdigit() for c in token) or token.isupper() or token.istitle()):
+            break
         picked.append(token)
     if not picked:
         return None
@@ -148,7 +150,7 @@ def parse(pdf_bytes: bytes) -> dict[str, Any]:
         result["items"] = items
         result["rows"] = all_rows
         result["text"] = text
-        result["sku"] = _sku(items, text)
+        result["sku"] = _sku(items, text, all_rows)
     except ImportError:
         # missing dependency (pdfplumber) -> fail loudly rather than silently nulling
         # every datasheet field (electricity, ref_capacity, ...).
@@ -158,14 +160,16 @@ def parse(pdf_bytes: bytes) -> dict[str, Any]:
     return result
 
 
-def _sku(items: dict[int, list[str]], text: str) -> str | None:
-    for rest in items.values():
+def _sku(items: dict[int, list[str]], text: str, rows: list[list[str]] | None = None) -> str | None:
+    # Many REF tables do not number their rows; their cells still delimit the model.
+    for rest in list(rows or []) + list(items.values()):
         model = _model_after_label(rest)
         if model:
             return model
-    flat = re.sub(r"\s+", " ", text)
-    for match in _MODEL_LABEL_RE.finditer(flat):
-        model = _valid_model(flat[match.end():match.end() + 90])
+    for match in _MODEL_LABEL_RE.finditer(text):
+        # Preserve line boundaries so a model cannot consume the next PDF field.
+        tail = text[match.end():].lstrip(" :\t\r\n")
+        model = _valid_model(tail.splitlines()[0] if tail else "")
         if model:
             return model
     return None

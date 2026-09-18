@@ -153,7 +153,16 @@ def _model_from_name(name: str | None) -> str | None:
     if not m:
         return None
     model = _COLOR_SUFFIX.sub("", re.sub(r"\s+", " ", m.group(1)).strip()).strip()
-    return model or None
+    from common import model_sku
+    model = model_sku.clean_model(model)
+    if not model:
+        return None
+    # Listing titles can prefix the model with a series (WW8400D WW11DB8B95GB).
+    mixed = [m for m in re.finditer(r"\b[A-Za-z0-9][A-Za-z0-9/_.+-]*", model)
+             if any(c.isalpha() for c in m.group()) and any(c.isdigit() for c in m.group())]
+    if mixed:
+        model = model[mixed[-1].start():]
+    return model if any(c.isalpha() for c in model) and any(c.isdigit() for c in model) else None
 
 
 def _capacity_from_datasheet(ds: dict[str, Any] | None) -> str | None:
@@ -224,102 +233,48 @@ def _category_vids(cat: str, hard_cap: int = 4000, complete_rounds: int = 5) -> 
     return vids
 
 
-def _pid_vid_map(hard_cap: int = 4000) -> dict[str, str]:
-    """{product_id: current bestVariationId} from the everglades waschmaschinen listing.
-    Target variation_ids captured earlier go stale (OTTO switches bestVariationId), and
-    /vergleich/ + category membership only resolve with the CURRENT id."""
-    out: dict[str, str] = {}
-    offset = 0
-    total = None
-    fails = 0
-    rule = "(und.(suchbegriff.waschmaschinen).(~.(v.1)))"
-    while offset < hard_cap:
-        data = _ever_fetch(rule, offset)
-        if data is None:
-            fails += 1
-            if fails >= 3:
-                break
-            continue
-        fails = 0
-        intent = next((it for it in data.get("intents", []) if it.get("intent") == "ranked"), {})
-        products = intent.get("products", []) or []
-        if total is None:
-            total = intent.get("count")
-        if not products:
-            break
-        for p in products:
-            pid = str(p.get("id") or "")
-            vid = p.get("bestVariationId") or p.get("id")
-            if pid and vid:
-                out.setdefault(pid, str(vid))
-        offset += len(products)
-        if total and offset >= total:
-            break
-    return out
-
-
 def prepare_context(targets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """Per-SKU {Bauart, Modellbezeichnung, capacity} from the Kasada-free /vergleich/ page,
-    plus listing subtitles + everglades frontlader/toplader category membership. Everything
-    is keyed by product_id and queried with the CURRENT bestVariationId (stored target vids
-    drift and then /vergleich/ returns an empty column)."""
+    """Collect characteristics for each original option, never a representative option."""
     targets = targets or []
-    pid_vid = _pid_vid_map()
-    # (product_id, current bestVariationId) — fresh preferred, stored as fallback
-    q: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for t in targets:
-        pid = str(t.get("product_id") or "").strip()
-        vid = pid_vid.get(pid) or str(t.get("variation_id") or "").strip()
-        if pid and vid and pid not in seen:
-            seen.add(pid)
-            q.append((pid, vid))
-    query_vids = [vid for _, vid in q]
-    # Bauart is the key loading-type signal; require it so batch-dropped cells are re-fetched
-    chars_by_vid = compare.characteristics_map(query_vids, VERGLEICH_LABELS, required=["Bauart"]) if query_vids else {}
+    query_vids = list(dict.fromkeys(str(t.get("variation_id") or "").strip() for t in targets))
+    query_vids = [vid for vid in query_vids if vid]
+    chars = compare.characteristics_map(
+        query_vids, VERGLEICH_LABELS, required=["Bauart", "Modellbezeichnung"]
+    ) if query_vids else {}
     frontlader = _category_vids("frontlader")
     toplader = _category_vids("toplader")
+    names = {vid: chars.get(vid, {}).get(compare.NAME_KEY) for vid in query_vids}
 
-    chars: dict[str, dict[str, str | None]] = {}
-    bauart: dict[str, str | None] = {}
-    names: dict[str, str | None] = {}
-    is_front: dict[str, bool] = {}
-    is_top: dict[str, bool] = {}
-    for pid, vid in q:
-        c = chars_by_vid.get(vid, {})
-        chars[pid] = c
-        bauart[pid] = c.get("Bauart")
-        names[pid] = c.get(compare.NAME_KEY)
-        is_top[pid] = vid in toplader
-        is_front[pid] = vid in frontlader
-
-    # capacity gap recovery via the EU energy datasheet (Nennkapazität), only for gaps
-    ds_capacity: dict[str, str] = {}
+    # Fetch the row's own PDF only when its comparison model or capacity is missing.
+    # Cache by PDF URL so even rows without a variation ID cannot share another row's PDF.
+    from common import datasheet, model_sku
+    sheets: dict[str, dict[str, Any]] = {}
     for t in targets:
-        pid = str(t.get("product_id") or "").strip()
-        if not pid or pid in ds_capacity:
-            continue
-        if _has_value(top_info(t, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")):
-            continue
-        if _capacity_from_name(names.get(pid)) or _capacity_from_name(t.get("retailer_sku_name")):
-            continue
-        if _vergleich_capacity(chars.get(pid, {})):
+        vid = str(t.get("variation_id") or "").strip()
+        c = chars.get(vid, {})
+        name = names.get(vid)
+        wt = _is_waschtrockner(name, t.get("retailer_sku_name"), c.get("Produkttyp"))
+        capacity = (_capacity_from_name(name) or _capacity_from_name(t.get("retailer_sku_name"))
+                    or top_info(t, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
+                    or _vergleich_capacity(c, allow_generic=not wt))
+        if model_sku.clean_model(c.get("Modellbezeichnung")) and _has_value(capacity):
             continue
         uri = (t.get("energy_datasheet_uri") or "").strip()
-        if not uri:
+        if not uri or uri in sheets:
             continue
-        from common import datasheet
-        body, _st, _ = datasheet.fetch_datasheet_bytes(uri, 45)
-        cap = _capacity_from_datasheet(datasheet.parse(body))
-        if cap:
-            ds_capacity[pid] = cap
+        body, status, error = datasheet.fetch_datasheet_bytes(uri, 45)
+        sheets[uri] = datasheet.parse(body)
+        if error or sheets[uri].get("error"):
+            print(f"[ldy][WARN] variation_id={vid or 'missing'} datasheet_status={status} "
+                  f"reason={error or sheets[uri].get('error')}", flush=True)
 
-    labeled = sum(1 for v in bauart.values() if _has_value(v))
-    refreshed = sum(1 for pid, vid in q if pid_vid.get(pid))
-    print(f"[ldy] /vergleich/: {sum(1 for c in chars.values() if c)}/{len(q)} columns; Bauart {labeled}; "
-          f"vids refreshed {refreshed}/{len(q)}; category front={len(frontlader)} top={len(toplader)}; ds-cap {len(ds_capacity)}", flush=True)
-    return {"chars": chars, "bauart": bauart, "name": names,
-            "is_front": is_front, "is_top": is_top, "ds_capacity": ds_capacity}
+    print(f"[ldy] /vergleich/: {sum(1 for c in chars.values() if c)}/{len(query_vids)} options; "
+          f"category front={len(frontlader)} top={len(toplader)}; fallback PDFs={len(sheets)}", flush=True)
+    return {"chars": chars, "name": names,
+            "bauart": {vid: chars.get(vid, {}).get("Bauart") for vid in query_vids},
+            "is_front": {vid: vid in frontlader for vid in query_vids},
+            "is_top": {vid: vid in toplader for vid in query_vids},
+            "datasheets": sheets}
 
 
 def _is_waschtrockner(*texts: str | None) -> bool:
@@ -337,17 +292,17 @@ def _vergleich_capacity(vid_chars: dict[str, str | None], *, allow_generic: bool
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
     ctx = ctx or {}
-    pid = str(target.get("product_id") or "")
-    vid_chars = ctx.get("chars", {}).get(pid, {})
-    name = ctx.get("name", {}).get(pid)
+    vid = str(target.get("variation_id") or "").strip()
+    vid_chars = ctx.get("chars", {}).get(vid, {})
+    name = ctx.get("name", {}).get(vid)
     beladung = vid_chars.get("Beladung")
-    loading = resolve_loading(beladung, ctx.get("bauart", {}).get(pid), name)
+    loading = resolve_loading(beladung, ctx.get("bauart", {}).get(vid), name)
     if loading is None:
         # OTTO ships some frontloaders with no Bauart/name hint; fall back to its own
         # frontlader/toplader subcategory membership (real data, not a guess).
-        if ctx.get("is_top", {}).get(pid):
+        if ctx.get("is_top", {}).get(vid):
             loading = LOADING_MAP["toplader"]
-        elif ctx.get("is_front", {}).get(pid):
+        elif ctx.get("is_front", {}).get(vid):
             loading = LOADING_MAP["frontlader"]
     # capacity = WASH capacity. For a washer-dryer, use only "(Waschen)"-explicit sources so
     # the drying capacity is never picked. top_info "Kapazität Waschen" and the name's first
@@ -358,24 +313,23 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
                 or _capacity_from_name(target.get("retailer_sku_name"))
                 or top_info(target, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
                 or _vergleich_capacity(vid_chars, allow_generic=not wt)
-                or ctx.get("ds_capacity", {}).get(pid)
+                or _capacity_from_datasheet(ctx.get("datasheets", {}).get(
+                    (target.get("energy_datasheet_uri") or "").strip(), ds))
                 )
     return {"ldy_loading_type": loading, "ldy_capacity": capacity}
 
 
 def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:
-    """LDY has no datasheet; use the /vergleich/ Modellbezeichnung (handles space-separated
-    models like 'BPW 814 A' the name-token heuristic misses). clean_model drops a trailing
-    EAN suffix and colour."""
+    """Original option comparison model, then its own PDF, then its listing name."""
     ctx = ctx or {}
-    pid = str(target.get("product_id") or "")
+    vid = str(target.get("variation_id") or "").strip()
     from common import model_sku
-    model = model_sku.clean_model(ctx.get("chars", {}).get(pid, {}).get("Modellbezeichnung"))
+    model = model_sku.clean_model(ctx.get("chars", {}).get(vid, {}).get("Modellbezeichnung"))
     if model:
         return model
-    # /vergleich/ omitted Modellbezeichnung (reduced comparison, e.g. mini washers) — the
-    # model is still in the product name after "Waschmaschine".
-    return _model_from_name(target.get("retailer_sku_name"))
+    sheet = ctx.get("datasheets", {}).get((target.get("energy_datasheet_uri") or "").strip(), ds)
+    pdf_model = model_sku.clean_model((sheet or {}).get("sku"))
+    return pdf_model or _model_from_name(target.get("retailer_sku_name"))
 
 
 def extract_pdp_spec(soup) -> dict[str, Any]:
