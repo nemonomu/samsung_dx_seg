@@ -17,6 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from common import datasheet, raw_html
+from common.discount_stickers import refresh_sticker_fields, sticker_diagnostics
 from common.io_util import category_output_root
 from common.parsers import format_detailed_review_content, parse_review_html
 from common.ref_type_policy import apply_ref_type_policy
@@ -286,10 +287,14 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
     from common.io_util import write_json
 
     out = category_output_root(cfg.PRODUCT.lower())
-    targets = list(csv.DictReader(open(out / "otto_final_targets.csv", encoding="utf-8-sig")))
+    with (out / "otto_final_targets.csv").open(encoding="utf-8-sig", newline="") as handle:
+        targets = list(csv.DictReader(handle))
     start_i = max(start, 1) - 1
     end_i = len(targets) if limit <= 0 else min(len(targets), start_i + limit)
     selected = targets[start_i:end_i]
+    for target in selected:
+        refresh_sticker_fields(target)
+    discount_stickers = sticker_diagnostics(selected, product=cfg.PRODUCT, log=True)
 
     now = datetime.now()
     run_meta = {
@@ -582,6 +587,9 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
         "rows_with_missing_specs": rows_with_missing_specs,
         "summary_qa": summary_qa,
         "summary_anomaly_output": str(summary_anomaly_output),
+        "discount_stickers": discount_stickers,
+        "discount_sticker_run_ids": sorted({t["discount_sticker_run_id"] for t in selected
+                                            if t.get("discount_sticker_run_id")}),
     }
     write_json(out / "step09_full_output_manifest.json", manifest)
     print(f"[full/{cfg.PRODUCT}] output={output_csv} rows={len(rows)}")

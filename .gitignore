@@ -7,6 +7,7 @@ __pycache__/
 
 # Temporary investigation artifacts stay local.
 OTTO/archive/
+OTTO/references/discount_stickers/
 
 # Raw browser/network captures can contain cookies and session headers.
 *.har

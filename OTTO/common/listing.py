@@ -17,7 +17,8 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 from common import translate
-from common.io_util import category_output_root, ensure_dirs, write_csv, write_json
+from common.discount_stickers import sticker_fields, sticker_diagnostics
+from common.io_util import REFERENCES_ROOT, category_output_root, ensure_dirs, write_csv, write_json
 
 EVERGLADES_URL = "https://www.otto.de/everglades/products"
 CROCOTILE_URL = "https://www.otto.de/crocotile/tile/data"
@@ -345,7 +346,7 @@ def crocotile_fields(tile: dict[str, Any], fallback_name: Any) -> dict[str, Any]
     if name and brand and not name.casefold().startswith(brand.casefold()):
         name = f"{brand} {name}"
     popularity_raw = "Sehr beliebt" if social.get("popular") is True else None
-    discount_raw = _text(deal.get("highlight"))
+    image = deal.get("image") if isinstance(deal.get("image"), dict) else {}
     return {
         "retailer_sku_name": name,
         "brand": brand,
@@ -356,8 +357,7 @@ def crocotile_fields(tile: dict[str, Any], fallback_name: Any) -> dict[str, Any]
         "savings": _text(sale.get("discount")),
         "sku_popularity_raw": popularity_raw,
         "sku_popularity": translate.translate_popularity(popularity_raw),
-        "discount_type_raw": discount_raw,
-        "discount_type": translate.translate_discount_type(discount_raw),
+        **sticker_fields(image.get("src"), deal.get("dealId")),
         "delivery_availability_raw": _text(availability.get("detail")),
         "delivery_availability": translate.translate_delivery(availability.get("detail")),
         "count_of_reviews_listing": reviews.get("amount"),
@@ -446,17 +446,18 @@ def run(cfg) -> dict[str, Any]:
 
         phase = "write_output"
         for row in rows:
+            row["discount_sticker_run_id"] = run_id
             tile = tiles.get(str(row.get("variation_id") or ""))
             if tile:
-                row.update({
-                    key: value
-                    for key, value in crocotile_fields(tile, row.get("retailer_sku_name")).items()
-                    if value not in (None, "")
-                })
+                row.update({key: value for key, value in crocotile_fields(tile, row.get("retailer_sku_name")).items()
+                            if value not in (None, "") or key.startswith("discount_")})
 
+        discount_stickers = sticker_diagnostics(
+            rows, cache_dir=REFERENCES_ROOT / "discount_stickers", product=cfg.PRODUCT, log=True,
+        )
         write_csv(listing_csv, rows)
         finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
-        status = "completed_with_warnings" if failed_ids else "completed"
+        status = "completed_with_warnings" if failed_ids or discount_stickers["unknown_image_count"] else "completed"
         write_json(diagnostics_path, {
             "run_id": run_id,
             "status": status,
@@ -487,6 +488,7 @@ def run(cfg) -> dict[str, Any]:
             ),
             "everglades_requests": everglades_meta,
             "crocotile_requests": successful_crocotile_requests,
+            "discount_stickers": discount_stickers,
         }
         write_json(manifest_path, manifest)
         print(

@@ -1,7 +1,7 @@
-"""German -> English translation for OTTO listing labels (pattern-based, full coverage).
+"""German -> English translation for OTTO listing labels.
 
-Covers sku_popularity, sku_status, discount_type (deal highlights), and
-delivery_availability. Unknown values fall back to the raw string.
+Covers sku_popularity, sku_status, discount_type (verified sticker names), and
+delivery_availability. Unknown discount names stay NULL; other fields keep raw.
 """
 from __future__ import annotations
 
@@ -35,24 +35,26 @@ def translate_status(value: str | None) -> str | None:
     return "Sponsored" if s.lower() == "gesponsert" else s
 
 
+STICKER_TRANSLATIONS = {
+    "Deal des Monats": "Deal of the month",
+    "Deal der Woche": "Deal of the week",
+    "Deal & Gewinne": "Deal & Win",
+    "Unser Hero": "Our Hero",
+    "Premium Hero": "Premium Hero",
+    "Technik Highlights": "Tech Highlights",
+    "OTTO Days": "OTTO Days",
+}
+
+
 def translate_discount_type(value: str | None) -> str | None:
+    """Translate verified sticker text; price-period highlights are not stickers."""
     s = _clean(value)
     if not s:
         return None
-    low = s.lower()
-    if low == "nur für kurze zeit":
-        return "Only for a short time"
-    if low == "nur diesen monat":
-        return "Only this month"
-    if low == "deal des monats":
-        return "Deal of the month"
-    if low in ("nur noch heute", "nur heute"):
-        return "Only today"
-    m = re.fullmatch(r"nur bis (\w+)", low)
-    if m:
-        wd = WEEKDAYS.get(m.group(1))
-        return f"Only until {wd}" if wd else s
-    return s  # unknown deal highlight -> keep raw
+    for raw, english in STICKER_TRANSLATIONS.items():
+        if s.casefold() in (raw.casefold(), english.casefold()):
+            return english
+    return None
 
 
 def translate_delivery(value: str | None) -> str | None:

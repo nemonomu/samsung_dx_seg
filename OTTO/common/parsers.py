@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+from common.discount_stickers import sticker_fields
 
 OTTO_BASE = "https://www.otto.de"
 MULTI_VALUE_DELIMITER = " ||| "
@@ -142,15 +143,14 @@ def extract_price_texts(tile) -> dict[str, str | None]:
 def extract_listing_labels(tile) -> dict[str, str | None]:
     text = text_clean(tile.get_text(" ", strip=True)) or ""
     popularity_raw = "Sehr beliebt" if "Sehr beliebt" in text else None
-    discount_type_raw = "Deal des Monats" if "Deal des Monats" in text else None
+    sticker = tile.select_one("img.reptile-tile__deal-badge-image")
     status_raw = "Gesponsert" if tile.get("data-origin") == "sponsored" or "gesponsert" in text.lower() else None
     return {
         "sku_popularity_raw": popularity_raw,
         "sku_popularity": translate_text(popularity_raw),
         "sku_status_raw": status_raw,
         "sku_status": translate_text(status_raw),
-        "discount_type_raw": discount_type_raw,
-        "discount_type": translate_text(discount_type_raw),
+        **sticker_fields(sticker.get("src") if sticker else None),
     }
 
 

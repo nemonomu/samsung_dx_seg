@@ -8,6 +8,7 @@ from email.message import EmailMessage
 from typing import Any
 
 from common.io_util import category_output_root, env_value, read_csv, read_json, write_json
+from common.discount_stickers import sticker_fields
 
 NULL_BASE = [
     "item", "product_url", "retailer_sku_name", "final_sku_price", "original_sku_price",
@@ -37,6 +38,20 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     targets = read_json(targets_mf) if targets_mf.exists() else {}
     full = read_json(full_mf) if full_mf.exists() else {}
     db = read_json(db_mf) if db_mf.exists() else {}
+    # Match diagnostics to the batch being reported. A rerun must not inherit
+    # an older listing's unknown images merely because it contains the same SKU.
+    batches = {str(row.get("batch_id") or "").strip() for row in rows} - {""}
+    current_full = bool(full.get("batch_id")) and batches == {full["batch_id"]}
+    stickers = (full.get("discount_stickers") or {}) if current_full else {}
+    listing_mf = out / "step01_listing_manifest.json"
+    listing = read_json(listing_mf) if listing_mf.exists() else {}
+    if (current_full and listing.get("success") is True and listing.get("run_id")
+            and full.get("discount_sticker_run_ids") == [listing["run_id"]]):
+        # Includes unknown images from all collected cards, even excluded targets.
+        # Legacy target warnings still come from the selected full-output rows.
+        stickers = {**stickers, **(listing.get("discount_stickers") or {}),
+                    "legacy_items": stickers.get("legacy_items") or [],
+                    "legacy_missing_image_count": stickers.get("legacy_missing_image_count", 0)}
     total = len(rows)
     main_expected = targets.get("main_target_unique", 300)
     bsr_expected = targets.get("bsr_rank_limit", 100)
@@ -47,6 +62,16 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     null_fields = [f for f in null_fields_check if not any((r.get(f) or "").strip() for r in rows)]
 
     issues = []
+    # A mapping can be updated and full output regenerated from saved targets.
+    # Do not revive resolved warnings from the original listing manifest.
+    unknown_images = [s for s in stickers.get("unknown_images") or []
+                      if sticker_fields(s.get("image_url"))["discount_sticker_status"] == "unknown"]
+    unknown_count = len({item.get("sku_id") for s in unknown_images for item in s.get("items") or []})
+    if unknown_images:
+        issues.append(f"미등록 할인 스티커 {len(unknown_images)}종 / 영향 상품 {unknown_count}개 (discount_type=NULL)")
+    legacy_items = stickers.get("legacy_items") or []
+    if legacy_items:
+        issues.append(f"할인 스티커 이미지 정보 없는 이전 수집값 {len(legacy_items)}개 — listing 재수집 필요")
     if targets.get("main_target_shortfall"):
         issues.append(f"메인 수집 대상 부족 {targets.get('main_target_shortfall')}")
     if main_present != main_expected:
@@ -91,6 +116,25 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
 
     base_subject = f"[SEG] OTTO {cfg.PRODUCT} 수집 완료"
     subject = base_subject if not issues else f"[확인필요] {base_subject}"
+    sticker_lines = []
+    if unknown_images:
+        sticker_lines = ["미등록 할인 스티커 (수집은 계속, 영어 할인명은 NULL)",
+                         f"  이미지 {len(unknown_images)}종 / 영향 상품 {unknown_count}개"]
+        for sticker in unknown_images:
+            sticker_lines.extend([
+                f"  - 이미지 식별자: {sticker.get('image_id') or '(없음)'}",
+                f"    이미지 URL: {sticker.get('image_url') or '(없음)'}",
+                f"    이미지 보관: {sticker.get('image_file') or '(실패 또는 미보관)'}",
+            ])
+            if sticker.get("image_error"):
+                sticker_lines.append(f"    이미지 보관 오류: {sticker['image_error']}")
+            for item in sticker.get("items") or []:
+                sticker_lines.append(f"    SKU={item.get('sku_id')} / {item.get('retailer_sku_name') or ''}")
+                sticker_lines.append(f"      {item.get('product_url') or '(상품 URL 없음)'}")
+    if legacy_items:
+        sticker_lines.append("스티커 이미지 정보 없는 이전 수집값 — listing 재수집 필요")
+        for item in legacy_items:
+            sticker_lines.append(f"  SKU={item.get('sku_id')} / 이전 문구={item.get('legacy_raw')} / {item.get('product_url') or ''}")
     lines = [
         subject, "",
         f"총 수집: {total}개 SKU", "",
@@ -108,6 +152,8 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         f"  선택자 불일치 - {summary_selector_mismatch}",
         f"  HTTP 실패 - {summary_http_failed}",
         f"  UI 문구 혼입 - {summary_ui_polluted}", "",
+        *sticker_lines,
+        *([""] if sticker_lines else []),
         ("이상 없음" if not issues else "확인 필요\n" + "\n".join(f"  - {i}" for i in issues)),
     ]
     return subject, "\n".join(lines) + "\n"
