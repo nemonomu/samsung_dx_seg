@@ -96,7 +96,25 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         1 for row in rows if (row.get("sku_status") or "").strip() == "Sponsored"
     )
 
+    # Step09 retains the raw labels; step14 also covers standalone legacy loads.
+    # Report only SKUs present in this output, and do not count both steps twice.
+    output_ids = {str(row.get("item") or "").strip() for row in rows}
+    output_batches = {str(row.get("batch_id") or "").strip() for row in rows} - {""}
+    discount_items_by_id = {}
+    for manifest in (full, db):
+        manifest_batches = set(manifest.get("batch_ids") or [])
+        if output_batches and manifest_batches and output_batches != manifest_batches:
+            continue
+        for item in (manifest.get("discount_translation") or {}).get("items", []):
+            sku_id = str(item.get("sku_id") or "").strip()
+            if sku_id and sku_id in output_ids:
+                discount_items_by_id[sku_id] = item
+    discount_items = list(discount_items_by_id.values())
+    discount_all_unknown = sum(bool(item.get("all_untranslated")) for item in discount_items)
+
     issues = []
+    if discount_all_unknown:
+        issues.append(f"discount_type all untranslated -> NULL: {discount_all_unknown} SKU(s)")
     main_complete_count = (listing.get("written_rows")
                            if listing.get("success") and listing.get("stop_reason") == "last_page"
                            else main_expected)
@@ -173,6 +191,20 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         if len(partial_items) > 20:
             review_lines.append(f"    ... and {len(partial_items) - 20} more")
 
+    discount_lines = []
+    if discount_items:
+        discount_lines = [
+            "Discount type translation / 할인 문구 미번역",
+            f"  미번역 항목 포함 SKU - {len(discount_items)}",
+            f"  전부 미번역으로 discount_type=NULL - {discount_all_unknown}",
+        ]
+        for item in discount_items:
+            status = "NULL (전부 미번역)" if item.get("all_untranslated") else "일부 미번역 제외"
+            labels = " ||| ".join(item.get("untranslated") or [])
+            discount_lines.append(f"  - SKU={item['sku_id']} / {status} / 미번역 원문: {labels}")
+            if item.get("product_url"):
+                discount_lines.append(f"    {item['product_url']}")
+
     lines = [
         subject, "",
         f"Total collected: {total} sku", "",
@@ -197,6 +229,8 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         *([f"  {f}" for f in null_fields] if null_fields else ["  none"]), "",
         *review_lines,
         *([""] if review_lines else []),
+        *discount_lines,
+        *([""] if discount_lines else []),
         ("Issues: none" if not issues else "Issues\n" + "\n".join(f"  - {i}" for i in issues)),
     ]
     return subject, "\n".join(lines) + "\n"

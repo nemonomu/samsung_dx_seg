@@ -22,6 +22,7 @@ from typing import Any
 import importlib
 
 from common.config import ACCOUNT_NAME, db_config, read_csv, write_json
+from common.discount_types import normalize_discount_rows, translate_discount_type
 from common.last_known_db import safe_backfill_from_retail_history
 from common.listing_policy import filter_listing_rows
 from common.ref_type_policy import apply_ref_type_policy
@@ -62,6 +63,8 @@ def as_int(value):
 
 
 def empty_to_none(value, column: str):
+    if column == "discount_type":
+        return translate_discount_type(value)[0]
     if column in INT_COLUMNS:
         return as_int(value)
     return None if value in ("", None) else value
@@ -114,6 +117,7 @@ def main() -> int:
     input_path = Path(args.input or (cfg.OUTPUT_ROOT / "mmkt_full_output.csv"))
     input_rows = read_csv(input_path)
     rows = filter_listing_rows(input_rows, args.product)
+    discount_translation = normalize_discount_rows(rows)
     excluded_ref_type_ids = {
         str(row.get("item") or "").strip() for row in rows if apply_ref_type_policy(row)
     }
@@ -131,6 +135,7 @@ def main() -> int:
         "excluded_rows": len(input_rows) - len(rows),
         "batch_ids": batch_ids,
         "dry_run": args.dry_run,
+        "discount_translation": discount_translation,
     }
 
     if not rows:

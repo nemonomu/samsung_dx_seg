@@ -16,6 +16,8 @@ import json
 import re
 from typing import Any
 
+from common.discount_types import TEXT_TRANSLATIONS, translate_discount_type
+
 MMKT_BASE = "https://www.mediamarkt.de"
 MULTI_VALUE_DELIMITER = " ||| "
 
@@ -29,31 +31,6 @@ IS_BUNDLE = "_is_bundle"
 def is_bundle_product(name: Any) -> bool:
     """Use the target product title, never another product on the same page."""
     return bool(re.search(r"\bbundle\b", str(name or ""), re.I))
-
-# German marketing/discount labels → English (딕셔너리 방식, [수집 후 번역 필요]).
-TEXT_TRANSLATIONS = {
-    "Gesponsert": "Sponsored",
-    "gesponsert": "Sponsored",
-    "Preisheld": "Price champion",
-    "Gratis Standard-Lieferung": "Free standard delivery",
-    "0% Finanzierung": "0% financing",
-    "Deal des Tages": "Deal of the day",
-    "Deal der Woche": "Deal of the week",
-    "Deal des Monats": "Deal of the month",
-    "Tiefpreis": "Lowest price",
-    "Neu": "New",
-    "Unsere Eigenmarke": "Our own brand",
-    "Gewinnspiel": "Prize draw",
-    "Inkl. Streaming Content": "Incl. streaming content",
-    "WM-Highlight": "World Cup highlight",
-    "myMediaMarkt-Rabatt verfügbar": "myMediaMarkt discount available",
-    "-30€ mit Kalibrierung": "-30€ with calibration",
-    "Auch für Geschäftskunden": "Also for business customers",
-    "Mini LED mit QLED": "Mini LED with QLED",
-    "Technik Highlight": "Tech highlight",
-    "Läuft mit Powerbank": "Runs on power bank",
-    "Gratis Versand": "Free shipping",
-}
 
 
 def text_clean(value: str | None) -> str | None:
@@ -187,7 +164,7 @@ def _discount_type(badges_feat: dict | None) -> tuple[str | None, str | None]:
     if not names:
         return None, None
     raw = MULTI_VALUE_DELIMITER.join(names)
-    eng = MULTI_VALUE_DELIMITER.join(translate_text(n) for n in names)
+    eng, _ = translate_discount_type(raw)
     return raw, eng
 
 
@@ -372,7 +349,7 @@ def extract_rendered_listing_rows(html: str) -> tuple[list[dict[str, Any]], dict
             if name and name not in badge_names:
                 badge_names.append(name)
         raw_dt = MULTI_VALUE_DELIMITER.join(badge_names) or None
-        eng_dt = MULTI_VALUE_DELIMITER.join(translate_text(name) for name in badge_names) or None
+        eng_dt, _ = translate_discount_type(raw_dt)
 
         rating_node = item.find(attrs={"data-test": "mms-customer-rating"})
         rating_match = re.search(

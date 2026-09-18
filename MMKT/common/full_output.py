@@ -25,6 +25,7 @@ from typing import Any
 import importlib
 
 from common.config import ACCOUNT_NAME, COUNTRY, PAGE_TYPE, ensure_dirs, read_csv, write_json
+from common.discount_types import normalize_discount_rows
 from common.parsers import IS_BUNDLE, is_bundle_product
 from common.listing_policy import filter_listing_rows
 from common.ref_type_policy import apply_ref_type_policy
@@ -197,8 +198,8 @@ def main() -> int:
             "savings": l.get("savings"),
             "sku_popularity": "",            # OTTO-only field
             "sku_status": l.get("sku_status"),                # "Sponsored" (English)
-            # [수집 후 번역 필요] fields -> English (_en) per spec + user
-            "discount_type": first(l.get("discount_type_en"), l.get("discount_type")),
+            # Re-translate the original, including legacy CSVs with stale _en values.
+            "discount_type": first(l.get("discount_type"), l.get("discount_type_en")),
             "delivery_availability": first(d.get("delivery_availability_en"), d.get("delivery_availability")),
             "pick_up_availability": first(d.get("pick_up_availability_en"), d.get("pick_up_availability")),
             "sku": d.get("sku"),
@@ -212,6 +213,7 @@ def main() -> int:
             "detailed_review_content": d.get("detailed_review_content"),
         })
 
+    discount_translation = normalize_discount_rows(rows)
     for row in rows:
         if apply_ref_type_policy(row):
             policy_null_ids.add(str(row.get("item") or "").strip())
@@ -248,6 +250,7 @@ def main() -> int:
         "rows_missing_primary_spec": rows_missing_primary_spec,
         "spec_missing_counts": spec_missing_counts,
         "rows_with_fetch_error": len(detail_fetch_error_ids.intersection(union_ids)),
+        "discount_translation": discount_translation,
         "output_csv": str(out_path),
     }
     write_json(cfg.OUTPUT_ROOT / "step09_full_output_manifest.json", manifest)
