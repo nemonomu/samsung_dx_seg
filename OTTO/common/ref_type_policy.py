@@ -1,4 +1,4 @@
-"""Exclude non-layout values and normalize the approved compact layout values."""
+"""Exclude non-layout values and translate approved refrigerator types."""
 from __future__ import annotations
 
 import unicodedata
@@ -11,6 +11,11 @@ _EXCLUDED_REF_TYPES = frozenset({
     "refrigerator",
     "mini fridge",
     "mini refrigerator",
+    "mini k\u00fchlschrank",
+    "mini kuehlschrank",
+    "mini-k\u00fchlschrank",
+    "mini-kuehlschrank",
+    "stehender vorratsschrank",
     "compact",
     "without water dispenser",
     "chest freezer",
@@ -23,6 +28,8 @@ _EXCLUDED_REF_TYPES = frozenset({
 })
 
 _REF_TYPE_ALIASES = {
+    "vollraumk\u00fchlschrank": "Full-space Refrigerator",
+    "vollraumkuehlschrank": "Full-space Refrigerator",
     "compact freezer-on-top": "Freezer-on-top",
     "compact internal freezer compartment": "Internal freezer compartment",
 }

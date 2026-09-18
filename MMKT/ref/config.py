@@ -157,6 +157,8 @@ def _translate_type(value: str | None) -> str | None:
         return "Freezer-on-top"
     if "internalfreezercompartment" in key:
         return "Internal freezer compartment"
+    if "vollraumkuehlschrank" in key or "fullspacerefrigerator" in key:
+        return "Full-space Refrigerator"
 
     if any(token in key for token in (
         "kuehlgefrierkombination",

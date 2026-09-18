@@ -52,7 +52,7 @@ class RefTypeNormalizationTests(unittest.TestCase):
         values = (
             "compact", "Mini Refrigerator", "without water dispenser",
             "Mini Kuehlschrank",
-            "Vollraumkuehlschrank",
+            "Mini K\u00fchlschrank",
             "Stehender Vorratsschrank",
             "Kuehlschrank mit Gefrierfach",
             "Kuehlschrank mit Kaltlagerfach",
@@ -67,6 +67,17 @@ class RefTypeNormalizationTests(unittest.TestCase):
         for value in values:
             with self.subTest(value=value):
                 self.assertIsNone(self._type(value))
+
+    def test_full_space_translation_from_type_and_title(self):
+        for raw in ("Vollraumk\u00fchlschrank", "Vollraumkuehlschrank", "Full-space Refrigerator"):
+            for title in (None, "Brand " + raw + " Model"):
+                with self.subTest(raw=raw, title=title):
+                    result = ref_config.extract_pdp_spec(
+                        {"Produkttyp": raw, "Rauminhalt der K\u00fchlf\u00e4cher": "249"}, title,
+                    )
+                    self.assertEqual("Full-space Refrigerator", result["ref_refrigerator_type"])
+                    self.assertEqual("249L", result["ref_capacity"])
+                    self.assertFalse(result.get(PRIMARY_SPEC_EXPECTED_NULL))
 
     def test_compact_layouts_keep_their_freezer_position(self):
         for raw, expected in (

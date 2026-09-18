@@ -18,16 +18,21 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 RETAILERS = ("MMKT", "OTTO", "AMZN")
 EXCLUDED = (
+    "Mini K\u00fchlschrank", "Mini Kuehlschrank",
+    "Mini-K\u00fchlschrank", "Mini-Kuehlschrank", "Stehender Vorratsschrank",
     "compact", "Mini Refrigerator", "without water dispenser",
     "Built-in Refrigerator", "Built-in refrigerator", "Refrigerator", "Mini fridge",
     "Chest Freezer", "Fleischreifeschrank", "Getr\u00e4nkek\u00fchler",
     "Getr\u00e4nkek\u00fchlschrank", "K\u00fchlbox", "Party-K\u00fchlbox", "Generation 2",
 )
 NORMALIZED = {
+    "Vollraumk\u00fchlschrank": "Full-space Refrigerator",
+    "Vollraumkuehlschrank": "Full-space Refrigerator",
     "compact freezer-on-top": "Freezer-on-top",
     "compact internal freezer compartment": "Internal freezer compartment",
 }
 RETAINED = (
+    "Full-space Refrigerator",
     "Freezer-on-Top(Top Mount)", "Freezer-on-Bottom(Bottom Mount)",
     "Side-by-Side", "Side by Side", "French Door", "Multi-Door",
     "Fridge-freezer combination", "No freezer compartment",
@@ -118,12 +123,13 @@ def row_for(value, index=1):
 
 
 class RefTypePolicyTests(unittest.TestCase):
-    def test_compact_layouts_normalize_without_marking_policy_null(self):
+    def test_approved_types_normalize_without_marking_policy_null(self):
         for retailer in RETAILERS:
             with retailer_modules(retailer, ROOT) as load:
                 policy = load("ref_type_policy")
                 for value, expected in NORMALIZED.items():
-                    for variant in (value, value.swapcase(), value.replace(" ", "&#32;  ")):
+                    for variant in (value, value.swapcase(), value.replace(" ", "&#32;  "),
+                                    value.replace("\u00fc", "&uuml;"), value.replace("\u00fc", "u\u0308")):
                         with self.subTest(retailer=retailer, value=variant):
                             row = row_for(variant)
                             self.assertFalse(policy.apply_ref_type_policy(row))
@@ -131,7 +137,7 @@ class RefTypePolicyTests(unittest.TestCase):
                             self.assertFalse(policy.apply_ref_type_policy(row))
                             self.assertEqual(expected, row["ref_refrigerator_type"])
 
-    def test_history_normalizes_compact_layouts(self):
+    def test_history_normalizes_approved_types(self):
         for retailer in RETAILERS:
             with retailer_modules(retailer, ROOT) as load:
                 module = load("last_known_db")

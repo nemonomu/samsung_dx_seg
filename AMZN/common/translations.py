@@ -218,6 +218,7 @@ _REF_TYPE_EXCLUDES = (
 )
 
 _REF_TYPE_PATTERNS = (
+    (r"\b(?:vollraumkuehlschrank|full[-\s]+space\s+refrigerator)\b", "Full-space Refrigerator"),
     (r"\bfrench[-\s]*door\b", "French Door"),
     (r"\bside[-\s]*by[-\s]*side\b", "Side-by-Side"),
     (r"\bmulti[-\s]*door\b", "Multi-Door"),

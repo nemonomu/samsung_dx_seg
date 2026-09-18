@@ -42,6 +42,9 @@ REF_TYPE_MAP = [
     ("multidoor", "Multi Door"),
     ("freezer-on-top", "Freezer-on-top"),
     ("internal freezer compartment", "Internal freezer compartment"),
+    ("vollraumk\u00fchlschrank", "Full-space Refrigerator"),
+    ("vollraumkuehlschrank", "Full-space Refrigerator"),
+    ("full-space refrigerator", "Full-space Refrigerator"),
 ]
 _REF_TYPE_POLICY_NULL = (
     "einbauk\u00fchlschrank", "einbaukuehlschrank",
@@ -95,6 +98,8 @@ def _single_compartment_kind(value: str | None) -> str | None:
     key = _type_key(value)
     if not key or any(token in key for token in _REF_TYPE_EXCLUDES):
         return None
+    if translate_ref_type(value) == "Full-space Refrigerator":
+        return "cooling"
     if any(_type_key(layout) in key for layout, _english in REF_TYPE_MAP):
         return None
     if any(_type_key(token) in key for token in ("gefriertruhe", "gefrierschrank", "chest freezer", "freezer")):

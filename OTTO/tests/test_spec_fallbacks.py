@@ -17,6 +17,18 @@ from tv import config as tv_config  # noqa: E402
 
 
 class OttoRefSpecFallbackTests(unittest.TestCase):
+    def test_full_space_translation_preserves_cooling_only_capacity(self) -> None:
+        for raw in ("Vollraumk\u00fchlschrank", "Vollraumkuehlschrank", "Full-space Refrigerator"):
+            with self.subTest(raw=raw):
+                target = {
+                    "product_id": "example", "retailer_sku_name": "Brand " + raw + " Model",
+                    "top_infos": {"Rauminhalte der K\u00fchlf\u00e4cher": "249 l"},
+                }
+                spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+                self.assertEqual("Full-space Refrigerator", spec["ref_refrigerator_type"])
+                self.assertEqual("249 l", spec["ref_capacity"])
+                self.assertNotIn("ref_refrigerator_type", spec.get("_policy_null_fields", []))
+
     def test_compact_layouts_keep_type_without_using_freezer_only_total(self) -> None:
         for raw, expected in (
             ("compact freezer-on-top", "Freezer-on-top"),
@@ -34,7 +46,8 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
                 self.assertNotIn("ref_refrigerator_type", spec.get("_policy_null_fields", []))
 
     def test_size_and_dispenser_values_are_policy_null(self) -> None:
-        for raw in ("compact", "Mini Refrigerator", "without water dispenser"):
+        for raw in ("compact", "Mini Refrigerator", "without water dispenser",
+                    "Mini K\u00fchlschrank", "Stehender Vorratsschrank"):
             with self.subTest(raw=raw):
                 target = {"product_id": "example", "retailer_sku_name": raw, "top_infos": {"Gesamtrauminhalt": "300 l"}}
                 spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)

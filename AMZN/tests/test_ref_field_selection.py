@@ -70,6 +70,9 @@ class RefFieldSelectionTests(unittest.TestCase):
 
     def test_valid_freezer_position_forms_are_preserved(self) -> None:
         cases = {
+            "Vollraumk\u00fchlschrank": "Full-space Refrigerator",
+            "Vollraumkuehlschrank": "Full-space Refrigerator",
+            "Full-space Refrigerator": "Full-space Refrigerator",
             "compact freezer-on-top": "Freezer-on-top",
             "compact internal freezer compartment": "Internal freezer compartment",
             "Internal freezer compartment": "Internal freezer compartment",
@@ -93,12 +96,20 @@ class RefFieldSelectionTests(unittest.TestCase):
 
 
     def test_size_and_dispenser_values_are_not_layouts(self) -> None:
-        for value in ("compact", "Mini Refrigerator", "without water dispenser"):
+        for value in ("compact", "Mini Refrigerator", "without water dispenser",
+                      "Mini K\u00fchlschrank", "Stehender Vorratsschrank"):
             with self.subTest(value=value):
                 parsed = parse_product_detail_html(
                     _pdp("Brand Model", ("Aufbau", value), ("Capacity", "300 L")), product="REF",
                 )
                 self.assertIsNone(parsed["ref_refrigerator_type"])
+
+    def test_full_space_title_translation(self) -> None:
+        parsed = parse_product_detail_html(
+            _pdp("Brand Vollraumk\u00fchlschrank Model, 249 L"), product="REF",
+        )
+        self.assertEqual("Full-space Refrigerator", parsed["ref_refrigerator_type"])
+        self.assertEqual("249 L", parsed["ref_capacity"])
 
     def test_requested_excluded_product_categories_are_not_types(self) -> None:
         titles = (
