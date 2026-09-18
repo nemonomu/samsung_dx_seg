@@ -129,9 +129,9 @@ def _excluded_type(value: str | None) -> bool:
     if any(token in key for token in _REF_TYPE_EXCLUDE_TOKENS):
         return True
     # A branded/title-form standalone freezer is still a freezer. Preserve the
-    # two accepted refrigerator expressions that legitimately contain the word.
+    # accepted refrigerator expressions that legitimately contain the word.
     return "freezer" in key and not any(
-        token in key for token in ("fridgefreezer", "freezercompartment")
+        token in key for token in ("fridgefreezer", "freezercompartment", "freezerontop")
     )
 
 
@@ -153,6 +153,10 @@ def _translate_type(value: str | None) -> str | None:
         return "Side-by-Side"
     if "multidoor" in key:
         return "Multi-Door"
+    if "freezerontop" in key:
+        return "Freezer-on-top"
+    if "internalfreezercompartment" in key:
+        return "Internal freezer compartment"
 
     if any(token in key for token in (
         "kuehlgefrierkombination",

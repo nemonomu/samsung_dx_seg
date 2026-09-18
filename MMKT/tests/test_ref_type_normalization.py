@@ -50,6 +50,7 @@ class RefTypeNormalizationTests(unittest.TestCase):
 
     def test_product_category_and_installation_values_are_policy_null(self):
         values = (
+            "compact", "Mini Refrigerator", "without water dispenser",
             "Mini Kuehlschrank",
             "Vollraumkuehlschrank",
             "Stehender Vorratsschrank",
@@ -66,6 +67,18 @@ class RefTypeNormalizationTests(unittest.TestCase):
         for value in values:
             with self.subTest(value=value):
                 self.assertIsNone(self._type(value))
+
+    def test_compact_layouts_keep_their_freezer_position(self):
+        for raw, expected in (
+            ("compact freezer-on-top", "Freezer-on-top"),
+            ("compact internal freezer compartment", "Internal freezer compartment"),
+            ("Freezer-on-top", "Freezer-on-top"),
+            ("Internal freezer compartment", "Internal freezer compartment"),
+        ):
+            with self.subTest(raw=raw):
+                result = ref_config.extract_pdp_spec({"Produkttyp": raw})
+                self.assertEqual(expected, result["ref_refrigerator_type"])
+                self.assertFalse(result.get(PRIMARY_SPEC_EXPECTED_NULL))
 
     def test_non_refrigerator_product_types_are_excluded(self):
         excluded = (

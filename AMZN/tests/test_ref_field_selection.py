@@ -70,6 +70,9 @@ class RefFieldSelectionTests(unittest.TestCase):
 
     def test_valid_freezer_position_forms_are_preserved(self) -> None:
         cases = {
+            "compact freezer-on-top": "Freezer-on-top",
+            "compact internal freezer compartment": "Internal freezer compartment",
+            "Internal freezer compartment": "Internal freezer compartment",
             "Ohne Gefrierfach": "No freezer compartment",
             "Kompakt ohne Gefrierfach": "No freezer compartment",
             "Gefrierfach Innen": "Internal freezer compartment",
@@ -88,6 +91,14 @@ class RefFieldSelectionTests(unittest.TestCase):
                 )
                 self.assertEqual(parsed["ref_refrigerator_type"], expected)
 
+
+    def test_size_and_dispenser_values_are_not_layouts(self) -> None:
+        for value in ("compact", "Mini Refrigerator", "without water dispenser"):
+            with self.subTest(value=value):
+                parsed = parse_product_detail_html(
+                    _pdp("Brand Model", ("Aufbau", value), ("Capacity", "300 L")), product="REF",
+                )
+                self.assertIsNone(parsed["ref_refrigerator_type"])
 
     def test_requested_excluded_product_categories_are_not_types(self) -> None:
         titles = (

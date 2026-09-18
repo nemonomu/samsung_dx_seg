@@ -17,6 +17,31 @@ from tv import config as tv_config  # noqa: E402
 
 
 class OttoRefSpecFallbackTests(unittest.TestCase):
+    def test_compact_layouts_keep_type_without_using_freezer_only_total(self) -> None:
+        for raw, expected in (
+            ("compact freezer-on-top", "Freezer-on-top"),
+            ("compact internal freezer compartment", "Internal freezer compartment"),
+        ):
+            with self.subTest(raw=raw):
+                target = {
+                    "product_id": "example", "retailer_sku_name": raw,
+                    "top_infos": {"Rauminhalte der Tiefkuehlfaecher": "53 l"},
+                }
+                with patch.object(ref_config.eprel, "fridge_total_volume", return_value=None):
+                    spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+                self.assertEqual(expected, spec["ref_refrigerator_type"])
+                self.assertIsNone(spec["ref_capacity"])
+                self.assertNotIn("ref_refrigerator_type", spec.get("_policy_null_fields", []))
+
+    def test_size_and_dispenser_values_are_policy_null(self) -> None:
+        for raw in ("compact", "Mini Refrigerator", "without water dispenser"):
+            with self.subTest(raw=raw):
+                target = {"product_id": "example", "retailer_sku_name": raw, "top_infos": {"Gesamtrauminhalt": "300 l"}}
+                spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
+                self.assertIsNone(spec["ref_refrigerator_type"])
+                self.assertEqual(["ref_refrigerator_type"], spec.get("_policy_null_fields"))
+                self.assertEqual("300 l", spec["ref_capacity"])
+
     def test_top_infos_cooling_freezer_are_summed(self) -> None:
         target = {
             "product_id": "C2022152006",

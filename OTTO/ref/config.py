@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from common import datasheet, eprel, model_sku, parsers
+from common.ref_type_policy import is_excluded_ref_type
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, transliterate
 
 PRODUCT = "REF"
@@ -39,6 +40,8 @@ REF_TYPE_MAP = [
     ("french door", "French Door"),
     ("multi door", "Multi Door"),
     ("multidoor", "Multi Door"),
+    ("freezer-on-top", "Freezer-on-top"),
+    ("internal freezer compartment", "Internal freezer compartment"),
 ]
 _REF_TYPE_POLICY_NULL = (
     "einbauk\u00fchlschrank", "einbaukuehlschrank",
@@ -77,6 +80,8 @@ def translate_ref_type(value: str | None) -> str | None:
 
 
 def _is_policy_null_ref_type(value: str | None) -> bool:
+    if is_excluded_ref_type(value):
+        return True
     key = _type_key(value)
     if not key:
         return False
@@ -90,10 +95,10 @@ def _single_compartment_kind(value: str | None) -> str | None:
     key = _type_key(value)
     if not key or any(token in key for token in _REF_TYPE_EXCLUDES):
         return None
-    if any(_type_key(token) in key for token in ("gefriertruhe", "gefrierschrank", "chest freezer", "freezer")):
-        return "freezer"
     if any(_type_key(layout) in key for layout, _english in REF_TYPE_MAP):
         return None
+    if any(_type_key(token) in key for token in ("gefriertruhe", "gefrierschrank", "chest freezer", "freezer")):
+        return "freezer"
     if any(_type_key(token) in key for token in (
         "einbaukühlschrank", "einbaukuehlschrank",
         "weinkühlschrank", "weinkuehlschrank",

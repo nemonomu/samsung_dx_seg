@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from common.ref_type_policy import apply_ref_type_policy
+from common.ref_type_policy import apply_ref_type_policy, is_excluded_ref_type
 
 _EURO = chr(8364)
 
@@ -258,6 +258,8 @@ def classify_ref_refrigerator_type(value: Any, *, allow_weak_fact: bool = False)
     text = _clean(value)
     if text is None:
         return "unknown", None
+    if is_excluded_ref_type(text):
+        return "excluded", None
     key = text.translate(_GERMAN_ASCII_MAP).casefold()
     key = re.sub(r"[\u2010-\u2015]", "-", key)
     key = re.sub(r"\s+", " ", key).strip()
@@ -271,7 +273,8 @@ def classify_ref_refrigerator_type(value: Any, *, allow_weak_fact: bool = False)
         r"\bkuehl[-/\s]*(?:und\s+)?gefrier[-/\s]*(?:kombination|kombi|schrank)\b|"
         r"\bgefrier(?:fach|teil|schrank)\s+(?:unten|unterhalb|oben|oberhalb|innen)\b|"
         r"\b(?:unten|unterhalb|oben|oberhalb)\s+gefrier(?:fach|teil|schrank)\b|"
-        r"\binterner?\s+gefrier(?:fach|schrank)\b",
+        r"\binterner?\s+gefrier(?:fach|schrank)\b|"
+        r"\binternal\s+freezer\s+compartment\b",
         key,
     )
     if re.search(r"\b(?:freezer|gefrierschrank|gefriertruhe|tiefkuehlschrank|tiefkuehltruhe|gefriergeraet)\b", key) and not valid_freezer_form:
