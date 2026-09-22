@@ -18,7 +18,7 @@ class AmazonPriceRelationshipTests(unittest.TestCase):
         siel_logging.apply_price_relationship(row)
 
         self.assertEqual(row["original_sku_price"], "1.099,99€")
-        self.assertEqual(row["savings"], "-27%")
+        self.assertEqual(row["savings"], "27%")
         self.assertNotIn("_original_matches_final", row)
 
     def test_equal_prices_clear_original_and_invalid_savings_and_set_review_flag(self) -> None:

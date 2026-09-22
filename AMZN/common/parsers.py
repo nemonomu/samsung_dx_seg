@@ -25,11 +25,12 @@ def clean_text(value: Any) -> str | None:
 
 
 def normalize_savings_percentage(value: Any) -> str | None:
-    """Keep only an explicit negative percentage; never derive it from prices."""
+    """Return an explicit percentage without its minus sign; never derive it from prices."""
     text = re.sub(r"\s+", "", clean_text(value) or "").replace("\u2212", "-")
-    if not re.fullmatch(r"-\d{1,3}(?:[.,]\d+)?%", text):
+    if not re.fullmatch(r"-?\d{1,3}(?:[.,]\d+)?%", text):
         return None
-    return text if float(text[1:-1].replace(",", ".")) <= 100 else None
+    text = text.removeprefix("-")
+    return text if float(text[:-1].replace(",", ".")) <= 100 else None
 
 
 def _savings_percentage(soup: BeautifulSoup) -> str | None:

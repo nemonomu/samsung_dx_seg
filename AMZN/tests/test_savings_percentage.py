@@ -34,9 +34,9 @@ class Driver:
 class SavingsPercentageTests(unittest.TestCase):
     def test_ref_and_ldy_samples_and_tv_use_the_displayed_percentage(self):
         for product, raw, expected in (
-            ("REF", "-31&nbsp;%", "-31%"),
-            ("LDY", "-15 %", "-15%"),
-            ("TV", "-20\u202f%", "-20%"),
+            ("REF", "-31&nbsp;%", "31%"),
+            ("LDY", "-15 %", "15%"),
+            ("TV", "-20\u202f%", "20%"),
         ):
             with self.subTest(product=product):
                 self.assertEqual(parsers.parse_product_detail_html(pdp(raw), product=product)["savings"], expected)
@@ -52,7 +52,7 @@ class SavingsPercentageTests(unittest.TestCase):
         result = selectors.extract_detail(
             Driver(pdp("-15%")), {"savings": {"xpath": "//div[@id='coupon']"}}
         )
-        self.assertEqual(result["savings"], "-15%")
+        self.assertEqual(result["savings"], "15%")
 
     def test_no_html_means_null(self):
         self.assertIsNone(selectors.extract_detail(Driver(""), {})["savings"])
@@ -68,33 +68,38 @@ class SavingsPercentageTests(unittest.TestCase):
     def test_supported_price_containers(self):
         for block in ("corePriceDisplay_desktop_feature_div", "corePrice_desktop", "corePrice_feature_div"):
             with self.subTest(block=block):
-                self.assertEqual(parsers.parse_product_detail_html(pdp("-15%", block=block))["savings"], "-15%")
+                self.assertEqual(parsers.parse_product_detail_html(pdp("-15%", block=block))["savings"], "15%")
 
-    def test_only_explicit_negative_percentages_are_accepted(self):
-        for raw in (None, "", "NULL", "90,00€", 31, "31", "31%", "+31%", "-101%", "save -31%", "199€ mit 31 Prozent"):
+    def test_explicit_percentages_are_normalized_without_a_minus_sign(self):
+        for raw in (None, "", "NULL", "90,00€", 31, "31", "+31%", "-101%", "101%", "--31%", "save -31%", "199€ mit 31 Prozent"):
             with self.subTest(raw=raw):
                 self.assertIsNone(parsers.normalize_savings_percentage(raw))
                 self.assertIsNone(merge_insert._db_value(raw, "savings"))
                 self.assertIsNone(db_save._empty_to_none(raw, "savings"))
-        for raw, expected in (("-31&nbsp;%", "-31%"), ("\u221215\u00a0%", "-15%"), ("-12,5 %", "-12,5%")):
+        for raw, expected in (("-30%", "30%"), ("-31&nbsp;%", "31%"), ("\u221215\u00a0%", "15%"),
+                              ("-12,5 %", "12,5%"), ("-12.5%", "12.5%"), ("31%", "31%"),
+                              ("-0%", "0%"), ("-100%", "100%")):
             with self.subTest(raw=raw):
                 self.assertEqual(parsers.normalize_savings_percentage(raw), expected)
                 self.assertEqual(merge_insert._db_value(raw, "savings"), expected)
                 self.assertEqual(db_save._empty_to_none(raw, "savings"), expected)
+                self.assertEqual(parsers.normalize_savings_percentage(expected), expected)
+                self.assertEqual(merge_insert._db_value(expected, "savings"), expected)
+                self.assertEqual(db_save._empty_to_none(expected, "savings"), expected)
 
     def test_displayed_savings_survives_missing_equal_and_reversed_prices(self):
         for final, original in ((None, None), ("199,00€", None), ("199,00€", "199,00€"), ("299,00€", "199,00€")):
             with self.subTest(final=final, original=original):
                 row = {"final_sku_price": final, "original_sku_price": original, "savings": "-15 %"}
                 siel_logging.apply_price_relationship(row)
-                self.assertEqual(row["savings"], "-15%")
+                self.assertEqual(row["savings"], "15%")
                 if final == original and final is not None:
                     self.assertTrue(row["_original_matches_final"])
                     self.assertIsNone(row["original_sku_price"])
 
     def test_jsonl_uses_detail_only_and_never_backfills_absent_savings(self):
         for main_stage in ("main", "bsr"):
-            for detail_savings in ("-31%", None, "", "90,00€"):
+            for detail_savings in ("-31%", "31%", None, "", "90,00€"):
                 with self.subTest(stage=main_stage, savings=detail_savings):
                     listing = {"asin": "B0TEST1234", "stage": main_stage, "savings": "-90%",
                                "final_sku_price": "199,00€", "original_sku_price": "289,00€"}
@@ -102,7 +107,7 @@ class SavingsPercentageTests(unittest.TestCase):
                     with patch.object(merge_insert, "read_jsonl", return_value=[listing, detail]):
                         rows = merge_insert.merge_jsonl(SimpleNamespace(PRODUCT="REF"), "unused.jsonl")
                     self.assertEqual(len(rows), 1)
-                    self.assertEqual(rows[0]["savings"], "-31%" if detail_savings == "-31%" else None)
+                    self.assertEqual(rows[0]["savings"], "31%" if detail_savings in ("-31%", "31%") else None)
 
     def test_listing_only_redirect_does_not_use_another_products_savings(self):
         row = merge_insert.make_row(
@@ -113,7 +118,7 @@ class SavingsPercentageTests(unittest.TestCase):
         self.assertIsNone(row["savings"])
 
     def test_full_output_uses_detail_only_including_null(self):
-        for raw, expected in (("-31 %", "-31%"), (None, None), ("", None), ("90,00€", None)):
+        for raw, expected in (("-31 %", "31%"), ("31%", "31%"), (None, None), ("", None), ("90,00€", None)):
             with self.subTest(raw=raw):
                 target = {"asin": "B0TEST1234", "savings": "-90%", "final_sku_price": "199,00€", "original_sku_price": "289,00€"}
                 detail = {"asin": "B0TEST1234", "savings": raw}
@@ -140,8 +145,8 @@ class SavingsPercentageTests(unittest.TestCase):
             merge_insert.insert_rows(SimpleNamespace(PRODUCT="TV", DB_TABLE="test.rows"), rows, dry_run=True)
         connect.assert_not_called()
         preview = write.call_args.args[1]
-        self.assertEqual([row["savings"] for row in preview], [None, "-31%", None])
-        self.assertEqual([merge_insert._db_value(row["savings"], "savings") for row in rows], [None, "-31%", None])
+        self.assertEqual([row["savings"] for row in preview], [None, "31%", None])
+        self.assertEqual([merge_insert._db_value(row["savings"], "savings") for row in rows], [None, "31%", None])
 
 
 if __name__ == "__main__":
