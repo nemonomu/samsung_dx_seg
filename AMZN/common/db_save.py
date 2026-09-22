@@ -7,6 +7,7 @@ from typing import Any
 
 from common.io_util import ACCOUNT_NAME, RETAILER, category_output_root, db_config, read_csv, split_table, write_json
 from common.ref_type_policy import apply_ref_type_policy
+from common.parsers import normalize_savings_percentage
 
 INT_COLUMNS = {"main_rank", "bsr_rank"}
 
@@ -29,6 +30,8 @@ def _as_int(value):
 
 
 def _empty_to_none(value, column: str):
+    if column == "savings":
+        return normalize_savings_percentage(value)
     if column in INT_COLUMNS:
         return _as_int(value)
     return None if value in ("", None) else value

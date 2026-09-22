@@ -24,6 +24,34 @@ def clean_text(value: Any) -> str | None:
     return text or None
 
 
+def normalize_savings_percentage(value: Any) -> str | None:
+    """Keep only an explicit negative percentage; never derive it from prices."""
+    text = re.sub(r"\s+", "", clean_text(value) or "").replace("\u2212", "-")
+    if not re.fullmatch(r"-\d{1,3}(?:[.,]\d+)?%", text):
+        return None
+    return text if float(text[1:-1].replace(",", ".")) <= 100 else None
+
+
+def _savings_percentage(soup: BeautifulSoup) -> str | None:
+    # Scope to the current PDP price block, excluding coupons, energy labels,
+    # recommendations and the accessibility sentence containing the price.
+    for block in soup.select(
+        "#corePriceDisplay_desktop_feature_div, #corePrice_desktop, #corePrice_feature_div"
+    ):
+        for node in block.select(".savingsPercentage, .apex-savings-percentage"):
+            if any(
+                parent.has_attr("hidden")
+                or {"aok-hidden", "a-hidden"}.intersection(parent.get("class", []))
+                or re.search(r"display\s*:\s*none|visibility\s*:\s*hidden", parent.get("style", ""), re.I)
+                for parent in (node, *node.parents)
+            ):
+                continue
+            value = normalize_savings_percentage(node.get_text(" "))
+            if value is not None:
+                return value
+    return None
+
+
 def canonical_url(url: str | None) -> str | None:
     if not url:
         return None
@@ -552,6 +580,7 @@ def parse_product_detail_html(html: str, *, product: str | None = None) -> dict[
         or data.get("final_sku_price")
     )
     data["original_sku_price"] = _original_price(soup)
+    data["savings"] = _savings_percentage(soup)
     data["discount_type"] = _discount_type_value(soup)
     data["star_rating"] = _rating_text(soup)
     rating_count = soup.select_one("#acrCustomerReviewText")

@@ -8,20 +8,20 @@ from common import email_report, merge_insert, siel_logging
 
 
 class AmazonPriceRelationshipTests(unittest.TestCase):
-    def test_derives_savings_as_original_minus_final(self) -> None:
+    def test_preserves_displayed_percentage_instead_of_price_difference(self) -> None:
         row = {
             "final_sku_price": "799,99€",
             "original_sku_price": "1.099,99€",
-            "savings": "ignored",
+            "savings": "-27 %",
         }
 
         siel_logging.apply_price_relationship(row)
 
         self.assertEqual(row["original_sku_price"], "1.099,99€")
-        self.assertEqual(row["savings"], "300,00€")
+        self.assertEqual(row["savings"], "-27%")
         self.assertNotIn("_original_matches_final", row)
 
-    def test_equal_prices_clear_original_and_savings_and_set_review_flag(self) -> None:
+    def test_equal_prices_clear_original_and_invalid_savings_and_set_review_flag(self) -> None:
         row = {
             "final_sku_price": "€999.00",
             "original_sku_price": "999,00€",
@@ -59,7 +59,7 @@ class AmazonPriceRelationshipTests(unittest.TestCase):
         self.assertIn("확인 필요: original_sku_price와 final_sku_price가 동일", body)
         self.assertIn("URL=https://www.amazon.de/dp/B0TEST", body)
 
-    def test_make_row_uses_derived_savings(self) -> None:
+    def test_make_row_does_not_derive_missing_savings(self) -> None:
         row = merge_insert.make_row(
             SimpleNamespace(PRODUCT="TV"),
             {
@@ -73,7 +73,7 @@ class AmazonPriceRelationshipTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(row)
-        self.assertEqual(row["savings"], "250,00€")
+        self.assertIsNone(row["savings"])
 
 
 if __name__ == "__main__":

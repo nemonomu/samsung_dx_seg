@@ -182,6 +182,8 @@ def _scroll_to(driver, y: int) -> None:
 def normalize_field(field: str, value: str | None) -> str | None:
     if not value:
         return None
+    if field == "savings":
+        return parsers.normalize_savings_percentage(value)
     if field == "available_quantity_for_purchase":
         return parsers.normalize_available_quantity(value)
     if field == "sku_status":
@@ -516,13 +518,17 @@ def extract_cards(driver, selectors: dict[str, dict[str, str | None]], *, sort: 
 
 
 def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, product: str = "TV") -> dict[str, Any]:
-    data: dict[str, Any] = {}
+    data: dict[str, Any] = {"savings": None}
     is_ref = str(product).lower() == "ref"
     for field in EXPAND_FIELDS:
         if field in selectors:
             click_expand(driver, selectors.get(field))
     for field, selector in selectors.items():
         if field == "base_container" or field in EXPAND_FIELDS or field in DISABLED_FIELDS:
+            continue
+        if field == "savings":
+            # Always resolve from the current price block, including absence.
+            # A stale/unscoped DB selector must not supply another promotion.
             continue
         # The live DB selector points this field at Amazon's noisy
         # "Konfiguration" row. REF type is resolved from title/Aufbau below.
@@ -592,6 +598,7 @@ def extract_detail(driver, selectors: dict[str, dict[str, str | None]], *, produ
     selector_fields = set(selectors)
     if html:
         parsed_fallback = parsers.parse_product_detail_html(html, product=product)
+        data["savings"] = parsed_fallback.get("savings")
         if is_ref:
             parsed_type = parsed_fallback.get("ref_refrigerator_type")
             data["ref_refrigerator_type"] = (

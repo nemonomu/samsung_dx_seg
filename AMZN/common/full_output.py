@@ -51,7 +51,7 @@ def run(cfg) -> dict:
             "retailer_sku_name": first(detail.get("retailer_sku_name"), target.get("retailer_sku_name")),
             "final_sku_price": first(detail.get("final_sku_price"), target.get("final_sku_price")),
             "original_sku_price": first(detail.get("original_sku_price"), target.get("original_sku_price")),
-            "savings": target.get("savings"),
+            "savings": detail.get("savings"),
             "sku_popularity": target.get("sku_popularity"),
             "number_of_units_purchased_past_month": first(
                 detail.get("number_of_units_purchased_past_month"),

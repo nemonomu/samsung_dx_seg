@@ -125,7 +125,7 @@ class RecoverySession(FakeSession):
 def _run_detail(session: FakeSession, *, product: str, parsed_by_driver: dict[int, dict[str, object]],
                 product_url: str | None = "https://www.amazon.de/dp/B0TEST1234",
                 landing_names_by_driver: dict[int, str | None] | None = None,
-                emit=None):
+                emit=None, review_page_fallback=False):
     cfg = SimpleNamespace(PRODUCT=product, ACCOUNT_NAME="Amazon.de")
     target = {
         "asin": "B0TEST1234",
@@ -165,12 +165,31 @@ def _run_detail(session: FakeSession, *, product: str, parsed_by_driver: dict[in
             session=session,
             cfg=cfg,
             sleep=0,
-            review_page_fallback=False,
+            review_page_fallback=review_page_fallback,
             emit=emit,
         )
 
 
 class RefPdpRetryTests(unittest.TestCase):
+    def test_review_fallback_cannot_fill_an_absent_pdp_savings_badge(self) -> None:
+        for pdp_savings in (None, "-31%"):
+            with self.subTest(savings=pdp_savings):
+                driver = Driver(title="Test TV", containers=("#dp",))
+                session = FakeSession(first_driver=driver)
+
+                class PerPageFields(dict):
+                    def __getitem__(self, _key):
+                        return ({"savings": pdp_savings} if session.fetch_count == 1
+                                else {"savings": "-90%", "detailed_review_content": "A review"})
+
+                emitted = []
+                _run_detail(session, product="TV", parsed_by_driver=PerPageFields(),
+                            review_page_fallback=True, emit=emitted.append)
+                self.assertEqual(session.fetch_count, 2)
+                self.assertEqual(len(emitted), 1)
+                self.assertEqual(emitted[0]["savings"], pdp_savings)
+                self.assertEqual(emitted[0]["detailed_review_content"], "A review")
+
     @staticmethod
     def _result(*, status: int | None, text: str, error: str | None) -> dict[str, object]:
         return {

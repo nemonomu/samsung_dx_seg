@@ -486,6 +486,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                                 retry_final_reason,
                             )
                 detail.update({k: v for k, v in parsed_detail.items() if v not in (None, "")})
+                detail["savings"] = parsed_detail.get("savings")
                 detail["item"] = asin if detail.get("_detail_skip") else landing_asin or asin
                 detail["product_url"] = product_url
                 r_url = review_url(landing_url if use_detail else product_url, landing_asin if use_detail else asin)
@@ -513,7 +514,8 @@ def run(cfg, *, limit: int = 0, start: int = 1, timeout: int = DEFAULT_TIMEOUT,
                     )
                     if session.driver is not None and review.get("text"):
                         review_detail = selector_api.extract_detail(session.driver, selector_map, product=cfg.PRODUCT)
-                        detail.update({k: v for k, v in review_detail.items() if v not in (None, "") and detail.get(k) in (None, "")})
+                        detail.update({k: v for k, v in review_detail.items()
+                                       if k != "savings" and v not in (None, "") and detail.get(k) in (None, "")})
             if save_html:
                 save_text(ref / f"{idx:04d}_{asin}_reviews.html", review["text"])
             transport_warning = _transport_warning_reason(

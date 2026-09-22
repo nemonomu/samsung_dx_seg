@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from common.io_util import AMZN_ROOT
+from common.parsers import normalize_savings_percentage
 
 for _stream in (sys.stdout, sys.stderr):
     enc = getattr(_stream, "encoding", "") or ""
@@ -188,36 +189,16 @@ def prices_equal(left: Any, right: Any) -> bool:
     return left_amount is not None and right_amount is not None and left_amount == right_amount
 
 
-def _format_euro_decimal(amount: Decimal) -> str:
-    cents = int(amount.quantize(Decimal("0.01")) * 100)
-    return _format_euro_amount(str(cents // 100), f"{cents % 100:02d}")
-
-
 def apply_price_relationship(record: dict[str, Any]) -> dict[str, Any]:
-    """Derive Amazon savings and flag equal final/original prices for review."""
+    """Preserve the PDP percentage and flag equal prices independently."""
     record.pop("_original_matches_final", None)
-    final_amount = price_amount(record.get("final_sku_price"))
-    original_amount = price_amount(record.get("original_sku_price"))
-    if final_amount is None or original_amount is None:
-        record["savings"] = None
-        return record
-    if original_amount == final_amount:
-        record["original_sku_price"] = None
-        record["savings"] = None
-        record["_original_matches_final"] = True
-        return record
-    record["savings"] = (
-        _format_euro_decimal(original_amount - final_amount)
-        if original_amount > final_amount
-        else None
-    )
-    return record
+    record["savings"] = normalize_savings_percentage(record.get("savings"))
+    return null_original_when_same_as_final(record)
 
 
 def null_original_when_same_as_final(record: dict[str, Any]) -> dict[str, Any]:
     if prices_equal(record.get("final_sku_price"), record.get("original_sku_price")):
         record["original_sku_price"] = None
-        record["savings"] = None
         record["_original_matches_final"] = True
     return record
 

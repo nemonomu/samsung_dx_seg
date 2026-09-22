@@ -49,6 +49,8 @@ def _as_bool(value: Any) -> bool | None:
 
 
 def _db_value(value: Any, column: str) -> Any:
+    if column == "savings":
+        return parsers.normalize_savings_percentage(value)
     if column in INT_COLUMNS:
         return _as_int(value)
     if column in BOOL_COLUMNS:
@@ -170,7 +172,7 @@ def make_row(cfg, main_rec: dict[str, Any] | None, bsr_rec: dict[str, Any] | Non
             detail_values.get("original_sku_price"),
             primary.get("original_sku_price"),
         ),
-        "savings": _first(primary.get("savings"), detail_values.get("savings")),
+        "savings": detail_values.get("savings"),
         "sku_popularity": _first(primary.get("sku_popularity"), detail_values.get("sku_popularity")),
         "number_of_units_purchased_past_month": _first(
             detail_values.get("number_of_units_purchased_past_month"),
@@ -259,6 +261,8 @@ def insert_rows(cfg, rows: list[dict[str, Any]], *, dry_run: bool = False,
                 manifest_name: str = "step14_jsonl_db_save_manifest.json") -> dict[str, Any]:
     for row in rows:
         apply_ref_type_policy(row)
+        if "savings" in row:
+            row["savings"] = parsers.normalize_savings_percentage(row["savings"])
     out = category_output_root(cfg.PRODUCT)
     schema, table = split_table(cfg.DB_TABLE)
     batch_ids = sorted({str(r.get("batch_id") or "").strip() for r in rows if r.get("batch_id")})
