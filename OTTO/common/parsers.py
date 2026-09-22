@@ -13,6 +13,8 @@ from common.discount_stickers import sticker_fields
 
 OTTO_BASE = "https://www.otto.de"
 MULTI_VALUE_DELIMITER = " ||| "
+# OTTO review summaries are excluded from collection; keep the output column NULL.
+REVIEW_SUMMARY_ENABLED = False
 TEXT_TRANSLATIONS = {
     "Sehr beliebt": "Very popular",
     "Gesponsert": "Sponsored",
@@ -397,6 +399,8 @@ def summary_review_items(soup: BeautifulSoup) -> list[str]:
 
 
 def extract_summarized_review_content(soup: BeautifulSoup) -> str | None:
+    if not REVIEW_SUMMARY_ENABLED:
+        return None
     items = summary_review_items(soup)
     return MULTI_VALUE_DELIMITER.join(items) if items else None
 
@@ -484,7 +488,7 @@ def parse_review_html(path: Path) -> dict[str, Any]:
     reviews = parse_detail_reviews(soup)
     non_empty_reviews = [row for row in reviews if row.get("review_text")]
     average_rating, rating_count = extract_review_rating(soup)
-    summary_items = summary_review_items(soup)
+    summary_items = summary_review_items(soup) if REVIEW_SUMMARY_ENABLED else []
     return {
         "path": str(path),
         "title": text_clean(soup.title.get_text(" ", strip=True)) if soup.title else None,
@@ -496,8 +500,8 @@ def parse_review_html(path: Path) -> dict[str, Any]:
         "rating_count": rating_count,
         "reviews": reviews,
         "summarized_review_content": MULTI_VALUE_DELIMITER.join(summary_items) if summary_items else None,
-        "summary_placeholder_present": bool(soup.select_one(".js_pdp_cr-summary")),
-        "summary_container_present": bool(soup.select_one(".pdp_cr-summary")),
+        "summary_placeholder_present": REVIEW_SUMMARY_ENABLED and bool(soup.select_one(".js_pdp_cr-summary")),
+        "summary_container_present": REVIEW_SUMMARY_ENABLED and bool(soup.select_one(".pdp_cr-summary")),
         "summary_rendered": bool(summary_items),
         "summary_item_count": len(summary_items),
         "detailed_review_content": format_detailed_review_content(reviews),

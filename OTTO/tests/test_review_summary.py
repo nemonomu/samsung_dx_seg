@@ -4,6 +4,9 @@ import sys
 import tempfile
 import unittest
 import json
+import csv
+import io
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +16,7 @@ if str(OTTO_ROOT) not in sys.path:
 
 from common import full_output  # noqa: E402
 from common import notify  # noqa: E402
+from common import parsers  # noqa: E402
 from common.parsers import parse_review_html  # noqa: E402
 
 
@@ -40,6 +44,12 @@ RENDERED_HTML = b"""
 
 
 class OttoReviewSummaryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Retain coverage of the existing summary implementation while production
+        # collection is disabled. The default policy is tested separately below.
+        for module in (parsers, full_output, notify):
+            self.enterContext(patch.object(module, "REVIEW_SUMMARY_ENABLED", True))
+
     def test_parser_keeps_only_summary_bullets(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "review.html"
@@ -197,6 +207,114 @@ class OttoReviewSummaryTests(unittest.TestCase):
         self.assertTrue(subject.startswith("[확인필요]"))
         self.assertIn("요약 대상 중 미수집 - 1", report)
         self.assertIn("UI 문구 혼입 - 1", report)
+
+
+class OttoReviewSummaryDisabledTests(unittest.TestCase):
+    def test_parsers_skip_summary_extraction_and_preserve_other_fields(self) -> None:
+        self.assertFalse(parsers.REVIEW_SUMMARY_ENABLED)
+        summary_fields = {
+            "summarized_review_content", "summary_placeholder_present",
+            "summary_container_present", "summary_rendered", "summary_item_count",
+        }
+        html = RENDERED_HTML.replace(b'</body>', b'''
+        <div class="pdp_cr-rating"><div class="pdp_cr-rating-score">
+          <span class="oc-headline-300">4.3</span></div>von 5 (32)</div>
+        <div id="cr-review-list">
+        <div class="pdp_cr-item-content" data-review-id="r1" data-rating="5">
+          <div class="js_pdp_cr-item__reviewText">Useful detailed review</div>
+        </div></div></body>''')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "review.html"
+            path.write_bytes(html)
+            for parser in (parsers.parse_review_html, parsers.parse_detail_html):
+                with self.subTest(parser=parser.__name__):
+                    with patch.object(parsers, "REVIEW_SUMMARY_ENABLED", True):
+                        before = parser(path)
+                    with patch.object(parsers, "summary_review_items") as extract:
+                        after = parser(path)
+                    extract.assert_not_called()
+                    self.assertIsNotNone(before["summarized_review_content"])
+                    self.assertIsNone(after["summarized_review_content"])
+                    self.assertEqual(
+                        {k: v for k, v in before.items() if k not in summary_fields},
+                        {k: v for k, v in after.items() if k not in summary_fields},
+                    )
+                    self.assertIn("Useful detailed review", after["detailed_review_content"])
+
+    def test_summary_never_triggers_content_retries(self) -> None:
+        for html in (PLACEHOLDER_HTML, RENDERED_HTML):
+            with self.subTest(html=html), tempfile.TemporaryDirectory() as tmpdir, \
+                    patch.object(full_output, "fetch_html", return_value={
+                        "status": 200, "body": html, "error": None,
+                    }) as fetch, patch.object(full_output.raw_html, "save"), \
+                    patch.object(full_output.time, "sleep") as sleep:
+                result = full_output.collect_review(
+                    "https://example.test/reviews/", Path(tmpdir), "test",
+                    require_summary=True, summary_attempts=6,
+                )
+            fetch.assert_called_once()
+            sleep.assert_not_called()
+            self.assertIsNone(result["summarized_review_content"])
+            self.assertFalse(result["_summary_required"])
+
+    def test_all_categories_keep_column_null_and_other_review_fields(self) -> None:
+        target = {"main_rank": "1", "product_id": "test", "retailer_sku_name": "Test ABC12345"}
+        review = {
+            "_review_status": 200, "summarized_review_content": "Must not be saved",
+            "average_rating": "4.3", "rating_count": 32,
+            "recommendation_intent": "90%", "detailed_review_content": "review1 - Useful review",
+        }
+        for product in ("TV", "REF", "LDY"):
+            cfg = SimpleNamespace(
+                PRODUCT=product, ACCOUNT_NAME="OTTO", COUNTRY="DE", SPEC_FIELDS=[],
+                USE_DATASHEET=False, extract_spec=lambda *args, **kwargs: {},
+            )
+            with self.subTest(product=product), tempfile.TemporaryDirectory() as tmpdir:
+                out = Path(tmpdir)
+                with (out / "otto_final_targets.csv").open("w", encoding="utf-8-sig", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=list(target))
+                    writer.writeheader()
+                    writer.writerow(target)
+                with patch.object(full_output, "category_output_root", return_value=out), \
+                        patch.object(full_output, "collect_review", return_value=review) as collect, \
+                        patch.object(full_output, "fetch_similar_product_names", return_value={}), \
+                        patch.object(full_output, "refresh_sticker_fields"), \
+                        patch.object(full_output, "sticker_diagnostics", return_value={}), \
+                        patch("sys.stdout", new=io.StringIO()):
+                    manifest = full_output.run(cfg, pdp_supplement="none", detail_sleep=0)
+                self.assertFalse(collect.call_args.kwargs["require_summary"])
+                self.assertEqual(0, manifest["summary_qa"]["checked"])
+                with (out / "otto_full_output.csv").open(encoding="utf-8-sig", newline="") as f:
+                    row = next(csv.DictReader(f))
+                self.assertEqual("", row["summarized_review_content"])
+                self.assertEqual("4.3", row["star_rating"])
+                self.assertEqual("32", row["count_of_star_ratings"])
+                self.assertEqual("32", row["count_of_reviews"])
+                self.assertEqual("90%", row["recommendation_intent"])
+                self.assertEqual(review["detailed_review_content"], row["detailed_review_content"])
+
+    def test_report_ignores_summary_null_and_stale_summary_warnings(self) -> None:
+        cfg = SimpleNamespace(PRODUCT="TV", SPEC_FIELDS=[])
+        rows = [{"main_rank": "1", "bsr_rank": "", "summarized_review_content": ""}]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir)
+            (out / "step02_final_targets_manifest.json").write_text(
+                json.dumps({"main_target_unique": 1, "bsr_rank_limit": 0}), encoding="utf-8"
+            )
+            (out / "step09_full_output_manifest.json").write_text(json.dumps({
+                "summary_qa": {"eligible_missing": 1, "selector_mismatch": 1,
+                               "http_failed": 1, "ui_text_contamination": 1},
+            }), encoding="utf-8")
+            with patch.object(notify, "category_output_root", return_value=out):
+                subject, report = notify.build_report(cfg, rows)
+                self.assertFalse(subject.startswith("[확인필요]"))
+                self.assertNotIn("summarized_review_content", report)
+                self.assertNotIn("리뷰 요약 수집 현황", report)
+                self.assertIn("detailed_review_content", report)
+                rows[0]["main_rank"] = ""
+                subject, report = notify.build_report(cfg, rows)
+                self.assertTrue(subject.startswith("[확인필요]"))
+                self.assertIn("main_rank 수집 0/1", report)
 
 
 if __name__ == "__main__":
