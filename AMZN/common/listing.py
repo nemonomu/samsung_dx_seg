@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from typing import Any
 
+from bs4 import BeautifulSoup
 from selenium.common.exceptions import WebDriverException
 
 from common import parsers, selectors as selector_api, siel_logging as siel_log
@@ -55,7 +56,7 @@ _LISTING_NORMALIZE_FIELDS = {
 
 
 def _main_page_failure_reason(resp: dict[str, Any], parsed: list[dict[str, Any]]) -> str | None:
-    """Return why the first main listing page is unsafe to accept."""
+    """Return why a main listing page is unsafe to accept."""
     error = str(resp.get("error") or "").strip()
     if error:
         return error
@@ -64,6 +65,21 @@ def _main_page_failure_reason(resp: dict[str, Any], parsed: list[dict[str, Any]]
     if not parsed:
         return "listing_cards_empty"
     return None
+
+
+def _main_last_page(resp: dict[str, Any], parsed: list[dict[str, Any]]) -> bool:
+    """Require valid cards and an explicitly disabled next-page control."""
+    if _main_page_failure_reason(resp, parsed):
+        return False
+    soup = BeautifulSoup(resp.get("text") or "", "html.parser")
+    disabled_next = soup.select_one(
+        '.s-pagination-next.s-pagination-disabled, '
+        '.s-pagination-next[aria-disabled="true"]'
+    )
+    enabled_next = soup.select_one(
+        'a.s-pagination-next[href]:not(.s-pagination-disabled):not([aria-disabled="true"])'
+    )
+    return disabled_next is not None and enabled_next is None
 
 
 def _normalize_listing_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -105,6 +121,8 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
     rows: list[dict[str, Any]] = []
     pages = []
     fatal_main_reason: str | None = None
+    main_failure_reason: str | None = None
+    stop_reason = "page_limit_reached"
     warmup_summary: dict[str, Any] | None = None
     save_html = _truthy(os.getenv("AMZN_SAVE_HTML")) if save_html is None else save_html
     inter_page_sleep = _env_float("AMZN_INTER_PAGE_SLEEP", 0.0)
@@ -207,10 +225,10 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                             except WebDriverException as exc:
                                 logger.warning("page=%d refresh retry failed: %s", page, exc)
                 retry_attempts: list[dict[str, Any]] = []
-                if sort == "main" and page == 1 and not rows:
+                if sort == "main":
                     failure_reason = _main_page_failure_reason(resp, parsed)
                     if failure_reason:
-                        first_diagnostic = ref / "page_01_attempt_1_error.html"
+                        first_diagnostic = ref / f"page_{page:02d}_attempt_1_error.html"
                         save_text(first_diagnostic, resp.get("text") or "")
                         retry_attempts.append({
                             "attempt": 1,
@@ -223,9 +241,9 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                             "diagnostic_html": str(first_diagnostic),
                         })
                         logger.warning(
-                            "page=1 main retry requested attempt=1/3 mode=initial reason=%s "
+                            "page=%d main retry requested attempt=1/3 mode=initial reason=%s "
                             "status=%s records=%d bytes=%s",
-                            failure_reason, resp.get("status"), len(parsed), resp.get("bytes"),
+                            page, failure_reason, resp.get("status"), len(parsed), resp.get("bytes"),
                         )
 
                         resp = session.refetch(
@@ -253,13 +271,13 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                         })
 
                         if failure_reason:
-                            second_diagnostic = ref / "page_01_attempt_2_error.html"
+                            second_diagnostic = ref / f"page_{page:02d}_attempt_2_error.html"
                             save_text(second_diagnostic, resp.get("text") or "")
                             retry_attempts[-1]["diagnostic_html"] = str(second_diagnostic)
                             logger.warning(
-                                "page=1 main retry requested attempt=2/3 mode=same_session reason=%s "
+                                "page=%d main retry requested attempt=2/3 mode=same_session reason=%s "
                                 "status=%s records=%d bytes=%s",
-                                failure_reason, resp.get("status"), len(parsed), resp.get("bytes"),
+                                page, failure_reason, resp.get("status"), len(parsed), resp.get("bytes"),
                             )
                             session.restart("main_listing_recovery")
                             restart_warmup = session.warm_up("https://www.amazon.de/")
@@ -292,23 +310,26 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                                 },
                             })
                             if failure_reason:
-                                final_diagnostic = ref / "page_01_attempt_3_error.html"
+                                final_diagnostic = ref / f"page_{page:02d}_attempt_3_error.html"
                                 save_text(final_diagnostic, resp.get("text") or "")
                                 retry_attempts[-1]["diagnostic_html"] = str(final_diagnostic)
                                 logger.error(
-                                    "page=1 main recovery exhausted reason=%s status=%s records=%d bytes=%s",
-                                    failure_reason, resp.get("status"), len(parsed), resp.get("bytes"),
+                                    "page=%d main recovery exhausted reason=%s status=%s records=%d bytes=%s",
+                                    page, failure_reason, resp.get("status"), len(parsed), resp.get("bytes"),
                                 )
-                                fatal_main_reason = failure_reason
+                                main_failure_reason = failure_reason
+                                if not rows:
+                                    fatal_main_reason = failure_reason
+                                parsed = []
                             else:
                                 logger.info(
-                                    "page=1 main recovered attempt=3/3 mode=new_session records=%d bytes=%s",
-                                    len(parsed), resp.get("bytes"),
+                                    "page=%d main recovered attempt=3/3 mode=new_session records=%d bytes=%s",
+                                    page, len(parsed), resp.get("bytes"),
                                 )
                         else:
                             logger.info(
-                                "page=1 main recovered attempt=2/3 mode=same_session records=%d bytes=%s",
-                                len(parsed), resp.get("bytes"),
+                                "page=%d main recovered attempt=2/3 mode=same_session records=%d bytes=%s",
+                                page, len(parsed), resp.get("bytes"),
                             )
                 parsed = [
                     _apply_record_meta(cfg, _normalize_listing_row(r), sort=sort, page=page, source_url=resp["url"], batch_id=batch_id)
@@ -326,9 +347,14 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
                 })
                 logger.info("page=%d status=%s records=%d total=%d bytes=%s error=%s", page, resp["status"], len(parsed), len(rows), resp["bytes"], resp["error"])
                 print(f"[listing/{cfg.PRODUCT}/{sort}] page={page} status={resp['status']} parsed={len(parsed)} total={len(rows)}", flush=True)
-                if fatal_main_reason:
+                if main_failure_reason:
+                    stop_reason = "page_failed"
                     break
-                if len(rows) >= target or (not parsed and sort != "bsr"):
+                if len(rows) >= target:
+                    stop_reason = "target_reached"
+                    break
+                if sort == "main" and _main_last_page(resp, parsed):
+                    stop_reason = "last_page"
                     break
                 if inter_page_sleep > 0:
                     time.sleep(inter_page_sleep)
@@ -337,6 +363,24 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
             session.close()
 
     rows = rows[:target]
+    if sort == "main" and not input_html and stop_reason == "page_limit_reached":
+        main_failure_reason = "page_limit_reached"
+    if main_failure_reason and emit:
+        last_page = pages[-1] if pages else {}
+        emit({
+            "stage": "listing_error",
+            "error_stage": "main",
+            "product": cfg.PRODUCT,
+            "batch_id": batch_id,
+            "page_no": last_page.get("page"),
+            "source_url": last_page.get("url"),
+            "_error": "listing page load failed",
+            "message": (
+                f"main listing incomplete: page={last_page.get('page')} "
+                f"reason={main_failure_reason}; collected={len(rows)} target={target}; "
+                "remaining pages were not collected"
+            ),
+        })
     for row in rows:
         siel_log.warn_price_logic(logger, row)
         siel_log.log_record_summary(logger, row)
@@ -353,13 +397,21 @@ def run(cfg, *, sort: str = "main", target: int | None = None, max_pages: int = 
         "raw_dir": str(ref) if save_html else "",
         "raw_saved": save_html,
         "pages": pages,
-        "success": fatal_main_reason is None,
-        "failure_reason": fatal_main_reason,
+        "success": main_failure_reason is None,
+        "failure_reason": main_failure_reason,
+        "stop_reason": "input_html" if input_html else stop_reason,
+        "failed_page": pages[-1]["page"] if main_failure_reason and pages else None,
         "warmup": warmup_summary,
         "selector_source": "db_xpath",
     }
     write_json(out / f"step01_listing_{sort}_manifest.json", manifest)
-    logger.info("=== done: records=%d batch_id=%s ===", len(rows), batch_id)
+    if main_failure_reason:
+        logger.warning(
+            "=== incomplete: records=%d page=%s reason=%s batch_id=%s ===",
+            len(rows), manifest["failed_page"], main_failure_reason, batch_id,
+        )
+    else:
+        logger.info("=== done: records=%d batch_id=%s ===", len(rows), batch_id)
     manifest["rows_data"] = rows
     if fatal_main_reason:
         raise MainListingUnavailableError(

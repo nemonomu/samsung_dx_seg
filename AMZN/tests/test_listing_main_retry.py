@@ -53,7 +53,8 @@ class FakeSession:
 
 
 class MainListingRetryTests(unittest.TestCase):
-    def _run(self, session: FakeSession, raw_root: Path, *, product: str = "REF") -> dict:
+    def _run(self, session: FakeSession, raw_root: Path, *, product: str = "REF",
+             target: int = 1, max_pages: int = 1, emit=None, save=None) -> dict:
         cfg = SimpleNamespace(PRODUCT=product, ACCOUNT_NAME="Amazon.de", MAIN_URL="https://www.amazon.de/s?k=test")
         logger = Mock()
         with (
@@ -68,15 +69,16 @@ class MainListingRetryTests(unittest.TestCase):
             patch.object(listing.siel_log, "log_record_summary"),
             patch.object(listing, "write_csv"),
             patch.object(listing, "write_json"),
-            patch.object(listing, "save_text"),
+            patch.object(listing, "save_text", save or Mock()),
         ):
             return listing.run(
                 cfg,
                 sort="main",
-                target=1,
-                max_pages=1,
+                target=target,
+                max_pages=max_pages,
                 batch_id="a_test",
                 session=session,
+                emit=emit,
             )
 
     def test_same_session_retry_recovers_technical_error(self) -> None:
@@ -150,6 +152,88 @@ class MainListingRetryTests(unittest.TestCase):
         self.assertEqual(session.refetch_calls, 1)
         self.assertEqual(session.restart_calls, 1)
         self.assertEqual(session.warmup_calls, 2)
+
+    def test_later_page_recovers_and_continues_without_duplicate_rows(self) -> None:
+        session = FakeSession([
+            _response(error=None, rows=[{"item": "FIRST"}], size=1000),
+            _response(error="amazon_technical_error", rows=[], size=2294),
+            _response(error=None, rows=[{"item": "SECOND"}], size=1000),
+            _response(error=None, rows=[{"item": "THIRD"}], size=1000),
+        ])
+        saved = Mock()
+        manifest = self._run(session, Path("test-output"), target=3, max_pages=4, save=saved)
+        self.assertTrue(manifest["success"])
+        self.assertEqual(manifest["stop_reason"], "target_reached")
+        self.assertEqual([row["item"] for row in manifest["rows_data"]], ["FIRST", "SECOND", "THIRD"])
+        self.assertEqual([row["page_no"] for row in manifest["rows_data"]], [1, 2, 3])
+        self.assertEqual(session.refetch_calls, 1)
+        self.assertEqual(saved.call_args.args[0].name, "page_02_attempt_1_error.html")
+
+    def test_later_page_can_recover_in_new_session(self) -> None:
+        session = FakeSession([
+            _response(error=None, rows=[{"item": "FIRST"}], size=1000),
+            _response(error="amazon_technical_error", rows=[], size=2294),
+            _response(error="amazon_technical_error", rows=[], size=2294),
+            _response(error=None, rows=[{"item": "SECOND"}], size=1000),
+        ])
+        manifest = self._run(session, Path("test-output"), target=2, max_pages=3)
+        self.assertTrue(manifest["success"])
+        self.assertEqual(session.restart_calls, 1)
+        self.assertEqual(manifest["pages"][1]["retry_attempts"][-1]["mode"], "new_session")
+
+    def test_later_page_exhaustion_preserves_rows_and_reports_incomplete(self) -> None:
+        session = FakeSession([
+            _response(error=None, rows=[{"item": "FIRST"}], size=1000),
+            *[_response(error="amazon_technical_error", rows=[{"item": "UNSAFE"}], size=2294)
+              for _ in range(3)],
+        ])
+        emitted, saved = [], Mock()
+        manifest = self._run(session, Path("test-output"), target=3, max_pages=4,
+                             emit=emitted.append, save=saved)
+        self.assertFalse(manifest["success"])
+        self.assertEqual(manifest["failed_page"], 2)
+        self.assertEqual(manifest["failure_reason"], "amazon_technical_error")
+        self.assertEqual([row["item"] for row in manifest["rows_data"]], ["FIRST"])
+        self.assertEqual(manifest["pages"][1]["parsed_rows"], 0)
+        self.assertEqual(saved.call_count, 3)
+        self.assertEqual(saved.call_args.args[0].name, "page_02_attempt_3_error.html")
+        issue = next(row for row in emitted if row.get("_error"))
+        self.assertEqual(issue["error_stage"], "main")
+        self.assertEqual(issue["page_no"], 2)
+        self.assertIn("remaining pages were not collected", issue["message"])
+
+    def test_normal_last_page_ends_without_retry(self) -> None:
+        response, rows = _response(error=None, rows=[{"item": "LAST"}], size=1000)
+        response["text"] = '<span class="s-pagination-next s-pagination-disabled">Next</span>'
+        session = FakeSession([(response, rows)])
+        manifest = self._run(session, Path("test-output"), target=300, max_pages=30)
+        self.assertTrue(manifest["success"])
+        self.assertEqual(manifest["stop_reason"], "last_page")
+        self.assertEqual(session.refetch_calls, 0)
+
+    def test_empty_page_is_not_accepted_as_last_page(self) -> None:
+        response, rows = _response(error=None, rows=[], size=1000)
+        response["text"] = '<span class="s-pagination-next s-pagination-disabled">Next</span>'
+        session = FakeSession([
+            _response(error=None, rows=[{"item": "FIRST"}], size=1000),
+            (response, rows), (response, rows), (response, rows),
+        ])
+        manifest = self._run(session, Path("test-output"), target=300, max_pages=30)
+        self.assertFalse(manifest["success"])
+        self.assertEqual(manifest["failure_reason"], "listing_cards_empty")
+        self.assertEqual(session.refetch_calls, 1)
+
+    def test_page_limit_without_last_page_is_incomplete(self) -> None:
+        session = FakeSession([_response(error=None, rows=[{"item": "FIRST"}], size=1000)])
+        manifest = self._run(session, Path("test-output"), target=300, max_pages=1)
+        self.assertFalse(manifest["success"])
+        self.assertEqual(manifest["failure_reason"], "page_limit_reached")
+
+    def test_enabled_next_control_prevents_last_page_detection(self) -> None:
+        response, rows = _response(error=None, rows=[{"item": "FIRST"}], size=1000)
+        response["text"] = ('<span class="s-pagination-next s-pagination-disabled">Next</span>'
+                            '<a class="s-pagination-next" href="?page=2">Next</a>')
+        self.assertFalse(listing._main_last_page(response, rows))
 
 
 if __name__ == "__main__":

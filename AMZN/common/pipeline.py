@@ -247,7 +247,7 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
                         headless=args.headless,
                     )
                 siel_log.run_log(f"stage=main product={cfg.PRODUCT} start")
-                listing.run(
+                main_manifest = listing.run(
                     cfg,
                     sort="main",
                     target=args.max_rank,
@@ -257,7 +257,16 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
                     headless=args.headless,
                     session=shared_session,
                 )
-                siel_log.run_log(f"stage=main product={cfg.PRODUCT} done")
+                if main_manifest.get("success") is False:
+                    status = 1
+                    siel_log.run_log(
+                        f"stage=main product={cfg.PRODUCT} incomplete "
+                        f"page={main_manifest.get('failed_page')} "
+                        f"reason={main_manifest.get('failure_reason')}; continuing with collected products",
+                        "WARNING",
+                    )
+                else:
+                    siel_log.run_log(f"stage=main product={cfg.PRODUCT} done")
             if "bsr" in steps:
                 close_shared_session("before_isolated_bsr")
                 siel_log.run_log(f"stage=bsr product={cfg.PRODUCT} start")
