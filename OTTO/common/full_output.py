@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from common import datasheet, raw_html
 from common.discount_stickers import refresh_sticker_fields, sticker_diagnostics
 from common.io_util import category_output_root
-from common.parsers import ensure_variation_query, format_detailed_review_content, parse_review_html
+from common.parsers import REVIEW_SUMMARY_ENABLED, ensure_variation_query, format_detailed_review_content, parse_review_html
 from common.ref_type_policy import apply_ref_type_policy
 
 REVIEW_DETAIL_LIMIT = 20  # detailed_review_content collects up to this many written reviews
@@ -171,6 +171,7 @@ def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int 
             except OSError:
                 pass
 
+    require_summary = REVIEW_SUMMARY_ENABLED and require_summary
     max_summary_attempts = max(1, summary_attempts) if require_summary else 1
     page1: dict[str, Any] | None = None
     resp: dict[str, Any] = {"status": None, "body": b"", "error": "not_requested"}
@@ -359,7 +360,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                 main_rank = int(str(target.get("main_rank") or "").strip())
             except ValueError:
                 main_rank = None
-            summary_required = main_rank is not None and 1 <= main_rank <= SUMMARY_RANK_LIMIT
+            summary_required = REVIEW_SUMMARY_ENABLED and main_rank is not None and 1 <= main_rank <= SUMMARY_RANK_LIMIT
             review = collect_review(
                 review_url_for(target), out, pid, timeout=timeout,
                 require_summary=summary_required,
@@ -452,7 +453,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                 "star_rating": star_rating,
                 "count_of_star_ratings": count_reviews, "count_of_reviews": count_reviews,
                 "recommendation_intent": review.get("recommendation_intent"),
-                "summarized_review_content": review.get("summarized_review_content"),
+                "summarized_review_content": review.get("summarized_review_content") if REVIEW_SUMMARY_ENABLED else None,
                 "detailed_review_content": review.get("detailed_review_content"),
             }
             for f in cfg.SPEC_FIELDS:

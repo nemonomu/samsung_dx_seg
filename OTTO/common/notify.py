@@ -9,6 +9,7 @@ from typing import Any
 
 from common.io_util import category_output_root, env_value, read_csv, read_json, write_json
 from common.discount_stickers import sticker_fields
+from common.parsers import REVIEW_SUMMARY_ENABLED
 
 NULL_BASE = [
     "item", "product_url", "retailer_sku_name", "final_sku_price", "original_sku_price",
@@ -59,6 +60,8 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     bsr_present = sum(1 for r in rows if (r.get("bsr_rank") or "").strip())
 
     null_fields_check = NULL_BASE + list(cfg.SPEC_FIELDS) + NULL_TAIL
+    if not REVIEW_SUMMARY_ENABLED:
+        null_fields_check = [f for f in null_fields_check if f != "summarized_review_content"]
     null_fields = [f for f in null_fields_check if not any((r.get(f) or "").strip() for r in rows)]
 
     issues = []
@@ -84,7 +87,7 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     for field, count in spec_missing_counts.items():
         if count:
             issues.append(f"{field} NULL {count}/{total}")
-    summary_qa = full.get("summary_qa") or {}
+    summary_qa = (full.get("summary_qa") or {}) if REVIEW_SUMMARY_ENABLED else {}
     summary_checked = int(summary_qa.get("checked") or 0)
     summary_eligible = int(summary_qa.get("eligible") or 0)
     summary_rendered = int(summary_qa.get("rendered") or 0)
@@ -95,7 +98,7 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     summary_ui_polluted = max(int(summary_qa.get("ui_text_contamination") or 0), sum(
         1 for row in rows
         if any(text in str(row.get("summarized_review_content") or "") for text in SUMMARY_UI_TEXT)
-    ))
+    )) if REVIEW_SUMMARY_ENABLED else 0
     if summary_eligible_missing:
         issues.append(
             f"summarized_review_content 요약 대상 중 미수집 "
@@ -143,7 +146,7 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         f"  bsr_rank - {bsr_present}/{bsr_expected}", "",
         "전체 NULL 필드",
         *([f"  {f}" for f in null_fields] if null_fields else ["  없음"]), "",
-        "리뷰 요약 수집 현황 (메인 TOP 20)",
+        *(["리뷰 요약 수집 현황 (메인 TOP 20)",
         f"  확인 대상 - {summary_checked}",
         f"  요약 대상 - {summary_eligible}",
         f"  수집 완료 - {summary_rendered}",
@@ -151,7 +154,7 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
         f"  요약 없음 - {summary_no_source}",
         f"  선택자 불일치 - {summary_selector_mismatch}",
         f"  HTTP 실패 - {summary_http_failed}",
-        f"  UI 문구 혼입 - {summary_ui_polluted}", "",
+        f"  UI 문구 혼입 - {summary_ui_polluted}", ""] if REVIEW_SUMMARY_ENABLED else []),
         *sticker_lines,
         *([""] if sticker_lines else []),
         ("이상 없음" if not issues else "확인 필요\n" + "\n".join(f"  - {i}" for i in issues)),
