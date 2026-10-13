@@ -311,7 +311,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             return 0
         initial_digest = state["identity"]["source_sha256"]
-        if not confirm("미수집 복구를 시작할까요?" if state["missing"] else "수집이 완료되어 있습니다. DB 적재 전 검증을 진행할까요?"):
+        print("전체 검증에 성공하면 추가 질문 없이 DB에 자동 적재합니다. 동일 batch_id의 Amazon 데이터는 교체됩니다.")
+        if not confirm("미수집 복구 및 DB 자동 적재를 시작할까요?" if state["missing"] else "수집이 완료되어 있습니다. 검증 및 DB 자동 적재를 시작할까요?"):
             print("취소했습니다. 수집 및 DB 적재를 실행하지 않았습니다.")
             return 0
         with recovery_lock(state["folder"]):
@@ -324,14 +325,11 @@ def main(argv: list[str] | None = None) -> int:
             state = load_state(source, args.product)
             if state["missing"]:
                 raise ValueError("미수집 항목이 남아 있어 DB 적재를 중단합니다.")
-            export_and_load(state, args.product, dry_run=True)
             checked_digest = digest(state["checkpoint"])
-            print(f"전체 {len(state['targets'])}건 검증 완료. 동일 batch_id의 Amazon 데이터는 교체됩니다.")
-            if not confirm(f"{len(state['targets'])}건을 DB에 적재할까요?"):
-                print("DB 적재를 취소했습니다. 복구 결과는 저장되어 있습니다.")
-                return 0
+            export_and_load(state, args.product, dry_run=True)
             if digest(source) != initial_digest or digest(state["checkpoint"]) != checked_digest:
                 raise ValueError("검증 후 파일이 변경되어 DB 적재를 중단합니다.")
+            print(f"전체 {len(state['targets'])}건 검증 완료. DB 자동 적재를 시작합니다.")
             export_and_load(state, args.product, dry_run=False)
             print(f"완료: {len(state['targets'])}건 DB 적재 성공. 결과: {state['folder']}")
         return 0

@@ -221,7 +221,7 @@ class RecoveryTests(unittest.TestCase):
             result = recovery.main(["--product", product, "--jsonl", str(self.source)])
         return result, collect, export
 
-    def test_end_to_end_flow_both_categories_requires_two_confirmations(self):
+    def test_end_to_end_flow_both_categories_auto_loads_after_single_confirmation(self):
         for product in ("ref", "tv"):
             with self.subTest(product=product):
                 self.source = Path(self.temp.name) / f"{product}.jsonl"
@@ -229,18 +229,21 @@ class RecoveryTests(unittest.TestCase):
                 def collect(state, selected_product, **kwargs):
                     self.assertEqual(selected_product, product)
                     self.complete(state, product.upper())
-                result, crawler, export = self.run_cli(["y", "y"], collector=collect, product=product)
+                result, crawler, export = self.run_cli(["y"], collector=collect, product=product)
                 self.assertEqual(result, 0)
                 self.assertEqual(crawler.call_count, 1)
                 self.assertEqual([c.kwargs["dry_run"] for c in export.call_args_list], [True, False])
 
-    def test_db_cancel_preserves_completed_collection_for_next_run(self):
+    def test_db_failure_preserves_completed_collection_for_next_run(self):
         def collect(state, product, **kwargs):
             self.complete(state)
-        result, _, export = self.run_cli(["y", "n"], collector=collect)
-        self.assertEqual(result, 0)
-        self.assertEqual([c.kwargs["dry_run"] for c in export.call_args_list], [True])
-        result, collect, export = self.run_cli(["y", "y"])
+        def fail_insert(state, product, *, dry_run):
+            if not dry_run:
+                raise RuntimeError("DB unavailable")
+        result, _, export = self.run_cli(["y"], collector=collect, exporter=fail_insert)
+        self.assertEqual(result, 1)
+        self.assertEqual([c.kwargs["dry_run"] for c in export.call_args_list], [True, False])
+        result, collect, export = self.run_cli(["y"])
         self.assertEqual(result, 0)
         collect.assert_not_called()
         self.assertEqual([c.kwargs["dry_run"] for c in export.call_args_list], [True, False])
@@ -254,12 +257,18 @@ class RecoveryTests(unittest.TestCase):
     def test_modified_checkpoint_after_validation_blocks_db(self):
         def collect(state, product, **kwargs):
             self.complete(state)
-        def answer(prompt):
-            if "DB에" in prompt:
-                checkpoint = self.state()["checkpoint"]
+        def change_checkpoint(state, product, *, dry_run):
+            if dry_run:
+                checkpoint = state["checkpoint"]
                 checkpoint.write_bytes(checkpoint.read_bytes() + b"\n")
-            return "y"
-        result, _, export = self.run_cli(answer, collector=collect)
+        result, _, export = self.run_cli(["y"], collector=collect, exporter=change_checkpoint)
+        self.assertEqual(result, 1)
+        self.assertEqual([c.kwargs["dry_run"] for c in export.call_args_list], [True])
+
+    def test_failed_validation_never_auto_loads_db(self):
+        def collect(state, product, **kwargs):
+            self.complete(state)
+        result, _, export = self.run_cli(["y"], collector=collect, exporter=ValueError("validation failed"))
         self.assertEqual(result, 1)
         self.assertEqual([c.kwargs["dry_run"] for c in export.call_args_list], [True])
 
@@ -321,7 +330,7 @@ class RecoveryTests(unittest.TestCase):
             status = recovery.main(["--product", "ref"])
         self.assertEqual(status, 0)
         prompt.assert_called_once()
-        self.assertIn("복구를 시작", prompt.call_args.args[0])
+        self.assertIn("복구 및 DB 자동 적재", prompt.call_args.args[0])
         collect.assert_not_called()
         load.assert_not_called()
         self.assertFalse((latest.parent / "recovery").exists())
