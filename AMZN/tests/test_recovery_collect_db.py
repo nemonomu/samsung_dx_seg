@@ -282,6 +282,70 @@ class RecoveryTests(unittest.TestCase):
             self.assertNotIn("--email-report", text)
             self.assertNotIn("run.py --product", text)
 
+    def test_auto_select_uses_filename_time_and_ignores_other_products_and_recovery(self):
+        folder = Path(self.temp.name) / "output"
+        folder.mkdir()
+        for product in ("ref", "tv"):
+            older = folder / f"amzn_{product}_run_20261012_090000.jsonl"
+            latest = folder / f"amzn_{product}_run_20261013_010000.jsonl"
+            write_source(older, records(product.upper()))
+            write_source(latest, records(product.upper()))
+            os.utime(older, (2000000000, 2000000000))
+            nested = folder / "recovery" / product
+            nested.mkdir(parents=True)
+            write_source(nested / f"amzn_{product}_run_20261014_010000.jsonl", records(product.upper()))
+            write_source(folder / f"amzn_{product}_run_20261099_010000.jsonl", records(product.upper()))
+            write_source(folder / f"amzn_{product}_run_20261015_010000.recovered.jsonl", records(product.upper()))
+            self.assertEqual(recovery.select_source(product, folder), latest)
+            self.assertEqual(recovery.select_source(product, older), older)
+
+    def test_data_folder_and_default_output_are_supported_without_path_prompt(self):
+        for product in ("ref", "tv"):
+            folder = Path(self.temp.name) / product / "data" / "output"
+            folder.mkdir(parents=True)
+            latest = folder / f"amzn_{product}_run_20261013_010000.jsonl"
+            write_source(latest, records(product.upper()))
+            self.assertEqual(recovery.select_source(product, folder.parent), latest)
+            output = io.StringIO()
+            with patch.object(recovery, "default_output_folder", return_value=folder), patch("builtins.input", side_effect=AssertionError("no path prompt")), redirect_stdout(output):
+                status = recovery.main(["--product", product, "--check"])
+            self.assertEqual(status, 0)
+            self.assertIn(latest.name, output.getvalue())
+            self.assertIn("전체 3건 / 완료 1건 / 미수집 2건", output.getvalue())
+            self.assertFalse((folder / "recovery").exists())
+
+    def test_auto_selected_file_still_requires_confirmation_before_any_writes(self):
+        latest = Path(self.temp.name) / "amzn_ref_run_20261013_010000.jsonl"
+        write_source(latest, records())
+        with patch.object(recovery, "default_output_folder", return_value=latest.parent), patch("builtins.input", return_value="n") as prompt, patch.object(recovery, "collect_missing") as collect, patch.object(recovery, "export_and_load") as load, redirect_stdout(io.StringIO()):
+            status = recovery.main(["--product", "ref"])
+        self.assertEqual(status, 0)
+        prompt.assert_called_once()
+        self.assertIn("복구를 시작", prompt.call_args.args[0])
+        collect.assert_not_called()
+        load.assert_not_called()
+        self.assertFalse((latest.parent / "recovery").exists())
+
+    def test_no_candidate_or_ambiguous_timestamp_stops(self):
+        folder = Path(self.temp.name)
+        with self.assertRaises(ValueError):
+            recovery.select_source("tv", folder)
+        name = "amzn_ref_run_20261013_010000.jsonl"
+        write_source(folder / name, records())
+        (folder / "output").mkdir()
+        write_source(folder / "output" / name, records())
+        with self.assertRaises(ValueError):
+            recovery.select_source("ref", folder)
+
+    def test_invalid_latest_file_does_not_fall_back_to_older_batch(self):
+        folder = Path(self.temp.name)
+        write_source(folder / "amzn_ref_run_20261012_010000.jsonl", records())
+        (folder / "amzn_ref_run_20261013_010000.jsonl").write_text("broken\n", encoding="utf-8")
+        with patch.object(recovery, "default_output_folder", return_value=folder), patch("builtins.input", side_effect=AssertionError("must stop before confirmation")), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            status = recovery.main(["--product", "ref"])
+        self.assertEqual(status, 1)
+        self.assertFalse((folder / "recovery").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

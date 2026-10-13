@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from datetime import datetime
 import hashlib
 import importlib
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Any
 from urllib.parse import urlparse
@@ -240,9 +242,53 @@ def confirm(message: str) -> bool:
         return False
 
 
+def default_output_folder(product: str) -> Path:
+    from common.io_util import category_output_root
+
+    return category_output_root(product)
+
+
+def select_source(product: str, value: Path | None = None) -> Path:
+    """Choose by the run timestamp in the filename, never by copy/mtime order.
+
+    Only the given directory and its direct output child are searched; recovery
+    subdirectories and other products cannot become automatic input candidates.
+    Explicit file paths remain supported for retrying an older batch.
+    """
+    folder = default_output_folder(product) if value is None else Path(str(value).strip().strip('"').strip("'"))
+    folder = folder.expanduser().resolve()
+    if not folder.is_dir():
+        if value is not None and folder.is_file():
+            return folder
+        raise ValueError(f"수집 폴더 또는 원본 JSONL을 찾을 수 없습니다: {folder}")
+    pattern = re.compile(rf"amzn_{re.escape(product)}_run_(\d{{8}}_\d{{6}})\.jsonl", re.IGNORECASE)
+    candidates = []
+    for directory in (folder, folder / "output"):
+        if not directory.is_dir():
+            continue
+        for path in directory.iterdir():
+            match = pattern.fullmatch(path.name)
+            if not match or not path.is_file():
+                continue
+            try:
+                timestamp = datetime.strptime(match.group(1), "%Y%m%d_%H%M%S")
+            except ValueError:
+                continue
+            candidates.append((timestamp, path))
+    if not candidates:
+        raise ValueError(f"{product.upper()} 원본 수집 JSONL이 없습니다: {folder}")
+    latest_time = max(timestamp for timestamp, _ in candidates)
+    latest = [path for timestamp, path in candidates if timestamp == latest_time]
+    if len(latest) != 1:
+        raise ValueError("같은 실행 일시의 원본 파일이 여러 개입니다. 사용할 JSONL을 BAT에 끌어다 놓으세요.")
+    return latest[0]
+
+
 def describe(state: dict, product: str) -> None:
     print(f"\nAmazon {product.upper()} 수집 복구 및 DB 적재")
     print("상세 수집이 중간에 멈췄을 때 사용합니다. 목록은 다시 수집하지 않습니다.")
+    print(f"선택 파일: {state['source'].name}")
+    print(f"원본 경로: {state['source']}")
     print(f"배치: {state['batch_id']}")
     print(f"전체 {len(state['targets'])}건 / 완료 {len(state['details'])}건 / 미수집 {len(state['missing'])}건")
     print(f"복구 결과 폴더: {state['folder']}")
@@ -253,15 +299,13 @@ def describe(state: dict, product: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--product", required=True, choices=["ref", "tv"])
-    parser.add_argument("--jsonl", type=Path)
+    parser.add_argument("--jsonl", type=Path, help="원본 파일 또는 data/output 폴더; 생략하면 해당 상품의 최신 파일 자동 선택")
     parser.add_argument("--check", action="store_true", help="파일 확인만 수행; 수집/파일 쓰기/DB 접속 없음")
     parser.add_argument("--headless", action="store_true")
     args = parser.parse_args(argv)
+    source = None
     try:
-        value = str(args.jsonl) if args.jsonl else input("원본 JSONL 파일을 이 창에 끌어다 놓고 Enter: ").strip()
-        if not value:
-            raise ValueError("원본 JSONL 경로를 입력하세요.")
-        source = Path(value.strip().strip('"').strip("'")).expanduser().resolve()
+        source = select_source(args.product, args.jsonl)
         state = load_state(source, args.product)
         describe(state, args.product)
         if args.check:
@@ -293,7 +337,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (Exception, KeyboardInterrupt) as exc:
         print(f"복구 중단: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print("저장된 복구 결과는 유지됩니다. 같은 BAT에서 같은 원본 JSONL을 선택해 다시 실행하세요.", file=sys.stderr)
+        print("저장된 복구 결과는 유지됩니다. 특정 배치를 재시도하려면 원본 JSONL을 해당 BAT에 끌어다 놓으세요.", file=sys.stderr)
+        if source is not None:
+            print(f"재시도할 원본: {source}", file=sys.stderr)
         return 1
 
 

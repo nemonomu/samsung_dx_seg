@@ -4,6 +4,8 @@ cd /d "%~dp0"
 chcp 65001 >nul
 title Amazon TV - Collection Recovery and DB Load
 echo Amazon TV - Recover missing details, then validate and load ALL rows.
+echo Automatically selects the latest TV run from TV\data\output.
+echo Check the selected filename and counts before answering Y.
 echo This is not the DB-only resume_tv_db.bat tool.
 echo.
 where python >nul 2>nul
