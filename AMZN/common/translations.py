@@ -71,6 +71,7 @@ _PHRASES = [
     (r"\bkostenlose\s+lieferung\b", "FREE delivery"),
     (r"\bkostenloser\s+versand\b", "FREE delivery"),
     (r"\bzum\s+wunschtermin\s+an\s+einen\s+ort\s+deiner\s+wahl\b", "by appointment to a location of your choice"),
+    (r"\bzum\s+wunschtermin\b", "by appointment"),
     (r"\bfuer\s+qualifizierte\s+erstbestellung\b", "for qualifying first order"),
     (r"\bfür\s+qualifizierte\s+erstbestellung\b", "for qualifying first order"),
     (r"\bfuer\b", "for"),
