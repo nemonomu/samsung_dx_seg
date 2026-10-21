@@ -87,7 +87,7 @@ def now_stamp() -> str:
 
 
 def collect_pages(fetch_page, *, product: str, target: int, retries: int = 2,
-                  sleep_s: float = 0, save_page=None) -> tuple[list[dict], list[dict], str]:
+                  sleep_s: float = 0, save_page=None, eligibility=None) -> tuple[list[dict], list[dict], str]:
     """Count eligible unique products; only explicit pagination proves the end."""
     seen: dict[str, dict[str, Any]] = {}
     fingerprints: set[tuple[str, ...]] = set()
@@ -135,7 +135,8 @@ def collect_pages(fetch_page, *, product: str, target: int, retries: int = 2,
             if not failure:
                 fingerprints.add(signature)
                 for row in rows:
-                    reason = listing_exclusion_reason(row, product)
+                    reason = (eligibility(row) if eligibility is not None
+                              else listing_exclusion_reason(row, product))
                     if reason:
                         excluded[reason] = excluded.get(reason, 0) + 1
                         continue
@@ -145,6 +146,8 @@ def collect_pages(fetch_page, *, product: str, target: int, retries: int = 2,
                         row["page"] = page
                         seen[sku_id] = row
                         new += 1
+                        if eligibility is not None and len(seen) >= target:
+                            break  # PDP-backed eligibility need not call APIs past the target
             page_log.append({
                 "page": page, "attempt": attempt, "status": status, "parsed": len(rows),
                 "new_unique": new, "elapsed": elapsed, "sponsored_extra_wait": extra_wait,
