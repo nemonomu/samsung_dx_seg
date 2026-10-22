@@ -314,7 +314,7 @@ class DryPipelineTests(unittest.TestCase):
             self.assertEqual([("1", "1", ""), ("3", "2", "1"), ("4", "", "2")],
                              [(r["item"], r["main_rank"], r["bsr_rank"]) for r in rows])
             self.assertEqual(1, len({r["batch_id"] for r in rows}))
-            self.assertEqual({"mmkt_dry_output.csv"}, {p.name for p in root.iterdir()})
+            self.assertEqual({"mmkt_dry_output.csv", "intermediate"}, {p.name for p in root.iterdir()})
             (root / "mmkt_dry_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             self.assertEqual(3, len(database.load_validated_output(root / "mmkt_dry_output.csv")))
             (root / "mmkt_dry_output.csv").write_text("changed", encoding="utf-8")

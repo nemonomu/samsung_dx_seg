@@ -35,8 +35,16 @@ def build_report(manifest, table, *, success, error=None, elapsed_s=None):
              f"Table: {'.'.join(table)}", f"Collected unique products: {manifest.get('output_rows', 0)}"]
     for sort in ("main", "bsr"):
         listing = manifest.get(sort) or {}
-        lines.append(f"{sort}: {listing.get('rows', 0)}/{(manifest.get('targets') or {}).get(sort, '?')}"
-                     f" ({listing.get('stop_reason') or 'not completed'})")
+        state = listing.get("state") or ("complete" if listing.get("stop_reason") in {"last_page", "target_reached"}
+                                         else "not_started")
+        count = "not started" if state == "not_started" else listing.get("rows", 0)
+        lines.append(f"{sort}: {count}/{(manifest.get('targets') or {}).get(sort, '?')}"
+                     f" ({listing.get('stop_reason') or 'not completed'}) state={state}")
+        if listing.get("last_requested_page") is not None:
+            lines.append(f"{sort} last successful group: {listing.get('last_successful_page')};"
+                         f" last requested group: {listing['last_requested_page']}; end basis: {listing.get('end_basis')}")
+        if listing.get("excluded"):
+            lines.append(f"{sort} exclusions/duplicates: {listing['excluded']}")
     lines.append(f"Product failures (per listing): {manifest.get('product_failure_count', 0)}")
     for product in manifest.get("product_failures", []):
         lines.append(f"Failed product: {product['sort']} page={product['page']} item={product['item']}"
@@ -44,7 +52,13 @@ def build_report(manifest, table, *, success, error=None, elapsed_s=None):
     timing = manifest.get("timing") or {}
     lines.extend([f"Collection seconds: {timing.get('collection_elapsed_s', 'not available')}",
                   f"Collection completed: {timing.get('collection_completed_at', 'not completed')}",
+                  f"Collection stopped: {timing.get('collection_stopped_at', 'not stopped')}",
                   f"Current run seconds through DB: {elapsed_s}"])
+    csv = manifest.get("csv") or {}
+    intermediate = manifest.get("intermediate") or {}
+    lines.extend([f"Final CSV state: {csv.get('state', 'not available')}; path: {csv.get('path', 'not available')}",
+                  f"Intermediate state: {intermediate.get('state', 'not created')};"
+                  f" path: {intermediate.get('last_path', 'not available')}"])
     database = manifest.get("database") or {}
     lines.extend([f"DB state: {database.get('state') or 'not completed'}",
                   f"DB confirmed: {database.get('db_written')}",
@@ -69,6 +83,7 @@ def notify_run(output_dir: Path, manifest: dict, table, *, collection_success: b
     context("notification", batch_id=manifest.get("batch_id"), table=table_name)
     database = manifest.get("database") or {}
     success = (collection_success and manifest.get("success") is True and db_written is True
+               and manifest.get("collection_status") in {None, "complete"}
                and not manifest.get("product_failure_count", 0)
                and database.get("state") == "success" and database.get("db_written") is True
                and database.get("table") == table_name and error is None)

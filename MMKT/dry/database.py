@@ -110,6 +110,10 @@ def load_validated_output(path: Path, *, with_manifest: bool = False) -> list[di
     if not path.is_file() or not manifest_path.is_file():
         raise CollectionError("VALIDATED_OUTPUT_MISSING")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("artifact_kind", "final") != "final":
+        raise CollectionError("OUTPUT_INTERMEDIATE_NOT_LOADABLE")
+    if manifest.get("collection_status") in {"running", "failed"}:
+        raise CollectionError("OUTPUT_NOT_VALIDATED_OR_CHANGED")
     if not manifest.get("success") or manifest.get("output_digest") != file_digest(path):
         raise CollectionError("OUTPUT_NOT_VALIDATED_OR_CHANGED")
     with path.open(encoding="utf-8-sig", newline="") as handle:

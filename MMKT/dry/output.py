@@ -42,7 +42,7 @@ def present(*values):
     return next((value for value in values if value is not None and value != ""), None)
 
 
-def default_missing_ratings(row: dict, *, source: str) -> dict:
+def default_missing_ratings(row: dict, *, source: str, log_defaults: bool = True) -> dict:
     """Only call after successful detail collection or CSV/manifest validation.
 
     Leave the source CSV intact on reload. These two fields alone use zero for
@@ -52,12 +52,14 @@ def default_missing_ratings(row: dict, *, source: str) -> dict:
     for field in ("star_rating", "count_of_star_ratings"):
         if result.get(field) is None or str(result.get(field)).strip() == "":
             result[field] = 0
-            emit("rating_defaulted", item=row.get("item"), field=field, source=source,
-                 raw_value=None, value=0, reason="missing_after_success")
+            if log_defaults:
+                emit("rating_defaulted", item=row.get("item"), field=field, source=source,
+                     raw_value=None, value=0, reason="missing_after_success")
     return result
 
 
-def merge_rows(main: list[dict], bsr: list[dict], details: dict[str, dict], meta: dict) -> list[dict]:
+def merge_rows(main: list[dict], bsr: list[dict], details: dict[str, dict], meta: dict,
+               *, log_defaults: bool = True) -> list[dict]:
     def ranked(rows):
         # Occurrence-level banner/type filtering has ALREADY happened.
         result = {}
@@ -89,7 +91,7 @@ def merge_rows(main: list[dict], bsr: list[dict], details: dict[str, dict], meta
                    main_rank=m[item][1] if item in m else None,
                    bsr_rank=b[item][1] if item in b else None,
                    loading_type=detail.get("loading_type"), capacity=detail.get("capacity"), **meta)
-        result.append(default_missing_ratings(row, source="collected_fields"))
+        result.append(default_missing_ratings(row, source="collected_fields", log_defaults=log_defaults))
     return result
 
 

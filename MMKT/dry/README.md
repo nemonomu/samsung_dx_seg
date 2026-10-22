@@ -70,7 +70,7 @@ Set-Location 'C:\samsung_dx_seg'
 상품번호별 예외나 임의의 유사 단어 판정은 추가하지 않고, 세탁기·세트·일체형·배너 제외를 우선한다.
 
 목표 미달이어도 마지막 페이지가 확인되면 정상 완료한다. 0개인 실제 빈 목록도 정상이다.
-목록 접속 차단, 반복 페이지, 불완전한 광고 카드와 목록 파싱 실패는 전체 수집 실패로 처리한다.
+목록 접속 차단, 끝으로 확인되지 않은 반복 페이지, 불완전한 광고 카드와 목록 파싱 실패는 전체 수집 실패로 처리한다.
 이 경우 manifest를 실패로 바꿔 이전 CSV가 잘못 적재되지 않게 한다.
 개별 상품의 상세 API·파싱·제품유형 확인 실패는 상품번호·목록·묶음 번호·원인을 남기고 다음 상품으로 진행한다.
 실패 상품은 목표 수량·순위에서 제외하고 다음 목록으로 보충한다. 같은 목록에서 실패한 상품은 반복 호출하지 않으며,
@@ -83,6 +83,40 @@ BSR에서는 다시 시도할 수 있다. 정상 상품의 Main/BSR 상세 캐�
 Main/BSR 중복은 한 행으로 합친다. Main의 상품명·가격·URL이 우선이며 BSR에만 있으면 BSR 값을 사용한다.
 배너와 일반 카드에 동일 번호가 있어도 카드별로 판단하므로 일반 카드는 유지된다.
 
+## 마지막 목록 판정과 중간 보존
+
+DRY는 `dry/listing.py`의 전용 수집 루프를 사용한다. 기존 여섯 제품의 공통 목록 수집기는 변경하지 않는다.
+페이지 HTML에 이미 있는 `ProductListPage.products`, 목록 건수 문구, 독일어 카테고리 제목의 상품 수(있을 때),
+더보기 제어와 실제 일반 상품 카드를 확인한다. 확인되지 않은 `pageCount`·`currentPage` 필드나 목록 API는 사용하지 않는다.
+
+- 화면의 종료 건수 표시가 있어도, 읽은 카테고리 상품 자리 수와 일치하고 총수 충돌이 없어야 종료한다.
+- 빈 카테고리는 종료 건수 표시 또는 건조기 제목의 0개 표시와 빈 목록 상태·화면·비활성 더보기를 함께 확인한다.
+  건수 근거 없는 빈 화면만으로 정상 종료하지 않는다.
+- 마지막 건수 표시가 사라졌다면 먼저 종료 후보만 기록한다. 이전 묶음들이 연속이고 크기가 일정하며,
+  바뀌지 않은 사이트 총수에 현재 묶음까지의 카테고리 자리 수가 정확히 도달해야 한다.
+  현재 목록 상태의 상품들과 실제 화면의 일반 카드도 일치하고 활성 더보기가 없어야 한다.
+- 그 다음 묶음을 렌더링해 바로 직전 끝 후보와 같은 카테고리 상품들이 반환되고 같은 조건이 다시 확인되면
+  `stable_total_slots_and_verified_tail_repeat` 근거로 직전 묶음을 마지막으로 확정한다. 확인 요청은 상세 API를 재호출하지 않는다.
+- 자리 수는 **선별·중복 제거 전 카테고리 목록의 위치 수**다. 배너나 상태 밖 추가 Sponsored 카드는 자리 수에 더하지 않는다.
+  추가 일반 Sponsored 카드는 적격 수집 대상에 계속 포함하며, Main/BSR 목표 수량과 종료 판단을 구분한다.
+- 총수 변경, 불완전한 화면, 상태 불일치, 중간 반복, 종료 근거 없는 짧은 목록은 이 보완으로 정상 종료되지 않는다.
+  근거가 부족하면 실패로 남기며 Main/BSR 결과와 중간 파일을 보존한다.
+- `raw_last_page`, `raw_has_next`는 기존 화면 파서의 관측값이고, `last_page`·`end_basis`는 교차 확인 후 파생한 판단이다.
+  `page_ready`는 빠른 관측값만 기록하며 최종 묶음 판정은 뒤의 `pagination_decision`·`page_summary`를 확인한다.
+  `observed_totals`, `category_slots_read`, `observed_block_size`, `state_page_objects`, `tail_dom_verified`도 요약 로그에 남긴다.
+
+매 묶음·재시도 뒤 배치별 JSON 중간 파일에 **20컬럼 상품 필드와 안전한 진행 요약만** 저장한다.
+원문 HTML·요청/응답·상세 캐시는 저장하지 않는다. `artifact_kind=intermediate`, `success=false`, `loadable=false`이며
+최종 CSV와 별개다. 자동 재개 기능은 제공하지 않고 `--write-db`도 중간 파일을 적재하지 않는다.
+중간 저장 실패는 `INTERMEDIATE_SAVE_FAILED`, 최종 CSV 실패는 `FINAL_CSV_SAVE_FAILED`,
+최종 검증 요약 저장 실패는 `FINAL_MANIFEST_SAVE_FAILED`로 기록하고 DB를 호출하지 않는다.
+파일 교체는 임시 파일 작성 후 원자적으로 수행하며, 저장 실패 시 앞서 저장한 중간 파일은 보존한다.
+
+실제 목록 오류의 실패 manifest·보고서에도 확보 수량·개별 실패·마지막 정상 묶음·실패 요청 묶음을 유지한다.
+`state=not_started`, `rows=null`은 미실행이며, 실행해서 확보한 0개와 구분한다.
+이번 제공 로그의 205개 상품 전체는 원래 최종 CSV가 없어 복구하지 않았다. 테스트 상품은 합성 데이터이며,
+원래 로그의 수량과 페이지 신호만 사용해 Main 205/BSR 100 및 모의 DB 205행 연결을 검증한다.
+
 ## 상세 API 범위와 확인 한계
 
 - 사양: 기존 `GetComparisonTableRecommendations` 조회를 재사용하되 `limit=0`, `cofrConfig.isEnabled=false`로 설정한다.
@@ -92,7 +126,7 @@ Main/BSR 중복은 한 행으로 합친다. Main의 상품명·가격·URL이 �
 - 2026-10-22 AWS 시험에서 위 사양 API의 HTTP 200·GraphQL 오류 없음과 대상 상품·추천상품의 동반 반환을 확인했다. `limit=0`은 추천 미반환을 보장하지 않는다. 요청 상품번호와 일치하는 대상만 읽고 동반 상품은 무시한다. 대상 상품이 없거나 사양 응답 구조가 잘못되면 해당 상품 실패로 처리한다.
 - 사양 목록이 명시적으로 빈 배열/null인 정상 응답은 제목 근거를 사용하고 근거 없는 필드는 NULL로 남긴다. 사양 필드 자체 누락이나 잘못된 자료형은 정상 결측과 구분한다. 건조기 유형 근거는 여전히 필요하며, 적격 상품의 리뷰 통계 API도 정상 응답이어야 한다.
 - 후속 AWS Main 1개/BSR 1개 시험은 총 4회 API 호출과 CSV 2행 생성에 성공했다. 표본의 모델·가격·할인율·리뷰 통계·투입 방식·용량을 확인했으며 DB에는 적재하지 않았다.
-- `Wärmepumpetrockner` 표기 인식 보완 후 제공된 AWS 결과에서는 Main 100/BSR 100, 병합 고유 107개 수집 및 TEST 적재가 성공했다. 이번 Main 300·본테이블·메일 연결은 아직 운영 실행하지 않았다.
+- `Wärmepumpetrockner` 표기 인식 보완 후 제공된 AWS 결과에서는 Main 100/BSR 100, 병합 고유 107개 수집 및 TEST 적재가 성공했다. 이후 제공된 Main 300 실행은 Main 205개 확보 후 반복 목록 오류로 DB 단계 전에 중단됐다. 이번 종료 판정 보완본은 아직 AWS에서 실행하지 않았다.
 
 ## 20컬럼 매핑
 
@@ -162,7 +196,9 @@ INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다.
 - 30초마다 `waiting` 이벤트로 현재 단계와 마지막 진행 위치를 표시한다. 응답이 없는 외부 호출도 대기 단계가 보인다.
 - `field_selected`는 선택한 SKU·용량·로딩타입의 제목/스펙/DB 출처와 관련 값·단위를 남긴다.
 - 상세 `page`는 DRY의 현재 목록 묶음 번호다. 첫 주소 1, 다음 주소 2이며 DB 컬럼은 추가하지 않는다.
-- `collection_complete`는 수집 완료 시각·소요시간, `run_complete`는 적재·메일을 포함한 `total_elapsed_s`를 남긴다.
+- `collection_complete`는 수집 완료 시각·소요시간, `run_complete`는 적재·메일을 포함한 `total_elapsed_s`를 남긴다. 실패 시에도 `collection_elapsed_s`와 중단 시각이 유지된다.
+- `page_summary`는 해당 묶음 처리 직후의 확보 수량이다. `pagination_decision`에 종료 근거·총수 충돌·상태/화면 일치를 기록한다.
+- `run_complete`·메일 보고서는 Main/BSR의 완료·미실행·실패, 최종 CSV 저장 상태, 중간 파일 경로와 DB 실행 상태를 구분한다.
 - `product_failed`는 개별 상품 실패와 계속 진행 여부를 기록한다. 최종 `product_failure_count`는 Main/BSR별 실패 상품 건수 합계이므로 같은 상품이 양쪽에서 실패하면 각각 센다. 실패 상품의 별점이나 사양을 0/NULL로 바꿔 적재하지 않는다.
 - `mail_complete`는 발송·실패·비활성·모의 전송·이미 발송됨을 구분하며 SMTP 원문 오류나 수신 주소를 기록하지 않는다.
 - API의 작업명·HTTP 상태·GraphQL 오류 여부·오류 분류·재시도와, 실패 단계·오류 코드·소스 위치를 기록한다.
@@ -177,6 +213,8 @@ INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다.
 - 수집·적재 요약: `mmkt_dry_manifest.json`
 - 메일 보고서: `mmkt_dry_email_report.txt` (수집 전용·구조 확인 모드에서는 만들지 않음)
 - 기존 CSV 검증 실패 시 별도 알림 기록: `mmkt_dry_load_failure.json` (원래 manifest 보존)
+- 배치별 중간 결과: `intermediate\<batch_id>\main_0001_attempt_01.json`, `bsr_0001_attempt_01.json` 등
+- 기본 중간 폴더 전체 경로: `C:\samsung_dx_seg\MMKT\dry\data\output\intermediate\<batch_id>`
 - `--output-dir`, `--log-dir`로 각각 경로를 변경할 수 있다.
 
 ## 설정 전환
@@ -208,6 +246,7 @@ python -B -X utf8 -m unittest discover -s tests -p test_dry_pipeline.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_updates.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_production.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_resilience.py -v
+python -B -X utf8 -m unittest discover -s tests -p test_dry_listing_end.py -v
 ```
 
 실제 AWS UC 접속·건조기 API·테이블 구조·INSERT는 이 로컬 테스트의 검증 범위가 아니다.
@@ -221,6 +260,11 @@ OTTO 1개는 저장소 안 테스트 폴더의 생성 권한 오류가 있어 �
 브라우저·HTTP API·DB·SMTP 연결은 모의 객체와 외부 소켓 연결 차단 상태로 검증했다. BAT 종료 코드 시험은 가짜 Python 명령만 실행했다.
 후속 별점 분포 수정 검증에서는 제공된 3개 구간 응답으로 오류를 재현한 뒤, MMKT 205개(DRY 82개 포함)를 다시 실행해 모두 통과했다. 실제 API·DB·메일은 실행하지 않았다.
 개별 상품 실패 격리·정상 빈 사양·검증 CSV 복구 보완 후에는 MMKT 216개(DRY 93개 포함)가 모두 통과했다. 외부 연결은 차단하고, 실제 브라우저·DB·SMTP 대신 모의 객체를 사용했다.
+종료 판정·중간 보존 보완에서는 제공 로그와 같은 신호로 기존 반복 오류를 먼저 재현했다. 새 로직에서 같은 수량의 합성 상품으로
+Main 205/BSR 100·모의 본테이블 205행 연결을 확인했으며, 원격의 실제 상품 결과를 복구하거나 실제 적재한 것은 아니다.
+실제 마지막 HTML이 제공되지 않아 목록 상태·화면 카드·더보기 일치 여부는 AWS에서 추가 확인해야 한다.
+이번 보완 후 로컬 MMKT 237개(DRY 114개 포함)와 변경 Python 8개 구문 검사가 통과했다.
+제공 로그의 23개 묶음별 확보 수량·제외 사유가 테스트 입력과 일치하는지도 별도로 확인했다.
 
 ## 메일과 재실행
 
