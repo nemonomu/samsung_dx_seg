@@ -1,6 +1,7 @@
 """Two necessary persisted queries per target SKU; no full LDY PDP pipeline.
 
-Comparison supplies specifications, with recommendation limit=0 / COFR disabled.
+Comparison supplies specifications, requesting limit=0 / COFR disabled. The
+server can still include recommendations; only the exact target is processed.
 Reviews page 1 supplies totalResults and rating distribution. Persisted queries
 have a fixed server selection: incidental fields can arrive in memory but are
 never retained, logged or paginated. No AI summary or PDP HTML fetch is used.
@@ -29,11 +30,11 @@ def normalized_capacity(raw: Any) -> str | None:
 
 
 def parse_specs(payload: dict, sku_id: str) -> dict:
-    main, others = _comparison_main(payload, sku_id)
+    main, _ = _comparison_main(payload, sku_id)
     if main is None:
         raise CollectionError("DETAIL_TARGET_NOT_FOUND")
-    if others:
-        raise CollectionError("DETAIL_RECOMMENDATION_LIMIT_IGNORED")
+    # A successful specification response can include other products despite
+    # limit=0. Their presence is not an error and must never change the target.
     product = (main.get("productAggregate") or {}).get("product") or {}
     if not isinstance(product, dict):
         raise CollectionError("DETAIL_PRODUCT_INVALID")

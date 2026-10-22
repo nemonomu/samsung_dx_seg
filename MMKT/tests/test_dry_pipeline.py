@@ -152,6 +152,32 @@ class DryPolicyTests(unittest.TestCase):
 
 
 class DryDetailTests(unittest.TestCase):
+    def test_specs_select_exact_target_between_recommendations(self):
+        payload = specs("1")
+        products = payload["data"]["comparisonTableRecommendations"]["tableData"]["products"]
+        first = specs("99", name="OTHER_PRODUCT_MODEL Waschtrockner", product_type="Waschtrockner",
+                      extra={"Modelkennung": "OTHER_PRODUCT_MODEL", "Beladung": "Toplader", "Nennkapazität": "99 kg"})
+        last = specs("98", extra={"Modelkennung": "ANOTHER_MODEL", "Nennkapazität": "98 kg"})
+        products.insert(0, first["data"]["comparisonTableRecommendations"]["tableData"]["products"][0])
+        products.extend(last["data"]["comparisonTableRecommendations"]["tableData"]["products"])
+        result = parse_specs(payload, "1")
+        self.assertEqual(("REALMODEL456", "Front load", "8kg"),
+                         (result["sku"], result["loading_type"], result["capacity"]))
+        self.assertEqual("Wärmepumpentrockner", result["_features"]["Produkttyp"])
+        self.assertNotIn("OTHER_PRODUCT_MODEL", repr(result))
+
+    def test_specs_missing_target_never_use_recommendation(self):
+        with self.assertRaisesRegex(CollectionError, "^DETAIL_TARGET_NOT_FOUND$"):
+            parse_specs(specs("99"), "1")
+
+    def test_specs_missing_target_features_never_borrow_recommendation(self):
+        payload = specs("1")
+        products = payload["data"]["comparisonTableRecommendations"]["tableData"]["products"]
+        products[0]["productAggregate"]["product"]["featureGroupsWithProductId"]["featureGroups"] = []
+        products.extend(specs("99")["data"]["comparisonTableRecommendations"]["tableData"]["products"])
+        with self.assertRaisesRegex(CollectionError, "^DETAIL_FEATURES_MISSING$"):
+            parse_specs(payload, "1")
+
     def test_dryer_labels_and_no_wash_capacity_fallback(self):
         result = parse_specs(specs("1", extra={"Füllmenge Baumwolle (Waschen)": "99 kg",
                                                   "Füllmenge Baumwolle (Trocknen)": "7,5 kg"}), "1")
@@ -232,6 +258,31 @@ class DryPipelineTests(unittest.TestCase):
             (root / "mmkt_dry_output.csv").write_text("changed", encoding="utf-8")
             with self.assertRaises(CollectionError):
                 database.load_validated_output(root / "mmkt_dry_output.csv")
+
+    def test_extra_recommendations_do_not_get_collected_or_ranked(self):
+        browser = Browser({(sort, 1): page_html([("1", "Trockner")], shown=1, total=1)
+                           for sort in ("main", "bsr")})
+        original_gql = browser.gql
+        def gql(operation, variables):
+            response = original_gql(operation, variables)
+            if operation == "GetComparisonTableRecommendations":
+                products = response["data"]["data"]["comparisonTableRecommendations"]["tableData"]["products"]
+                other = specs("99", name="OTHER_PRODUCT_MODEL Waschtrockner", product_type="Waschtrockner",
+                              extra={"Modelkennung": "OTHER_PRODUCT_MODEL", "Nennkapazität": "99 kg"})
+                products.insert(0, other["data"]["comparisonTableRecommendations"]["tableData"]["products"][0])
+            return response
+        browser.gql = gql
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            manifest = run.crawl(self.args(root, target=1, bsr_target=1), browser)
+            with (root / "mmkt_dry_output.csv").open(encoding="utf-8-sig") as handle:
+                rows = list(csv.DictReader(handle))
+        self.assertTrue(manifest["success"])
+        self.assertEqual((1, 2, 1), (manifest["output_rows"], manifest["api_calls"], manifest["unique_detail_products"]))
+        self.assertEqual([("1", "1", "1", "REALMODEL456", "8kg")],
+                         [(row["item"], row["main_rank"], row["bsr_rank"], row["sku"], row["capacity"]) for row in rows])
+        self.assertEqual({"1"}, {variables.get("ref") or variables.get("id") for _, variables in browser.calls})
+        self.assertNotIn("OTHER_PRODUCT_MODEL", repr(rows))
 
     def test_keeps_paging_until_eligible_target(self):
         pages = {("main", 1): page_html([("9", "Waschmaschine")], shown=1, total=2, more=True),
