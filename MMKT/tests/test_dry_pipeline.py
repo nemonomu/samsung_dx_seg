@@ -80,6 +80,30 @@ class Browser:
 
 
 class DryPolicyTests(unittest.TestCase):
+    def test_heat_pump_spelling_variants_from_title_and_api_type(self):
+        for label in ("Wärmepumpentrockner", "Wärmepumpetrockner", "WÄRMEPUMPETROCKNER"):
+            for source in ("listing", "api_type", "api_name"):
+                with self.subTest(label=label, source=source):
+                    row = {"retailer_sku_name": label if source == "listing" else "MODEL123"}
+                    features = {"Produkttyp": label} if source == "api_type" else {}
+                    detail_name = label if source == "api_name" else None
+                    self.assertIsNone(exclusion_reason(row, features=features, detail_name=detail_name))
+
+    def test_spelling_variant_preserves_exclusions_and_standard_sponsored_cards(self):
+        cases = (
+            ("Waschmaschine + Wärmepumpetrockner", "standard", "washing_machine"),
+            ("Waschtrockner", "standard", "washer_dryer"),
+            ("Wärmepumpetrockner Set", "standard", "set_or_combo"),
+            ("Zubehör-Set für Wärmepumpetrockner", "standard", "set_or_combo"),
+            ("Ersatzfilter für Wärmepumpetrockner", "standard", "accessory"),
+            ("Wärmepumpetrockner", "sponsored-ad", "advertisement"),
+            ("Wärmepumpetrockner", "standard", None),
+        )
+        for name, card_type, expected in cases:
+            with self.subTest(name=name, card_type=card_type):
+                row = {"retailer_sku_name": name, "listing_card_type": card_type, "sku_status": "Sponsored"}
+                self.assertEqual(expected, exclusion_reason(row, features={"Produkttyp": "Wärmepumpetrockner"}))
+
     def test_titles_and_actual_target_types(self):
         include = ["Wärmepumpentrockner", "Kondenstrockner", "Ablufttrockner", "Wäschetrockner", "Trockner"]
         exclude = ["Waschmaschine", "Waschtrockner", "Wasch-Trockner", "Waschmaschine + Trockner",
@@ -231,6 +255,36 @@ class DryPipelineTests(unittest.TestCase):
         for key, value in kwargs.items():
             setattr(args, key, value)
         return args
+
+    def test_spelling_variant_keeps_raw_name_sku_ranks_and_filtered_products(self):
+        raw_name = "BRAND MODEL123 Wärmepumpetrockner (9,0 kg, Weiß)"
+        browser = Browser({
+            ("main", 1): page_html([("9", "Waschmaschine"), ("1", raw_name),
+                                   ("8", "Wärmepumpetrockner Set"), ("2", "Trockner")], shown=4, total=4),
+            ("bsr", 1): page_html([("1", raw_name)], shown=1, total=1),
+        }, {"1": "Wärmepumpetrockner"})
+        original_gql = browser.gql
+
+        def gql(operation, variables):
+            response = original_gql(operation, variables)
+            if operation == "GetComparisonTableRecommendations" and variables.get("ref") == "1":
+                response["data"] = specs("1", product_type="Wärmepumpetrockner", name=raw_name)
+            return response
+
+        browser.gql = gql
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            manifest = run.crawl(self.args(root), browser)
+            with (root / "mmkt_dry_output.csv").open(encoding="utf-8-sig") as handle:
+                reader = csv.DictReader(handle)
+                self.assertEqual(config.COLUMNS, tuple(reader.fieldnames))
+                rows = list(reader)
+        self.assertTrue(manifest["success"])
+        self.assertEqual((2, 1, 4), (manifest["main"]["rows"], manifest["bsr"]["rows"], manifest["api_calls"]))
+        self.assertEqual([("1", "1", "1"), ("2", "2", "")],
+                         [(row["item"], row["main_rank"], row["bsr_rank"]) for row in rows])
+        self.assertEqual((raw_name, "REALMODEL456"), (rows[0]["retailer_sku_name"], rows[0]["sku"]))
+        self.assertEqual({"1", "2"}, {variables.get("ref") or variables.get("id") for _, variables in browser.calls})
 
     def test_full_short_category_with_hidden_combo_dedup_ranks_union_and_shared_api_cache(self):
         pages = {("main", 1): page_html([("1", "Trockner"), ("9", "Waschmaschine"), ("2", "MODEL123")],

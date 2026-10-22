@@ -16,7 +16,9 @@ def normalized(value) -> str:
 # A qualifier alone does not prove an accessory: "mit Combo" can still be a
 # bundle. Shorten a title only for an explicit part/feature description.
 _MODIFIER = re.compile(r"\b(?:mit|with|inkl(?:usive)?|incl(?:uding)?|einschliesslich|fur|fuer|for)\b|\+")
-_DRYER = re.compile(r"waschetrockner|warmepumpentrockner|konden(?:sations|s)trockner|ablufttrockner|\btrockner\b|tumble[\s-]*dryer")
+# MediaMarkt also labels heat-pump dryers "Wärmepumpetrockner" (without n).
+# Recognize that spelling for eligibility only; keep original source values.
+_DRYER = re.compile(r"waschetrockner|warmepumpen?trockner|konden(?:sations|s)trockner|ablufttrockner|\btrockner\b|tumble[\s-]*dryer")
 _GENERIC_COMBINATION = re.compile(r"all[\s-]*in[\s-]*one|\b2[\s-]*in[\s-]*1\b")
 _INCLUDED_PART = re.compile(r"\bzubehor\b|accessor(?:y|ies)|filter|anschluss|verbindungssatz|montage|ablaufschlauch")
 
