@@ -8,8 +8,10 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+from common.config import write_json as _write_json
 from dry import config
 from dry.detail import CollectionError
+from dry.events import emit
 
 
 def canonical_product_url(value: str, item: str) -> str:
@@ -40,6 +42,21 @@ def present(*values):
     return next((value for value in values if value is not None and value != ""), None)
 
 
+def default_missing_ratings(row: dict, *, source: str) -> dict:
+    """Only call after successful detail collection or CSV/manifest validation.
+
+    Leave the source CSV intact on reload. These two fields alone use zero for
+    absence; review count and the three historical backfill fields are separate.
+    """
+    result = dict(row)
+    for field in ("star_rating", "count_of_star_ratings"):
+        if result.get(field) is None or str(result.get(field)).strip() == "":
+            result[field] = 0
+            emit("rating_defaulted", item=row.get("item"), field=field, source=source,
+                 raw_value=None, value=0, reason="missing_after_success")
+    return result
+
+
 def merge_rows(main: list[dict], bsr: list[dict], details: dict[str, dict], meta: dict) -> list[dict]:
     def ranked(rows):
         # Occurrence-level banner/type filtering has ALREADY happened.
@@ -55,8 +72,9 @@ def merge_rows(main: list[dict], bsr: list[dict], details: dict[str, dict], meta
         primary = (m.get(item) or b[item])[0]
         secondary = b[item][0] if item in b else {}
         detail = details[item]  # missing/failed API must not become an empty row
-        star = (None if detail.get("count_of_star_ratings") == 0 else
-                present(detail.get("star_rating"), primary.get("star_rating"), secondary.get("star_rating")))
+        star = present(detail.get("star_rating"),
+                       None if detail.get("count_of_star_ratings") == 0 else
+                       present(primary.get("star_rating"), secondary.get("star_rating")))
         row = dict.fromkeys(config.COLUMNS)
         row.update(country=config.COUNTRY, account_name=config.ACCOUNT_NAME, item=item,
                    sku=detail.get("sku"), retailer_sku_name=primary.get("retailer_sku_name"),
@@ -71,7 +89,7 @@ def merge_rows(main: list[dict], bsr: list[dict], details: dict[str, dict], meta
                    main_rank=m[item][1] if item in m else None,
                    bsr_rank=b[item][1] if item in b else None,
                    loading_type=detail.get("loading_type"), capacity=detail.get("capacity"), **meta)
-        result.append(row)
+        result.append(default_missing_ratings(row, source="collected_fields"))
     return result
 
 
@@ -82,4 +100,11 @@ def write_output(path: Path, rows: list[dict]) -> None:
         writer = csv.DictWriter(handle, fieldnames=config.COLUMNS, extrasaction="raise")
         writer.writeheader()
         writer.writerows(rows)
+    os.replace(temporary, path)
+
+
+def write_manifest(path: Path, data: dict) -> None:
+    """A failed state/mail write must leave the last valid manifest readable."""
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    _write_json(temporary, data)
     os.replace(temporary, path)

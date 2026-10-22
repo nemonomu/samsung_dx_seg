@@ -249,6 +249,11 @@ class DryDetailTests(unittest.TestCase):
 
 
 class DryPipelineTests(unittest.TestCase):
+    def setUp(self):
+        self.mail = patch.object(run, "notify_run", return_value={"state": "disabled", "failed": False})
+        self.mail.start()
+        self.addCleanup(self.mail.stop)
+
     def args(self, root, **kwargs):
         args = run.parse_args(["--output-dir", str(root), "--render-settle", "0", "--sponsored-extra-wait", "0",
                                "--sleep", "0", "--page-retries", "0", "--captcha-wait", "0"])
@@ -399,9 +404,9 @@ class DryPipelineTests(unittest.TestCase):
 
     def test_default_targets_and_remote_switches(self):
         args = run.parse_args([])
-        self.assertEqual((100, 100, "test", False), (args.target, args.bsr_target, args.table, args.write_db))
+        self.assertEqual((300, 100, "production", False), (args.target, args.bsr_target, args.table, args.write_db))
         self.assertFalse(args.collect_only)
-        self.assertEqual(("dx_seg", "dx_seg_ldy_dryer_retail_test"), config.DB_TABLE)
+        self.assertEqual(("dx_seg", "dx_seg_ldy_dryer_retail"), config.DB_TABLE)
         self.assertEqual(300, run.parse_args(["--target", "300"] ).target)
 
     def test_failed_browser_invalidates_old_success_without_connecting_database(self):
@@ -439,7 +444,7 @@ class DryOutputDatabaseTests(unittest.TestCase):
         row = merge_rows(main, bsr, {"1": {}}, run_metadata())[0]
         self.assertEqual((None, 20, 4.2, "399,– €"), tuple(row[k] for k in ("count_of_reviews", "count_of_star_ratings", "star_rating", "final_sku_price")))
         zero = merge_rows(main, bsr, {"1": {"count_of_star_ratings": 0}}, run_metadata())[0]
-        self.assertIsNone(zero["star_rating"])
+        self.assertEqual(0, zero["star_rating"])
         self.assertEqual(0, zero["count_of_star_ratings"])
 
     def test_output_urls_omit_tracking_and_reject_wrong_product_or_host(self):

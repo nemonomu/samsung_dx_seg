@@ -199,6 +199,11 @@ class DatabaseUpdates(unittest.TestCase):
 
 
 class ExecutionAndLogs(unittest.TestCase):
+    def setUp(self):
+        notifier = patch.object(run, "notify_run", return_value={"state": "disabled", "failed": False})
+        notifier.start()
+        self.addCleanup(notifier.stop)
+
     def browser(self):
         browser = Browser({("main", 1): page_html([("9", "PORTABEL Trockner")], shown=1, total=2, more=True),
                            ("main", 2): page_html([("1", "Mini Trockner 4kg")], shown=2, total=2),
@@ -218,7 +223,7 @@ class ExecutionAndLogs(unittest.TestCase):
         logs = [json.loads(line) for path in sorted((root / "logs").glob("*.log")) for line in path.read_text(encoding="utf-8").splitlines()]
         return code, db, uc, logs, screen.getvalue()
 
-    def test_default_collects_then_loads_test_and_logs_progress(self):
+    def test_default_collects_then_loads_production_and_logs_progress(self):
         with tempfile.TemporaryDirectory() as directory:
             root, browser = Path(directory), self.browser()
             code, db, _, logs, screen = self.execute(root, browser)

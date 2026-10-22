@@ -1,4 +1,4 @@
-"""Standalone collection + TEST load; --collect-only never connects to DB.
+"""Standalone collection + production load; --collect-only never connects to DB.
 
 --write-db loads the last validated CSV without crawling. --check-table is read-only.
 """
@@ -9,20 +9,23 @@ import contextlib
 import json
 import time
 from pathlib import Path
+from datetime import datetime
 
-from common.config import page_url, write_json
+from common.config import page_url
 from common.listing import collect_pages
 from common.parsers import extract_listing_pagination, extract_sponsored_diagnostics, parse_listing_html
 from dry import config
 from dry.database import DatabaseError, file_digest, inspect_or_insert, load_validated_output
 from dry.detail import CollectionError, DetailCollector
-from dry.output import canonical_product_url, merge_rows, run_metadata, write_output
+from dry.output import canonical_product_url, default_missing_ratings, merge_rows, run_metadata, write_output
+from dry.output import write_manifest as write_json
+from dry.notify import notify_run
 from dry.policy import exclusion_reason
 from dry.events import RunLog, context, emit, failure, quiet_external
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Standalone MMKT DRY: collect and load TEST by default")
+    parser = argparse.ArgumentParser(description="Standalone MMKT DRY: collect and load production by default")
     parser.add_argument("--target", type=int, default=config.MAIN_TARGET_UNIQUE)
     parser.add_argument("--bsr-target", type=int, default=config.BSR_TARGET_UNIQUE)
     parser.add_argument("--output-dir", type=Path, default=config.OUTPUT_ROOT)
@@ -36,7 +39,7 @@ def parse_args(argv=None):
     group.add_argument("--check-table", action="store_true", help="read-only schema check, no crawl")
     group.add_argument("--write-db", action="store_true", help="insert existing validated CSV, no crawl")
     group.add_argument("--collect-only", action="store_true", help="collect CSV only; no DB connection")
-    parser.add_argument("--table", choices=["test", "production"], default="test")
+    parser.add_argument("--table", choices=["test", "production"], default="production")
     args = parser.parse_args(argv)
     if args.target <= 0 or args.bsr_target <= 0 or args.page_retries < 0 or min(
             args.render_settle, args.sponsored_extra_wait, args.captcha_wait, args.sleep) < 0:
@@ -57,12 +60,13 @@ def wait_for_captcha(session, html: str, wait_s: float) -> str:
     raise CollectionError("CAPTCHA_OR_ACCESS_BLOCKED")
 
 
-def make_fetcher(session, base_url: str, args, sort="main"):
+def make_fetcher(session, base_url: str, args, sort="main", progress_state=None):
     attempts = {}
     def fetch(page):
         start = time.perf_counter()
         attempts[page] = attempts.get(page, 0) + 1
-        context("listing", sort=sort, page=page, attempt=attempts[page])
+        context("listing", sort=sort, page=page, attempt=attempts[page],
+                **(progress_state() if progress_state else {}))
         emit("page_start", render_wait_s=args.render_settle)
         try:
             with quiet_external():
@@ -108,14 +112,23 @@ def crawl(args, session, meta=None) -> dict:
     counters = {}
     sort = "main"
     target = args.target
+    current_page = 1
+
+    def progress_state():
+        return {"accepted": len(accepted), "target": target,
+                "excluded_count": sum(count for reason, count in counters.items() if reason != "duplicate"),
+                "duplicates": counters.get("duplicate", 0)}
 
     def eligibility(row):
+        sku_id = str(row.get("sku_id") or "").strip()
+        # common.collect_pages attaches row['page'] AFTER calling eligibility.
+        # Track the fetcher's page locally; leave the shared collector untouched.
+        context("listing_product", sort=sort, page=current_page, item=sku_id, **progress_state())
         early = exclusion_reason(row, require_evidence=False)
         if early:
             counters[early] = counters.get(early, 0) + 1
             emit("product_excluded", item=row.get("sku_id"), reason=early, excluded=counters)
             return early
-        sku_id = str(row.get("sku_id") or "").strip()
         if not sku_id:
             return "missing_product_id"
         canonical_product_url(row.get("product_url"), sku_id)
@@ -124,7 +137,7 @@ def crawl(args, session, meta=None) -> dict:
             emit("product_duplicate", item=sku_id, duplicates=counters["duplicate"])
             return "duplicate"
         # Do not cache banner decisions by ID: a standard occurrence is valid.
-        context("detail", sort=sort, page=row.get("page"), item=sku_id, accepted=len(accepted), target=target)
+        context("detail", sort=sort, page=current_page, item=sku_id, **progress_state())
         emit("detail_start", cached=sku_id in collector.cache, detail_products=len(collector.cache))
         detail = collector.get(sku_id, row)
         reason = exclusion_reason(row, features=detail["_features"], detail_name=detail["_detail_name"])
@@ -146,7 +159,12 @@ def crawl(args, session, meta=None) -> dict:
         counters = {}
         context("listing", sort=sort, target=target)
         emit("listing_start", accepted=0, target=target)
-        rows, pages, reason = collect_pages(make_fetcher(session, url, args, sort), product="dry", target=target,
+        fetch = make_fetcher(session, url, args, sort, progress_state=progress_state)
+        def fetch_page(page):
+            nonlocal current_page
+            current_page = page
+            return fetch(page)
+        rows, pages, reason = collect_pages(fetch_page, product="dry", target=target,
                                             retries=args.page_retries, sleep_s=args.sleep, eligibility=eligibility)
         # Page logs contain only parsed product diagnostics/counters, no HTML/errors.
         manifest["pages"][sort] = pages
@@ -177,6 +195,8 @@ def load_output(args, table):
     context("output_validation", table=".".join(table))
     path = args.output_dir / "mmkt_dry_output.csv"
     rows = load_validated_output(path)
+    # Older validated files can have blank stars. Keep the file/digest unchanged.
+    rows = [default_missing_ratings(row, source="validated_csv") for row in rows]
     manifest_path = args.output_dir / "mmkt_dry_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     emit("output_validated", batch_id=manifest.get("batch_id"), rows=len(rows), table=".".join(table))
@@ -203,11 +223,26 @@ def load_output(args, table):
 
 def main(argv=None) -> int:
     args = parse_args(argv)
-    table = config.DB_TABLE if args.table == "test" else config.PRODUCTION_TABLE
+    table = config.TEST_TABLE if args.table == "test" else config.PRODUCTION_TABLE
     session = None
     meta = run_metadata()
     collection_success = False
     db_written = False
+    manifest = {"success": False, **meta}
+    started = time.monotonic()
+    notification = None
+
+    def report(error=None):
+        if args.collect_only or args.check_table:
+            emit("mail_skipped", reason="collect_only" if args.collect_only else "check_table")
+            return {}
+        try:
+            return notify_run(args.output_dir, manifest, table, collection_success=collection_success,
+                              db_written=db_written, error=error,
+                              elapsed_s=round(time.monotonic() - started, 1))
+        except Exception as exc:
+            failure(exc, code="MAIL_NOTIFICATION_FAILED")
+            return {"failed": True, "sent": None, "state": "notification_error"}
     try:
         log = RunLog(args.log_dir)
     except Exception as exc:
@@ -235,8 +270,11 @@ def main(argv=None) -> int:
                 emit("browser_ready")
                 wait_for_captcha(session, session.driver.page_source or "", args.captcha_wait)
                 manifest = crawl(args, session, meta)
+                manifest["timing"] = {"collection_elapsed_s": round(time.monotonic() - started, 1),
+                                      "collection_completed_at": datetime.now().isoformat(timespec="seconds")}
                 write_json(args.output_dir / "mmkt_dry_manifest.json", manifest)
                 collection_success = True
+                emit("collection_complete", **manifest["timing"], output_rows=manifest["output_rows"])
                 with quiet_external():
                     session.close()
                 session = None
@@ -246,24 +284,34 @@ def main(argv=None) -> int:
                 db_written = True
             else:
                 result = {}
+            notification = report()
             context("complete", batch_id=manifest.get("batch_id"))
-            emit("run_complete", success=True, collection_success=collection_success,
+            emit("run_complete", success=not notification.get("failed", False), collection_success=collection_success,
                  db_success=True if db_written else None, db_written=db_written,
                  main=manifest.get("main"), bsr=manifest.get("bsr"), output_rows=manifest["output_rows"],
-                 inserted=result.get("inserted", 0), already_loaded=result.get("already_loaded", False))
-            return 0
+                 inserted=result.get("inserted", 0), already_loaded=result.get("already_loaded", False),
+                 collection_elapsed_s=(manifest.get("timing") or {}).get("collection_elapsed_s"),
+                 total_elapsed_s=round(time.monotonic() - started, 1), notification=notification)
+            return 1 if notification.get("failed") else 0
         except BaseException as exc:
             error = str(exc) if isinstance(exc, CollectionError) else type(exc).__name__
             failure(exc, code=error)
             manifest_path = args.output_dir / "mmkt_dry_manifest.json"
             collection_success = collection_success or getattr(exc, "validated_output", False)
             db_written = getattr(exc, "db_written", db_written)
+            if collection_success:
+                with contextlib.suppress(Exception):
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if not args.check_table and not args.write_db and not collection_success:
+                manifest = {"success": False, "error": error, **meta}
+                with contextlib.suppress(Exception):
+                    write_json(manifest_path, manifest)
+            notification = report(error)
+            context("complete", batch_id=manifest.get("batch_id"))
             emit("run_complete", success=False, collection_success=collection_success,
                  db_success=db_written if collection_success and not args.collect_only else None,
-                 error=error, db_written=db_written, csv_preserved=collection_success)
-            if not args.check_table and not args.write_db and not collection_success:
-                with contextlib.suppress(Exception):
-                    write_json(manifest_path, {"success": False, "error": error, **meta})
+                 error=error, db_written=db_written, csv_preserved=collection_success,
+                 total_elapsed_s=round(time.monotonic() - started, 1), notification=notification)
             return 130 if isinstance(exc, KeyboardInterrupt) else 1
         finally:
             if session is not None:

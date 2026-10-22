@@ -16,31 +16,54 @@ MODEL_LABELS = tuple(map(label_key, (
     "Modelkennung", "Modellkennung", "Modellname / -kennzeichen", "Modellname",
     "Modellkennzeichen", "Modellbezeichnung", "Model name", "Model number")))
 _MEASURE = re.compile(r"\d+(?:[.,]\d+)?\s*(?:k?w|watt|kg|g|v|hz|rpm|u/min|cm|mm|l|db|%)", re.I)
-_FUNCTION = re.compile(r"(?:\d+\s*[- ]?in[- ]?\s*\d+|all[- ]in[- ]one)", re.I)
+_FUNCTION = re.compile(r"(?<![A-Za-z0-9])(?:\d+\s*[- ]?in[- ]?\s*\d+|all[- ]in[- ]one)(?![A-Za-z0-9])", re.I)
 _CAPACITY = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?)\s*(kg|g)\b", re.I)
+_ENERGY_CLASS = re.compile(r"[A-G]\+{0,3}", re.I)
+_PROGRAM_OR_SERIES = re.compile(r"(?:\d+\s*programme?n?|\d+\s*programs?|(?:serie|series|iq)[-_ ]?\d+)", re.I)
+# Semantic exclusions, not product IDs or manufacturer-specific exceptions.
+_NON_MODEL_WORDS = {
+    "serie", "series", "serien", "iq", "programm", "programme", "programmen",
+    "programs", "ptc", "led", "uv", "eek", "klasse", "class", "modell", "model",
+    "mini", "dryer", "trockner", "eco", "speed",
+}
+# Keep accented German words whole: splitting Wärmepumpentrockner at ä would
+# produce a standalone W and incorrectly treat the next word as a watt unit.
+_TOKEN = re.compile(r"[^\W_]+(?:[-_/.][^\W_]+)*(?:\+{1,3})?")
 
 
 def valid_sku(value) -> str | None:
     value = text_clean(value)
     if not value or value.casefold() in {"-", "--", "n/a", "null", "none", "unknown"}:
         return None
-    if _FUNCTION.fullmatch(value):
+    if _FUNCTION.search(value) or _ENERGY_CLASS.fullmatch(value) or _PROGRAM_OR_SERIES.fullmatch(value):
         return None
-    parts = re.split(r"\s*[/+–-]\s*", value)
+    parts = [part for part in re.split(r"\s*[/+–-]\s*", value) if part]
     if parts and all(_MEASURE.fullmatch(part) for part in parts):
         return None
     return value
 
 
 def title_sku(title) -> str | None:
-    tokens = re.findall(r"[A-Za-z0-9]+(?:[-_/.][A-Za-z0-9]+)*", text_clean(title) or "")
+    title = text_clean(title) or ""
+    matches = list(_TOKEN.finditer(title))
+    tokens = [match.group() for match in matches]
     for index, token in enumerate(tokens):
+        # A short uppercase prefix plus a separate 4..6 digit identifier, e.g.
+        # WPT 7155. Require whitespace only and reject quantity/series contexts.
+        if (index > 0 and re.fullmatch(r"[A-Z]{2,4}", token) and normalized(token) not in _NON_MODEL_WORDS
+                and index + 1 < len(tokens) and re.fullmatch(r"\d{4,6}", tokens[index + 1])
+                and title[matches[index].end():matches[index + 1].start()].isspace()):
+            following = tokens[index + 2] if index + 2 < len(tokens) else ""
+            if not re.fullmatch(r"(?:kg|g|k?w|watt|v|hz|rpm|cm|mm|l|db|programme?n?|programs)", following, re.I):
+                return token + " " + tokens[index + 1]
         if (len(token) < 5 or not any(c.isalpha() for c in token)
-                or not any(c.isdigit() for c in token) or not valid_sku(token)):
+                or not any(c.isdigit() for c in token) or not valid_sku(token)
+                or re.fullmatch(r"(?:iq|serie|series|programm[e]?)[-_]?\d+", token, re.I)):
             continue
         picked = [token]
         for tail in tokens[index + 1:index + 4]:
             if (len(tail) < 2 or not valid_sku(tail)
+                    or normalized(tail) in _NON_MODEL_WORDS
                     or normalized(tail) in {"weiss", "white", "schwarz", "black", "grau", "silver"}):
                 break
             if tail.isupper() and tail.isalpha():

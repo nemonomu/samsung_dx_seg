@@ -68,8 +68,16 @@ def parse_ratings(payload: dict) -> dict:
     count = root.get("totalResults")
     if count is not None and (isinstance(count, bool) or not isinstance(count, int) or count < 0):
         raise CollectionError("REVIEW_COUNT_INVALID")
-    rating = root.get("rating") or {}
-    n_star, star = _rating_distribution_stats(rating.get("distribution"))
+    rating = root.get("rating")
+    if rating is not None and not isinstance(rating, dict):
+        raise CollectionError("REVIEW_RATING_INVALID")
+    distribution = (rating or {}).get("distribution")
+    if distribution is not None and not isinstance(distribution, list):
+        raise CollectionError("REVIEW_DISTRIBUTION_INVALID")
+    n_star, star = _rating_distribution_stats(distribution)
+    if distribution and n_star is None:
+        # Missing statistics are legitimate; a supplied but malformed set isn't.
+        raise CollectionError("REVIEW_DISTRIBUTION_INVALID")
     return {"count_of_reviews": count, "star_rating": star, "count_of_star_ratings": n_star}
 
 
