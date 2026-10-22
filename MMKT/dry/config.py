@@ -1,4 +1,5 @@
 """DRY settings. Shared configuration imports do not read DB secrets."""
+from pathlib import Path
 from common.config import ACCOUNT_NAME, COUNTRY, product_output_root
 
 LISTING_URL = "https://www.mediamarkt.de/de/category/trockner-4.html?query=W%C3%A4schetrockner"
@@ -6,6 +7,7 @@ BSR_URL = LISTING_URL + "&sort=salescount+desc"
 MAIN_TARGET_UNIQUE = 100
 BSR_TARGET_UNIQUE = 100
 OUTPUT_ROOT = product_output_root("dry")
+LOG_ROOT = Path(__file__).resolve().parent / "data" / "logs"
 DB_TABLE = ("dx_seg", "dx_seg_ldy_dryer_retail_test")
 PRODUCTION_TABLE = ("dx_seg", "dx_seg_ldy_dryer_retail")
 

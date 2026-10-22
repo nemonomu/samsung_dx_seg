@@ -397,9 +397,10 @@ class DryPipelineTests(unittest.TestCase):
             result = run.crawl(self.args(Path(directory)), browser)
         self.assertEqual((0, 0), (result["output_rows"], result["api_calls"]))
 
-    def test_default_no_db_and_remote_switches(self):
+    def test_default_targets_and_remote_switches(self):
         args = run.parse_args([])
         self.assertEqual((100, 100, "test", False), (args.target, args.bsr_target, args.table, args.write_db))
+        self.assertFalse(args.collect_only)
         self.assertEqual(("dx_seg", "dx_seg_ldy_dryer_retail_test"), config.DB_TABLE)
         self.assertEqual(300, run.parse_args(["--target", "300"] ).target)
 
@@ -410,7 +411,7 @@ class DryPipelineTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()) as output:
             root = Path(directory)
             (root / "mmkt_dry_manifest.json").write_text('{"success": true}', encoding="utf-8")
-            self.assertEqual(1, run.main(["--output-dir", directory]))
+            self.assertEqual(1, run.main(["--output-dir", directory, "--log-dir", str(root / "logs")]))
             self.assertFalse(json.loads((root / "mmkt_dry_manifest.json").read_text())["success"])
             self.assertNotIn("RAW_ERROR_MUST_NOT_PRINT", output.getvalue())
             db.assert_not_called()
@@ -456,9 +457,11 @@ class DryOutputDatabaseTests(unittest.TestCase):
         metadata["id"]["identity"] = True
         database.validate_schema(metadata)
         numeric = dict(metadata["capacity"], type="numeric")
-        for column, raw, expected in [("capacity", "7,5kg", "7.5"), ("savings", "10%", "10"),
+        for column, raw, expected in [("savings", "10%", "10"),
                                        ("final_sku_price", "1.299,– €", "1299.00")]:
             self.assertEqual(expected, str(database.typed_value(raw, column, numeric)))
+        with self.assertRaisesRegex(CollectionError, "DB_CAPACITY_REQUIRES_TEXT_COLUMN"):
+            database.typed_value("7,5kg", "capacity", numeric)
         with self.assertRaises(CollectionError):
             database.typed_value("missing", "capacity", dict(numeric, nullable=False))
         with self.assertRaises(CollectionError):
@@ -474,13 +477,15 @@ class DryOutputDatabaseTests(unittest.TestCase):
         cursor.__enter__ = Mock(return_value=cursor)
         cursor.__exit__ = Mock(return_value=False)
         connection.cursor.return_value = cursor
+        cursor.fetchall.return_value = []
+        cursor.fetchmany.return_value = []
         with patch.object(database, "connect", return_value=connection), \
                 patch.object(database, "table_metadata", return_value=meta):
             self.assertEqual(0, database.inspect_or_insert(config.DB_TABLE)["inserted"])
             connection.set_session.assert_called_with(readonly=True)
             cursor.executemany.assert_not_called()
             row = dict.fromkeys(config.COLUMNS)
-            row["item"] = "123"
+            row.update(country="SEG", account_name="Mediamarkt", item="123", batch_id="m_20261022_100000")
             self.assertEqual(1, database.inspect_or_insert(config.DB_TABLE, [row])["inserted"])
             connection.set_session.assert_called_with(readonly=False)
             values = cursor.executemany.call_args.args[1]

@@ -1,4 +1,4 @@
-"""Existing table only. Read-only preflight; INSERT requires --write-db.
+"""Existing table only. Atomic backfill/insert with same-batch retry protection.
 
 Never create/alter tables or delete/update rows. Credentials pass only through
 the existing process-internal db_config loader; raw exceptions are not printed.
@@ -8,13 +8,24 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-import re
+import copy
+import contextlib
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from common.config import db_config
 from dry import config
 from dry.detail import CollectionError
+from dry.fields import valid_sku
+from dry.events import context, emit, failure
+
+BACKFILL_FIELDS = ("sku", "loading_type", "capacity")
+
+
+class DatabaseError(CollectionError):
+    def __init__(self, code, *, db_written=False):
+        super().__init__(code)
+        self.db_written = db_written
 
 
 def file_digest(path: Path) -> str:
@@ -67,7 +78,8 @@ def typed_value(value, column: str, metadata: dict):
         elif column == "savings":
             raw = raw.removesuffix("%").replace(",", ".")
         elif column == "capacity":
-            raw = re.sub(r"\s*kg$", "", raw, flags=re.I).replace(",", ".")
+            # Silently stripping kg would violate the unit-preservation contract.
+            raise CollectionError("DB_CAPACITY_REQUIRES_TEXT_COLUMN")
         try:
             amount = Decimal(raw)
         except InvalidOperation:
@@ -108,30 +120,149 @@ def load_validated_output(path: Path) -> list[dict]:
     ids = [row["item"] for row in rows]
     if len(ids) != len(set(ids)) or any(not item for item in ids) or len(rows) != manifest.get("output_rows"):
         raise CollectionError("OUTPUT_ROWS_INVALID")
+    if rows:
+        batch_ids = {row.get("batch_id") for row in rows}
+        if len(batch_ids) != 1 or not next(iter(batch_ids)):
+            raise CollectionError("OUTPUT_BATCH_INVALID")
+        if manifest.get("batch_id") and batch_ids != {manifest["batch_id"]}:
+            raise CollectionError("OUTPUT_BATCH_INVALID")
+        if any(row.get("sku") not in (None, "") and valid_sku(row["sku"]) is None for row in rows):
+            raise CollectionError("OUTPUT_SKU_INVALID")
     return rows
+
+
+def product_key(row):
+    return tuple(str(row.get(field) or "").strip() for field in ("country", "account_name", "item"))
+
+
+def backfill_missing(cursor, table, rows, metadata):
+    """Read selected table history once; each field gets its latest valid value."""
+    from psycopg2 import sql
+    result = copy.deepcopy(rows)
+    pending = {}
+    counts = dict.fromkeys(BACKFILL_FIELDS, 0)
+    for row in result:
+        key = product_key(row)
+        missing = {field for field in BACKFILL_FIELDS if row.get(field) in (None, "")}
+        if missing:
+            pending[key] = (row, missing)
+    if not pending:
+        return result, counts
+    key_fields = ("country", "account_name", "item")
+    placeholders = sql.SQL(",").join(sql.SQL("(%s,%s,%s)") for _ in pending)
+    statement = sql.SQL(
+        "SELECT country, account_name, item, sku, loading_type, capacity FROM {}.{} "
+        "WHERE (country, account_name, item) IN ({}) "
+        "AND (sku IS NOT NULL OR loading_type IS NOT NULL OR capacity IS NOT NULL) "
+        "ORDER BY crawl_datetime DESC NULLS LAST, id DESC").format(
+            sql.Identifier(table[0]), sql.Identifier(table[1]), placeholders)
+    params = [typed_value(value, field, metadata[field]) for key in pending
+              for field, value in zip(key_fields, key)]
+    cursor.execute(statement, params)
+    while pending:
+        history = cursor.fetchmany(500)
+        if not history:
+            break
+        for values in history:
+            record = dict(zip((*key_fields, *BACKFILL_FIELDS), values))
+            key = product_key(record)
+            if key not in pending:
+                continue
+            row, missing = pending[key]
+            for field in tuple(missing):
+                value = record[field]
+                if value is None or str(value).strip() == "":
+                    continue
+                if field == "sku" and valid_sku(str(value)) is None:
+                    emit("db_history_rejected", item=key[2], field=field, reason="invalid_model")
+                    continue
+                row[field] = str(value).strip()
+                missing.remove(field)
+                counts[field] += 1
+                emit("field_selected", item=key[2], field=field, source="DB", raw_value=row[field],
+                     raw_unit=None, value=row[field])
+            if not missing:
+                del pending[key]
+    return result, counts
+
+
+def batch_state(cursor, table, rows):
+    """Serialize cooperating loaders, then reject partial/conflicting old batches."""
+    from psycopg2 import sql
+    batches = {row.get("batch_id") for row in rows}
+    keys = [product_key(row) for row in rows]
+    if (len(batches) != 1 or not next(iter(batches)) or len(keys) != len(set(keys))
+            or any(not all(key) for key in keys)):
+        raise CollectionError("DB_BATCH_OR_PRODUCT_KEY_INVALID")
+    batch = next(iter(batches))
+    cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))", (".".join(table), batch))
+    cursor.execute(sql.SQL("SELECT country, account_name, item FROM {}.{} WHERE batch_id=%s").format(
+        sql.Identifier(table[0]), sql.Identifier(table[1])), (batch,))
+    existing = [tuple(str(value).strip() for value in record) for record in cursor.fetchall()]
+    if not existing:
+        return False
+    if len(existing) != len(keys) or set(existing) != set(keys):
+        raise CollectionError("DB_BATCH_PARTIAL_OR_CONFLICT")
+    return True
 
 
 def inspect_or_insert(table: tuple[str, str], rows: list[dict] | None = None) -> dict:
     from psycopg2 import sql
-    connection = connect()
+    connection = None
+    phase = "connect"
+    counts = dict.fromkeys(BACKFILL_FIELDS, 0)
+    already_loaded = False
+    context("db_connect", table=".".join(table))
     try:
+        connection = connect()
         connection.set_session(readonly=rows is None)
         with connection:
             with connection.cursor() as cursor:
+                phase = "schema"
+                context("db_schema", table=".".join(table))
                 metadata = table_metadata(cursor, table)
                 validate_schema(metadata)
+                if metadata["capacity"]["type"] not in {"text", "character varying", "character"}:
+                    raise CollectionError("DB_CAPACITY_REQUIRES_TEXT_COLUMN")
                 fields = config.COLUMNS[1:]  # id: DB-generated, exactly 19 INSERT columns
-                values = [tuple(typed_value(row.get(field), field, metadata[field]) for field in fields)
-                          for row in rows or []]
-                if values:
+                if rows:
+                    phase = "batch_check"
+                    context("db_batch_check", table=".".join(table), batch_id=rows[0].get("batch_id"))
+                    already_loaded = batch_state(cursor, table, rows)
+                if rows and not already_loaded:
+                    phase = "backfill"
+                    context("db_backfill", table=".".join(table))
+                    prepared, counts = backfill_missing(cursor, table, rows, metadata)
+                    emit("db_backfill_complete", counts=counts)
+                    phase = "validate"
+                    values = [tuple(typed_value(row.get(field), field, metadata[field]) for field in fields)
+                              for row in prepared]
+                    phase = "insert"
+                    context("db_insert", table=".".join(table), rows=len(values))
+                    emit("db_insert_start", rows=len(values))
                     statement = sql.SQL("INSERT INTO {}.{} ({}) VALUES ({})").format(
                         sql.Identifier(table[0]), sql.Identifier(table[1]),
                         sql.SQL(",").join(map(sql.Identifier, fields)),
                         sql.SQL(",").join(sql.Placeholder() for _ in fields))
                     cursor.executemany(statement, values)
+            phase = "commit"
+            context("db_commit", table=".".join(table))
+            emit("db_commit_start", readonly=rows is None)
+        phase = "committed"
         # Return schema facts only, never defaults/connection/SQL values.
+        inserted = 0 if already_loaded else len(rows or [])
+        emit("db_complete", inserted=inserted, already_loaded=already_loaded, backfilled=counts,
+             db_written=rows is not None)
         return {"columns": {key: {k: v for k, v in value.items() if k != "udt"}
                              for key, value in metadata.items() if key in config.COLUMNS},
-                "inserted": len(rows or [])}
+                "inserted": inserted, "already_loaded": already_loaded, "backfilled": counts}
+    except BaseException as exc:
+        code = str(exc) if isinstance(exc, CollectionError) else "DB_" + phase.upper() + "_FAILED"
+        failure(exc, code=code)
+        written = (True if rows is not None and phase == "committed" else
+                   None if rows is not None and phase == "commit" else False)
+        raise DatabaseError(code, db_written=written) from None
     finally:
-        connection.close()
+        if connection is not None:
+            with contextlib.suppress(Exception):
+                connection.close()

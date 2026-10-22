@@ -1,7 +1,8 @@
 # MMKT DRY 단독 크롤러
 
 현재 범위는 의류 건조기 전용 코드와 로컬 검증이다. 통합 실행·작업 스케줄러·기존 LDY 설정은 변경하지 않는다.
-기본 실행은 Main 최대 100개와 BSR 최대 100개를 수집하여 CSV를 생성한다. DB에 연결하지 않는다.
+기본 실행과 `run_dry.bat`는 Main 최대 100개와 BSR 최대 100개를 수집하고 CSV를 저장한 뒤 기존 TEST 테이블에 적재한다.
+**DB에 연결하지 않고 수집만 하려면 `--collect-only`를 사용한다.** `--write-db`는 기존 검증 CSV만 적재하며 재수집하지 않는다.
 
 ## 실행
 
@@ -14,15 +15,21 @@ $dryPython = 'C:\Users\Administrator\AppData\Local\Programs\Python\Python313\pyt
 # 1. 기존 테스트 테이블 구조만 조회. 수집·INSERT 없음.
 & $dryPython -B -X utf8 -u -m dry.run --check-table
 
-# 2. Main 100 / BSR 100 수집. CSV와 요약 manifest만 작성. DB 연결 없음.
-& $dryPython -B -X utf8 -u -m dry.run
+# 2. Main 100 / BSR 100 수집만 실행. DB 연결 없음.
+& $dryPython -B -X utf8 -u -m dry.run --collect-only
 
 # 3. CSV 검수 후, 마지막 성공 결과를 기존 테스트 테이블에 INSERT.
 # 새로 수집하지 않으며 실패·변경된 CSV는 거부한다.
 & $dryPython -B -X utf8 -u -m dry.run --write-db
+
+# 기본 단독 실행: 수집 → CSV → 세 컬럼 결측 보완 → TEST 적재.
+& $dryPython -B -X utf8 -u -m dry.run
+# 같은 Python이 PATH에 있으면 다음 BAT로도 동일하게 실행한다.
+.\run_dry.bat
 ```
 
-각 명령의 종료 코드 0이 성공이다. 실패하면 다음 단계로 진행하지 않는다.
+위 명령들은 실행 방법 안내이며 이번 개발 중 실제 수집·DB 접속·적재는 실행하지 않았다.
+각 명령의 종료 코드 0이 성공이다. 실패하면 로그에서 수집 성공과 DB 반영 여부를 따로 확인한다.
 원격의 기존 DB_CONFIG는 기존 내부 로더가 사용한다. 인증값을 명령에 붙여 넣거나 출력하지 않는다.
 로컬에는 프로젝트 `.env`가 없어 실제 테이블 구조를 조회하지 않았다.
 
@@ -35,11 +42,13 @@ $dryPython = 'C:\Users\Administrator\AppData\Local\Programs\Python\Python313\pyt
 1. 기존 UcSession으로 Chrome 실행 → MediaMarkt 홈 준비 → 쿠키 처리.
 2. Main과 BSR 목록을 각각 렌더링한다. 목록 API는 호출하지 않는다.
 3. 별도 배너/캐러셀과 명백한 부적합 상품을 먼저 제외한다. 일반 목록의 Sponsored 카드는 포함한다.
+   제목에 `Portabel`이 포함되면 대소문자와 관계없이 제외한다. `Portable`·`Tragbar`·미니 건조기 전체로 조건을 확대하지 않는다.
 4. 후보 상품의 상세 사양 API를 조회하고 제품명·제품유형으로 건조기 단품을 다시 확인한다.
 5. 적격 상품의 리뷰 통계 API를 한 페이지만 조회한다. Main/BSR 중복 상품의 API 결과는 메모리에서 재사용한다.
 6. 적격 고유 상품 수가 목표에 도달하거나 실제 마지막 페이지가 확인될 때까지 계속한다.
 7. 제외·중복 제거 후 목록별 순위를 1부터 부여하고 상품번호 기준으로 합친다.
 8. 정확히 20컬럼 CSV와 성공 여부·상태 코드·누락 수 등 요약 manifest를 작성한다.
+9. 기본 실행은 같은 대상 테이블에서 `sku`, `loading_type`, `capacity` 결측을 보완한 뒤 적재한다. `--collect-only`는 8단계에서 끝난다.
 
 `2-in-1`·`All-in-One` 표현만으로 세탁건조기로 판단하지 않는다. 이런 표현은 실제 제품유형으로 확인하며,
 유형 근거가 없으면 분류 미확정으로 처리한다. 기능·부속품이 포함됐다는 문구는 제품 정체성과 구분하여
@@ -76,7 +85,7 @@ Main/BSR 중복은 한 행으로 합친다. Main의 상품명·가격·URL이 �
 | country | 크롤러 생성 | LDY 공통값 `SEG` |
 | account_name | 크롤러 생성 | LDY 공통값 `Mediamarkt` |
 | item | 목록 | LDY와 동일한 MediaMarkt 상품번호 `sku_id` |
-| sku | 상세 API | LDY와 같은 대상 상품의 `Modelkennung` 우선. 없으면 API 상품명 → 목록 상품명의 명시적 모델 토큰. 유효값 자동 교체 없음 |
+| sku | 상세 API → 제목 | `Modelkennung`, `Modellname / -kennzeichen` 등 명시적 모델 라벨 우선. 없으면 목록 → API 제목의 모델 토큰. 소비전력·기능 표현은 제외하고 유효한 모델은 유지 |
 | retailer_sku_name | 목록 | Main 우선, BSR 전용 상품은 BSR |
 | product_url | 목록 | Main 우선, BSR 전용 상품은 BSR. 상품번호·도메인 확인 후 추적 쿼리/fragment 제거 |
 | count_of_reviews | 상세 API | `reviews.totalResults`. LDY와 같은 사이트 리뷰 결과 수 의미이며 별점만 있는 항목이 포함될 수 있음. 텍스트 리뷰 개수로 해석하지 않음 |
@@ -90,18 +99,55 @@ Main/BSR 중복은 한 행으로 합친다. Main의 상품명·가격·URL이 �
 | calendar_week | 크롤러 생성 | LDY와 동일하게 서버 현지 시각의 ISO 주차 `w43` 형식 |
 | crawl_datetime | 크롤러 생성 | LDY `crawl_strdatetime` 규칙을 이 컬럼명에 적용. 서버 현지 시각 `YYYY-MM-DD HH:MM:SS` |
 | batch_id | 크롤러 생성 | LDY와 동일한 `m_YYYYMMDD_HHMMSS`. Main/BSR 전체에 한 값 사용 |
-| loading_type | 상세 API 정규화 | 건조기 사양 `Beladung`: `Frontlader` → `Front load`, `Toplader` → `Top load`. 미확인 표현은 결측 |
-| capacity | 상세 API 정규화 | 건조 전용 `Füllmenge Baumwolle (Trocknen)` → 같은 표기의 `in kg` → `Nennkapazität` 순. 단위 공백 제거 `8 kg` → `8kg`. 세탁 용량은 사용하지 않음 |
+| loading_type | 제목 → 상세 API | 명확한 제목 표기 우선, 없으면 건조기 `Beladung`. `Frontlader` → `Front load`, `Toplader` → `Top load`. 제품 종류로 추정하지 않음 |
+| capacity | 제목 → 상세 API | 각 출처에서 kg 우선, 없으면 g. 스펙은 건조 전용 `Füllmenge Baumwolle (Trocknen)`, 같은 라벨의 `in kg`, `Nennkapazität`만 사용. 별도 unit도 보존. `4 kg` → `4kg`, `3000 g` → `3000g`. 무단 단위 추정·단위 변환·제품 무게 사용 없음 |
 
 미제공 값은 CSV 빈칸, DB NULL이다. 0은 API가 실제 0을 반환한 경우에만 사용한다.
 별점 평균은 API 분포에서 파생한 값이다. 실제 대상 SKU의 기술 사양만 선별에 사용하며, 추천상품·마케팅 설명 전체에서 단어를 찾지 않는다.
 건조기 사양 표기의 공개 근거: [SIEMENS WT43N202](https://www.mediamarkt.de/de/product/_siemens-wt43n202-trockner-80-kg-b-2580915.html), [건조기 카테고리](https://www.mediamarkt.de/de/category/trockner-4.html).
 
 DB 적재 직전에 information_schema로 컬럼·자료형·NULL·기본값 존재·id 생성을 확인한다.
-텍스트 컬럼은 표시값을 유지한다. 숫자 컬럼이면 유로/퍼센트/kg 표시를 제거해 숫자로 전달한다.
+텍스트 컬럼은 표시값을 유지한다. 숫자 가격/할인율 컬럼이면 유로/퍼센트 표시를 제거해 숫자로 전달한다.
+capacity는 단위 보존이 가능한 텍스트 자료형이어야 한다. 실제 테이블이 숫자형이면 단위를 버리거나 테이블을 변경하지 않고 명확한 오류로 중단한다.
 필수값 누락, 미지원 자료형, 잘못된 숫자, 길이 초과는 INSERT 전에 거부한다. 테이블을 새로 만들거나 변경하지 않는다.
-INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다. 같은 성공 결과로 `--write-db`를 반복하면 중복 행이 생길 수 있으므로 한 번만 실행한다.
+INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다.
+동일 대상 테이블·배치는 트랜잭션 advisory lock으로 직렬화한다. 같은 batch_id의 상품 구성이 모두 적재되어 있으면 재입력을 생략한다.
+기존 배치에 일부 상품만 있거나 상품 구성이 다르면 `DB_BATCH_PARTIAL_OR_CONFLICT`로 중단해 수동 확인할 수 있게 한다.
 쓰기 중 오류로 `db_written: null`이 나오면 결과가 불확실할 수 있으므로 해당 batch_id의 적재 여부를 확인한 뒤 재시도한다.
+
+## DB 결측 보완과 결과 구분
+
+- 현재 선택한 적재 테이블만 참조한다. 기본 TEST, `--table production`을 명시하면 본테이블이다.
+- 상품 키는 `country + account_name + item`이다. SKU는 조회 키로 사용하지 않는다.
+- 신규 `sku`, `loading_type`, `capacity`가 각각 NULL/빈칸일 때만 같은 상품의 과거 비결측 값으로 보완한다.
+- `crawl_datetime DESC NULLS LAST, id DESC` 순으로 읽고 각 컬럼에서 가장 최근의 유효값을 고른다. 공백 값과 잘못된 SKU는 건너뛴다.
+- 유효한 신규 값과 가격·리뷰·순위 등 다른 컬럼은 보완하거나 덮어쓰지 않는다. 과거 행도 수정하지 않는다.
+- raw CSV는 DB 보완 전 수집 결과다. DB 보완은 메모리 복사본에 수행하므로 CSV 내용과 manifest의 digest 검증을 유지한다.
+- manifest의 `success`는 수집 성공 여부다. 적재 상태는 `database.state`, `database.db_written`, `inserted`, `backfilled`, `already_loaded`에 별도로 기록한다.
+- DB 조회/적재 실패 시 성공 CSV는 유지한다. API·파싱 실패는 결측으로 바꿔 DB 값으로 숨기지 않는다.
+- 이번 추출 기준은 수정 후 재수집 결과에 적용된다. 이전 CSV의 값은 자동 재해석하지 않으며, 명백히 잘못된 SKU가 있는 CSV는 적재 전에 거부한다.
+
+## 진행도와 실패 로그
+
+화면과 실행별 UTF-8 파일에 같은 JSON 이벤트를 기록한다.
+
+`C:\samsung_dx_seg\MMKT\dry\data\logs\mmkt_dry_YYYYMMDD_HHMMSS_ffffff.log`
+
+- 시작 시 batch_id·목표 수량·대상 테이블·실행 모드와 로그 경로를 표시한다.
+- Main/BSR·페이지·상세 처리 상품번호·적격 수/목표·제외 이유·중복 수·API 호출 수·경과시간을 기록한다.
+- 30초마다 `waiting` 이벤트로 현재 단계와 마지막 진행 위치를 표시한다. 응답이 없는 외부 호출도 대기 단계가 보인다.
+- `field_selected`는 선택한 SKU·용량·로딩타입의 제목/스펙/DB 출처와 관련 값·단위를 남긴다.
+- API의 작업명·HTTP 상태·GraphQL 오류 여부·오류 분류·재시도와, 실패 단계·오류 코드·소스 위치를 기록한다.
+- DB 보완 건수·INSERT 시작·COMMIT 대기·확정 건수·이미 적재됨 여부를 구분한다.
+- `run_complete`의 `collection_success`, `db_success`, `db_written`을 따로 확인한다. COMMIT 오류의 반영 여부는 null(확인 필요)로 표시한다.
+- 로그 생성에 실패하면 수집/DB 작업을 시작하지 않는다. UC의 원문 출력과 원문 오류는 버리고 안전한 요약만 남긴다.
+- 쿠키·토큰·인증정보·접속 문자열·요청/응답 원문·HAR는 기록하지 않는다.
+
+출력 폴더: `C:\samsung_dx_seg\MMKT\dry\data\output`
+
+- CSV: `mmkt_dry_output.csv`
+- 수집·적재 요약: `mmkt_dry_manifest.json`
+- `--output-dir`, `--log-dir`로 각각 경로를 변경할 수 있다.
 
 ## 설정 전환
 
@@ -113,8 +159,8 @@ INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다. 같
 - 출력 폴더는 `--output-dir` 또는 기존 방식의 `MMKT_DRY_OUTPUT_ROOT`로 변경 가능하다.
 
 ```powershell
-# 검수 후 Main 300 수집. 여전히 DB 연결/적재 없음.
-& $dryPython -B -X utf8 -u -m dry.run --target 300
+# 검수 후 Main 300 수집만 실행.
+& $dryPython -B -X utf8 -u -m dry.run --collect-only --target 300
 
 # 본테이블 구조를 읽기 전용으로 확인한 다음, 검수된 결과만 본테이블에 적재.
 & $dryPython -B -X utf8 -u -m dry.run --check-table --table production
@@ -129,11 +175,13 @@ API 오류, 20컬럼/양수 할인율, DB 자료형 변환과 INSERT 범위를 �
 ```powershell
 Set-Location 'C:\samsung_dx_seg\MMKT'
 python -B -X utf8 -m unittest discover -s tests -p test_dry_pipeline.py -v
+python -B -X utf8 -m unittest discover -s tests -p test_dry_updates.py -v
 ```
 
 실제 AWS UC 접속·건조기 API·테이블 구조·INSERT는 이 로컬 테스트의 검증 범위가 아니다.
 
-2026-10-22 건조기 표기 변형 인식 보완 후 검증 결과: DRY 전용 32개 통과. MMKT 전체 발견 테스트 155개 중 기존 알림 실패 1개는 제외했다.
-제외한 테스트는 `test_email_report_includes_unresolved_review_partial`이며, 앞선 검증에서 테스트와 알림 코드가 main과 동일하고 독립 실행에서도 실패함을 확인했다.
-해당 기존 실패를 명시적으로 제외한 154개는 모두 통과했다. 기존 알림 코드는 이번 범위에서 수정하지 않았다.
-구문 검사와 `git diff --check`도 통과했다. commit/push·AWS 배포·실제 DB 접속/적재는 수행하지 않았다.
+DB·UC·API는 로컬 테스트에서 모의 객체로 대체한다. 실제 AWS 테이블 자료형·권한·트랜잭션과 사이트 응답은 원격에서 확인해야 한다.
+
+2026-10-22 검증: DRY 55개 포함, 기존 알림 테스트 1개를 제외한 MMKT 177개 통과.
+제외한 `test_email_report_includes_unresolved_review_partial`은 변경하지 않은 알림 테스트에서 발생하는 `StopIteration`이다.
+전체 검사를 모두 통과한 것으로 간주하지 않으며 이번 범위에서 알림 코드는 수정하지 않았다.

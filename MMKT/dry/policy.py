@@ -38,6 +38,8 @@ def exclusion_reason(row: dict, *, features: dict | None = None,
         return "advertisement"
     features = features or {}
     names = [normalized(v) for v in (row.get("retailer_sku_name"), detail_name) if v]
+    if any("portabel" in name for name in names):
+        return "portabel_title"
     product_type = normalized(" ".join(str(v or "") for v in (
         row.get("product_type"), features.get("Produkttyp"), features.get("Trockner-Typ"))))
     text = " ".join([*names, product_type])

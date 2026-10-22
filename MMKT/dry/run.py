@@ -1,13 +1,11 @@
-"""python -m dry.run: render Main/BSR, fetch minimal detail, write 20-column CSV.
+"""Standalone collection + TEST load; --collect-only never connects to DB.
 
-No DB connection or write by default. --check-table is read-only. --write-db
-loads the last successful, unchanged output and never starts a new crawl.
+--write-db loads the last validated CSV without crawling. --check-table is read-only.
 """
 from __future__ import annotations
 
 import argparse
 import contextlib
-import io
 import json
 import time
 from pathlib import Path
@@ -16,17 +14,19 @@ from common.config import page_url, write_json
 from common.listing import collect_pages
 from common.parsers import extract_listing_pagination, extract_sponsored_diagnostics, parse_listing_html
 from dry import config
-from dry.database import file_digest, inspect_or_insert, load_validated_output
+from dry.database import DatabaseError, file_digest, inspect_or_insert, load_validated_output
 from dry.detail import CollectionError, DetailCollector
 from dry.output import canonical_product_url, merge_rows, run_metadata, write_output
 from dry.policy import exclusion_reason
+from dry.events import RunLog, context, emit, failure, quiet_external
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Standalone MMKT clothes dryer crawler (no DB write by default)")
+    parser = argparse.ArgumentParser(description="Standalone MMKT DRY: collect and load TEST by default")
     parser.add_argument("--target", type=int, default=config.MAIN_TARGET_UNIQUE)
     parser.add_argument("--bsr-target", type=int, default=config.BSR_TARGET_UNIQUE)
     parser.add_argument("--output-dir", type=Path, default=config.OUTPUT_ROOT)
+    parser.add_argument("--log-dir", type=Path, default=config.LOG_ROOT)
     parser.add_argument("--page-retries", type=int, default=2)
     parser.add_argument("--render-settle", type=float, default=15)
     parser.add_argument("--sponsored-extra-wait", type=float, default=20)
@@ -35,6 +35,7 @@ def parse_args(argv=None):
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--check-table", action="store_true", help="read-only schema check, no crawl")
     group.add_argument("--write-db", action="store_true", help="insert existing validated CSV, no crawl")
+    group.add_argument("--collect-only", action="store_true", help="collect CSV only; no DB connection")
     parser.add_argument("--table", choices=["test", "production"], default="test")
     args = parser.parse_args(argv)
     if args.target <= 0 or args.bsr_target <= 0 or args.page_retries < 0 or min(
@@ -46,7 +47,7 @@ def parse_args(argv=None):
 def wait_for_captcha(session, html: str, wait_s: float) -> str:
     if not session._blocked(html):
         return html
-    print("[dry] CAPTCHA/접속 차단 감지. 열린 UC Chrome에서 직접 완료해 주세요. 제한 시간 후 미해결이면 실패 처리함.", flush=True)
+    emit("captcha_wait", wait_s=wait_s, note="열린 UC Chrome에서 직접 완료해 주세요. 미해결 시 수집 실패 처리함.")
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline:
         time.sleep(min(1, max(0, deadline - time.monotonic())))
@@ -56,17 +57,28 @@ def wait_for_captcha(session, html: str, wait_s: float) -> str:
     raise CollectionError("CAPTCHA_OR_ACCESS_BLOCKED")
 
 
-def make_fetcher(session, base_url: str, args):
+def make_fetcher(session, base_url: str, args, sort="main"):
+    attempts = {}
     def fetch(page):
         start = time.perf_counter()
-        response = session.navigate(page_url(base_url, page), settle_s=args.render_settle)
-        html = wait_for_captcha(session, response.get("html") or "", args.captcha_wait)
-        session._click_consent()
+        attempts[page] = attempts.get(page, 0) + 1
+        context("listing", sort=sort, page=page, attempt=attempts[page])
+        emit("page_start", render_wait_s=args.render_settle)
+        try:
+            with quiet_external():
+                response = session.navigate(page_url(base_url, page), settle_s=args.render_settle)
+            html = wait_for_captcha(session, response.get("html") or "", args.captcha_wait)
+            with quiet_external():
+                session._click_consent()
+        except Exception as exc:
+            failure(exc, code=str(exc) if isinstance(exc, CollectionError) else "LISTING_NAVIGATION_FAILED")
+            raise
         html = session.driver.page_source or html
         extra_wait = 0
         diagnostics = extract_sponsored_diagnostics(html)
         if diagnostics.get("unmapped_label_occurrences") and args.sponsored_extra_wait:
             extra_wait = args.sponsored_extra_wait
+            emit("sponsored_wait", wait_s=extra_wait, unresolved=diagnostics["unmapped_label_occurrences"])
             time.sleep(extra_wait)
             html = session.driver.page_source or ""
             diagnostics = extract_sponsored_diagnostics(html)
@@ -78,6 +90,9 @@ def make_fetcher(session, base_url: str, args):
             page_error = "positive_counter_without_products"
         if diagnostics.get("unmapped_label_occurrences"):
             page_error = "unresolved_sponsored_cards"
+        emit("page_ready", shown=pagination.get("shown"), total=pagination.get("total"),
+             last_page=pagination.get("last_page"),
+             error="navigation_failed" if response.get("error") else page_error)
         # Render navigation does not expose the actual document HTTP status.
         # 200 is the existing collector's ready-page signal; parsing validates it.
         return html, 200, round(time.perf_counter() - start, 2), (
@@ -85,34 +100,61 @@ def make_fetcher(session, base_url: str, args):
     return fetch
 
 
-def crawl(args, session) -> dict:
-    meta = run_metadata()
+def crawl(args, session, meta=None) -> dict:
+    meta = meta or run_metadata()
     collector = DetailCollector(session, retries=args.page_retries, sleep_s=args.sleep)
     unknown = set()
+    accepted = set()
+    counters = {}
+    sort = "main"
+    target = args.target
 
     def eligibility(row):
         early = exclusion_reason(row, require_evidence=False)
         if early:
+            counters[early] = counters.get(early, 0) + 1
+            emit("product_excluded", item=row.get("sku_id"), reason=early, excluded=counters)
             return early
         sku_id = str(row.get("sku_id") or "").strip()
         if not sku_id:
             return "missing_product_id"
         canonical_product_url(row.get("product_url"), sku_id)
+        if sku_id in accepted:
+            counters["duplicate"] = counters.get("duplicate", 0) + 1
+            emit("product_duplicate", item=sku_id, duplicates=counters["duplicate"])
+            return "duplicate"
         # Do not cache banner decisions by ID: a standard occurrence is valid.
+        context("detail", sort=sort, page=row.get("page"), item=sku_id, accepted=len(accepted), target=target)
+        emit("detail_start", cached=sku_id in collector.cache, detail_products=len(collector.cache))
         detail = collector.get(sku_id, row)
         reason = exclusion_reason(row, features=detail["_features"], detail_name=detail["_detail_name"])
         if reason == "unconfirmed_product_type":
             unknown.add(sku_id)
+        if reason:
+            counters[reason] = counters.get(reason, 0) + 1
+            emit("product_excluded", item=sku_id, reason=reason, excluded=counters)
+        else:
+            accepted.add(sku_id)
+            emit("product_accepted", item=sku_id, accepted=len(accepted), target=target,
+                 detail_products=len(collector.cache), api_calls=collector.api_calls)
         return reason
 
     listing_results = {}
     manifest = {"success": False, **meta, "pages": {}, "targets": {"main": args.target, "bsr": args.bsr_target}}
     for sort, url, target in (("main", config.LISTING_URL, args.target), ("bsr", config.BSR_URL, args.bsr_target)):
-        rows, pages, reason = collect_pages(make_fetcher(session, url, args), product="dry", target=target,
+        accepted = set()
+        counters = {}
+        context("listing", sort=sort, target=target)
+        emit("listing_start", accepted=0, target=target)
+        rows, pages, reason = collect_pages(make_fetcher(session, url, args, sort), product="dry", target=target,
                                             retries=args.page_retries, sleep_s=args.sleep, eligibility=eligibility)
         # Page logs contain only parsed product diagnostics/counters, no HTML/errors.
         manifest["pages"][sort] = pages
         manifest[sort] = {"rows": len(rows), "stop_reason": reason}
+        emit("listing_complete", sort=sort, accepted=len(rows), target=target, stop_reason=reason,
+             pages=len(pages), excluded=counters)
+        for page in pages:
+            emit("page_summary", sort=sort, **page)
         if reason not in {"target_reached", "last_page"}:
             raise CollectionError("LISTING_FAILED:" + sort + ":" + reason)
         listing_results[sort] = rows
@@ -121,51 +163,112 @@ def crawl(args, session) -> dict:
         raise CollectionError("UNCONFIRMED_PRODUCT_TYPES")
     rows = merge_rows(listing_results["main"], listing_results["bsr"], collector.cache, meta)
     path = args.output_dir / "mmkt_dry_output.csv"
+    context("csv_save", batch_id=meta["batch_id"])
     write_output(path, rows)
     manifest.update(success=True, output_rows=len(rows), api_calls=collector.api_calls,
                     unique_detail_products=len(collector.cache), output_digest=file_digest(path),
                     missing_counts={key: sum(row[key] is None for row in rows) for key in config.COLUMNS if key != "id"})
+    emit("csv_saved", path=str(path), rows=len(rows), api_calls=collector.api_calls,
+         missing_counts=manifest["missing_counts"])
     return manifest
+
+
+def load_output(args, table):
+    context("output_validation", table=".".join(table))
+    path = args.output_dir / "mmkt_dry_output.csv"
+    rows = load_validated_output(path)
+    manifest_path = args.output_dir / "mmkt_dry_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    emit("output_validated", batch_id=manifest.get("batch_id"), rows=len(rows), table=".".join(table))
+    manifest["database"] = {"table": ".".join(table), "state": "running", "db_written": None}
+    write_json(manifest_path, manifest)
+    try:
+        result = inspect_or_insert(table, rows)
+    except BaseException as exc:
+        exc.validated_output = True
+        manifest["database"].update(state="failed", db_written=getattr(exc, "db_written", False),
+                                    error=str(exc) if isinstance(exc, CollectionError) else type(exc).__name__)
+        with contextlib.suppress(Exception):
+            write_json(manifest_path, manifest)
+        raise
+    manifest["database"].update(state="success", db_written=True, **result)
+    try:
+        write_json(manifest_path, manifest)
+    except Exception:
+        exc = DatabaseError("DB_COMMITTED_MANIFEST_SAVE_FAILED", db_written=True)
+        exc.validated_output = True
+        raise exc from None
+    return manifest, result
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
     table = config.DB_TABLE if args.table == "test" else config.PRODUCTION_TABLE
     session = None
+    meta = run_metadata()
+    collection_success = False
+    db_written = False
     try:
-        if args.check_table or args.write_db:
-            rows = load_validated_output(args.output_dir / "mmkt_dry_output.csv") if args.write_db else None
-            result = inspect_or_insert(table, rows)
-            print(json.dumps({"table": ".".join(table), "readonly": not args.write_db, **result}, ensure_ascii=False))
-            return 0
-        # Invalidate a previous success before launch, including interruption.
-        write_json(args.output_dir / "mmkt_dry_manifest.json", {"success": False, "state": "running"})
-        from common.uc import UcSession
-        session = UcSession()  # existing home warmup, language, cookies, API headers
-        print("[dry] UC Chrome 실행 및 MediaMarkt 홈 접속 준비 중...", flush=True)
-        # Existing UC's error messages can embed driver text. Keep only our summary.
-        with contextlib.redirect_stdout(io.StringIO()):
-            session.open()
-        print("[dry] UC Chrome 준비 완료. Main/BSR 렌더링과 상품별 상세 API 수집 시작.", flush=True)
-        wait_for_captcha(session, session.driver.page_source or "", args.captcha_wait)
-        manifest = crawl(args, session)
-        write_json(args.output_dir / "mmkt_dry_manifest.json", manifest)
-        print(json.dumps({"success": True, "main": manifest["main"], "bsr": manifest["bsr"],
-                          "output_rows": manifest["output_rows"], "api_calls": manifest["api_calls"],
-                          "missing_counts": manifest["missing_counts"], "db_written": False}, ensure_ascii=False))
-        return 0
+        log = RunLog(args.log_dir)
     except Exception as exc:
-        error = str(exc) if isinstance(exc, CollectionError) else type(exc).__name__
-        # A lost connection during COMMIT can leave the result uncertain.
-        print(json.dumps({"success": False, "error": error,
-                          "db_written": None if args.write_db else False}), flush=True)
-        if not args.check_table and not args.write_db:
-            write_json(args.output_dir / "mmkt_dry_manifest.json", {"success": False, "error": error})
-        return 1
-    finally:
-        if session is not None:
-            with contextlib.suppress(Exception), contextlib.redirect_stdout(io.StringIO()):
-                session.close()
+        failure(exc, code="LOG_SETUP_FAILED")
+        return 1  # no crawl or DB work without a writable log
+    with log:
+        start_meta = meta if not (args.check_table or args.write_db) else {"invocation_datetime": meta["crawl_datetime"]}
+        emit("run_start", **start_meta, targets={"main": args.target, "bsr": args.bsr_target},
+             table=".".join(table), mode="check_table" if args.check_table else
+             "load_only" if args.write_db else "collect_only" if args.collect_only else "collect_and_load",
+             log_path=str(log.path))
+        try:
+            if args.check_table:
+                result = inspect_or_insert(table)
+                emit("run_complete", success=True, readonly=True, db_written=False, **result)
+                return 0
+            if not args.write_db:
+                write_json(args.output_dir / "mmkt_dry_manifest.json", {"success": False, "state": "running", **meta})
+                context("browser_open", batch_id=meta["batch_id"])
+                emit("browser_start", note="UC Chrome 실행 및 MediaMarkt 홈 접속 준비 중")
+                from common.uc import UcSession
+                with quiet_external():
+                    session = UcSession()
+                    session.open()
+                emit("browser_ready")
+                wait_for_captcha(session, session.driver.page_source or "", args.captcha_wait)
+                manifest = crawl(args, session, meta)
+                write_json(args.output_dir / "mmkt_dry_manifest.json", manifest)
+                collection_success = True
+                with quiet_external():
+                    session.close()
+                session = None
+            if not args.collect_only:
+                manifest, result = load_output(args, table)
+                collection_success = True
+                db_written = True
+            else:
+                result = {}
+            context("complete", batch_id=manifest.get("batch_id"))
+            emit("run_complete", success=True, collection_success=collection_success,
+                 db_success=True if db_written else None, db_written=db_written,
+                 main=manifest.get("main"), bsr=manifest.get("bsr"), output_rows=manifest["output_rows"],
+                 inserted=result.get("inserted", 0), already_loaded=result.get("already_loaded", False))
+            return 0
+        except BaseException as exc:
+            error = str(exc) if isinstance(exc, CollectionError) else type(exc).__name__
+            failure(exc, code=error)
+            manifest_path = args.output_dir / "mmkt_dry_manifest.json"
+            collection_success = collection_success or getattr(exc, "validated_output", False)
+            db_written = getattr(exc, "db_written", db_written)
+            emit("run_complete", success=False, collection_success=collection_success,
+                 db_success=db_written if collection_success and not args.collect_only else None,
+                 error=error, db_written=db_written, csv_preserved=collection_success)
+            if not args.check_table and not args.write_db and not collection_success:
+                with contextlib.suppress(Exception):
+                    write_json(manifest_path, {"success": False, "error": error, **meta})
+            return 130 if isinstance(exc, KeyboardInterrupt) else 1
+        finally:
+            if session is not None:
+                with contextlib.suppress(Exception), quiet_external():
+                    session.close()
 
 
 if __name__ == "__main__":
