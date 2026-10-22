@@ -280,8 +280,10 @@ class ExecutionAndLogs(unittest.TestCase):
             self.assertEqual(1, code)
             db.assert_not_called()
             self.assertNotIn("RAW_API_RESPONSE_MUST_NOT_PRINT", screen)
-            self.assertFalse((root / "output/mmkt_dry_output.csv").exists())
+            self.assertEqual([], database.load_validated_output(root / "output/mmkt_dry_output.csv"))
             self.assertFalse(logs[-1]["collection_success"])
+            self.assertTrue(logs[-1]["collection_completed"])
+            self.assertEqual("NO_VALID_PRODUCTS", logs[-1]["error"])
             self.assertTrue(any(e.get("http") == 403 for e in logs))
 
     def test_invalid_csv_does_not_connect_or_claim_collection_success(self):

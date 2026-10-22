@@ -70,8 +70,14 @@ Set-Location 'C:\samsung_dx_seg'
 상품번호별 예외나 임의의 유사 단어 판정은 추가하지 않고, 세탁기·세트·일체형·배너 제외를 우선한다.
 
 목표 미달이어도 마지막 페이지가 확인되면 정상 완료한다. 0개인 실제 빈 목록도 정상이다.
-접속 차단, 반복 페이지, 불완전한 광고 카드, 목록 파싱 실패, 상세 API 실패와 제품유형 판단 불가는 정상 상품 부족으로 처리하지 않는다.
+목록 접속 차단, 반복 페이지, 불완전한 광고 카드와 목록 파싱 실패는 전체 수집 실패로 처리한다.
 이 경우 manifest를 실패로 바꿔 이전 CSV가 잘못 적재되지 않게 한다.
+개별 상품의 상세 API·파싱·제품유형 확인 실패는 상품번호·목록·묶음 번호·원인을 남기고 다음 상품으로 진행한다.
+실패 상품은 목표 수량·순위에서 제외하고 다음 목록으로 보충한다. 같은 목록에서 실패한 상품은 반복 호출하지 않으며,
+BSR에서는 다시 시도할 수 있다. 정상 상품의 Main/BSR 상세 캐시는 유지한다.
+성공한 상품은 CSV 저장·적재하되, 실패가 하나라도 있었으면 `collection_status=partial`과 실패 내역을 기록한다.
+이때 종료 코드 1은 **일부 상품 확인 필요**를 뜻하며, 수집 중간에 멈췄거나 정상 상품 적재까지 실패했다는 뜻은 아니다.
+`collection_completed`, `product_failure_count`, `db_written`을 함께 확인한다. 모두 실패한 경우 빈 진단 CSV는 보존하지만 DB는 호출하지 않는다.
 
 상품 식별은 LDY와 같은 `sku_id`이며 최종 `item`으로 이동한다.
 Main/BSR 중복은 한 행으로 합친다. Main의 상품명·가격·URL이 우선이며 BSR에만 있으면 BSR 값을 사용한다.
@@ -83,7 +89,8 @@ Main/BSR 중복은 한 행으로 합친다. Main의 상품명·가격·URL이 �
 - 리뷰 통계: 기존 `GetProductReviews`의 첫 페이지만 사용하여 `totalResults`와 별점 분포를 읽는다.
 - `GetReviewsSummary`, 추가 리뷰 페이지, 별도 상세 HTML, 배송·픽업·추천상품 수집과 AI 요약은 실행하지 않는다.
 - 등록된 persisted query는 서버에 미리 정해진 조회여서 개별 응답 필드를 클라이언트에서 줄일 수 없다. 같은 응답에 부수 필드가 올 수 있으나 메모리에서 필요한 값만 추출한다. 리뷰 본문과 원문 요청·응답은 보관·출력하지 않는다.
-- 2026-10-22 AWS 시험에서 위 사양 API의 HTTP 200·GraphQL 오류 없음과 대상 상품·추천상품의 동반 반환을 확인했다. `limit=0`은 추천 미반환을 보장하지 않는다. 요청 상품번호와 일치하는 대상만 읽고 동반 상품은 무시한다. 대상 상품이 없거나 대상 사양을 읽지 못한 경우에는 실패 처리한다.
+- 2026-10-22 AWS 시험에서 위 사양 API의 HTTP 200·GraphQL 오류 없음과 대상 상품·추천상품의 동반 반환을 확인했다. `limit=0`은 추천 미반환을 보장하지 않는다. 요청 상품번호와 일치하는 대상만 읽고 동반 상품은 무시한다. 대상 상품이 없거나 사양 응답 구조가 잘못되면 해당 상품 실패로 처리한다.
+- 사양 목록이 명시적으로 빈 배열/null인 정상 응답은 제목 근거를 사용하고 근거 없는 필드는 NULL로 남긴다. 사양 필드 자체 누락이나 잘못된 자료형은 정상 결측과 구분한다. 건조기 유형 근거는 여전히 필요하며, 적격 상품의 리뷰 통계 API도 정상 응답이어야 한다.
 - 후속 AWS Main 1개/BSR 1개 시험은 총 4회 API 호출과 CSV 2행 생성에 성공했다. 표본의 모델·가격·할인율·리뷰 통계·투입 방식·용량을 확인했으며 DB에는 적재하지 않았다.
 - `Wärmepumpetrockner` 표기 인식 보완 후 제공된 AWS 결과에서는 Main 100/BSR 100, 병합 고유 107개 수집 및 TEST 적재가 성공했다. 이번 Main 300·본테이블·메일 연결은 아직 운영 실행하지 않았다.
 
@@ -115,6 +122,8 @@ Main/BSR 중복은 한 행으로 합친다. Main의 상품명·가격·URL이 �
 미제공 값은 원칙적으로 CSV 빈칸, DB NULL이다. 예외적으로 `star_rating`, `count_of_star_ratings`는 정상 수집 후 최종 결측이면 CSV에 `0`, DB에도 숫자형이면 0/텍스트형이면 `"0"`으로 전달한다.
 기존 검증 CSV 재적재 시 같은 두 컬럼의 빈칸만 메모리 복사본에서 0으로 채우며 원본 파일과 digest는 유지한다.
 원문 누락과 정규화 0은 `rating_defaulted` 로그로 구분한다. 접속/API 실패·잘못된 별점 분포는 실패로 처리하며 0으로 숨기지 않는다.
+별점 분포는 0건인 점수 구간이 생략된 정상 응답도 처리한다. 예를 들어 5점 9건·3점 1건·4점 1건이면 별점 수는 11, 가중평균은 4.7이다.
+계산에만 생략 구간의 건수를 0으로 취급하고 원문은 바꾸거나 저장하지 않는다. 중복 점수·1~5 범위 밖 점수·음수/소수 건수·잘못된 자료형은 여전히 실패한다. `rating_distribution_parsed`에 받은 구간 수와 계산 결과를 기록한다.
 별점 평균은 API 분포에서 파생한 값이다. 실제 대상 SKU의 기술 사양만 선별에 사용하며, 추천상품·마케팅 설명 전체에서 단어를 찾지 않는다.
 건조기 사양 표기의 공개 근거: [SIEMENS WT43N202](https://www.mediamarkt.de/de/product/_siemens-wt43n202-trockner-80-kg-b-2580915.html), [건조기 카테고리](https://www.mediamarkt.de/de/category/trockner-4.html).
 
@@ -135,8 +144,11 @@ INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다.
 - `crawl_datetime DESC NULLS LAST, id DESC` 순으로 읽고 각 컬럼에서 가장 최근의 유효값을 고른다. 공백 값과 잘못된 SKU는 건너뛴다.
 - 유효한 신규 값과 가격·리뷰·순위 등 다른 컬럼은 보완하거나 덮어쓰지 않는다. 과거 행도 수정하지 않는다.
 - raw CSV는 DB 보완 전 수집 결과다. DB 보완은 메모리 복사본에 수행하므로 CSV 내용과 manifest의 digest 검증을 유지한다.
-- manifest의 `success`는 수집 성공 여부다. 적재 상태는 `database.state`, `database.db_written`, `inserted`, `backfilled`, `already_loaded`에 별도로 기록한다.
+- manifest의 `success`는 수집 산출물 작성 완료·검증 가능 여부다. 오류 없는 수집 여부는 `collection_status=complete`와 `product_failure_count=0`으로 구분한다. 이전 manifest에 이 두 필드가 없으면 기존 정상 결과로 처리한다. 적재 상태는 `database.state`, `database.db_written`, `inserted`, `backfilled`, `already_loaded`에 별도로 기록한다.
 - DB 조회/적재 실패 시 성공 CSV는 유지한다. API·파싱 실패는 결측으로 바꿔 DB 값으로 숨기지 않는다.
+- CSV 검증 직후부터 원래 manifest·배치·검증 정보를 함께 보존한다. 적재 상태 저장이나 알림 기록이 실패해도 새 실패 배치로 바꾸지 않으므로 `--write-db`로 재수집 없이 재시도할 수 있다. 실제 DB 반영 여부는 기존 동일 배치 검사로 다시 확인한다.
+- 적재 전 상태 저장 실패는 `DB_STATE_SAVE_FAILED`이며 DB를 호출하지 않는다. COMMIT 성공 후 상태 저장 실패는 `DB_COMMITTED_MANIFEST_SAVE_FAILED`로 구분하고 로그에는 `db_written=true`를 유지한다. 진행 중 상태만 파일에 남으면 반영 여부는 null(확인 필요)이다.
+- `--write-db`의 CSV 검증 자체가 실패한 경우에도 원래 CSV·manifest는 덮어쓰지 않는다. 해당 실행의 실패 알림 상태는 `mmkt_dry_load_failure.json`에 분리해 기록한다.
 - 이번 추출 기준은 수정 후 재수집 결과에 적용된다. 이전 CSV의 값은 자동 재해석하지 않으며, 명백히 잘못된 SKU가 있는 CSV는 적재 전에 거부한다.
 
 ## 진행도와 실패 로그
@@ -151,6 +163,7 @@ INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다.
 - `field_selected`는 선택한 SKU·용량·로딩타입의 제목/스펙/DB 출처와 관련 값·단위를 남긴다.
 - 상세 `page`는 DRY의 현재 목록 묶음 번호다. 첫 주소 1, 다음 주소 2이며 DB 컬럼은 추가하지 않는다.
 - `collection_complete`는 수집 완료 시각·소요시간, `run_complete`는 적재·메일을 포함한 `total_elapsed_s`를 남긴다.
+- `product_failed`는 개별 상품 실패와 계속 진행 여부를 기록한다. 최종 `product_failure_count`는 Main/BSR별 실패 상품 건수 합계이므로 같은 상품이 양쪽에서 실패하면 각각 센다. 실패 상품의 별점이나 사양을 0/NULL로 바꿔 적재하지 않는다.
 - `mail_complete`는 발송·실패·비활성·모의 전송·이미 발송됨을 구분하며 SMTP 원문 오류나 수신 주소를 기록하지 않는다.
 - API의 작업명·HTTP 상태·GraphQL 오류 여부·오류 분류·재시도와, 실패 단계·오류 코드·소스 위치를 기록한다.
 - DB 보완 건수·INSERT 시작·COMMIT 대기·확정 건수·이미 적재됨 여부를 구분한다.
@@ -163,6 +176,7 @@ INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다.
 - CSV: `mmkt_dry_output.csv`
 - 수집·적재 요약: `mmkt_dry_manifest.json`
 - 메일 보고서: `mmkt_dry_email_report.txt` (수집 전용·구조 확인 모드에서는 만들지 않음)
+- 기존 CSV 검증 실패 시 별도 알림 기록: `mmkt_dry_load_failure.json` (원래 manifest 보존)
 - `--output-dir`, `--log-dir`로 각각 경로를 변경할 수 있다.
 
 ## 설정 전환
@@ -193,6 +207,7 @@ Set-Location 'C:\samsung_dx_seg\MMKT'
 python -B -X utf8 -m unittest discover -s tests -p test_dry_pipeline.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_updates.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_production.py -v
+python -B -X utf8 -m unittest discover -s tests -p test_dry_resilience.py -v
 ```
 
 실제 AWS UC 접속·건조기 API·테이블 구조·INSERT는 이 로컬 테스트의 검증 범위가 아니다.
@@ -201,9 +216,11 @@ DB·UC·API는 로컬 테스트에서 모의 객체로 대체한다. 실제 AWS 
 
 기존 알림 테스트의 `StopIteration`은 모의 파일 응답의 개수·순서 불일치였다. 파일 이름별 응답으로 보완했으며 기존 공통 알림 운영 코드는 수정하지 않는다.
 
-2026-10-22 최종 로컬 결과: MMKT 200개(DRY 77개 포함), OTTO 79개, 루트 실행·공통 테스트 27개 통과. 건너뛴 테스트는 없다.
+2026-10-22 본테이블·통합 전환 검증: MMKT 200개(DRY 77개 포함), OTTO 79개, 루트 실행·공통 테스트 27개 통과. 건너뛴 테스트는 없다.
 OTTO 1개는 저장소 안 테스트 폴더의 생성 권한 오류가 있어 테스트의 출력 루트만 임시 폴더로 바꿔 동일한 검증을 수행했다. OTTO 소스나 검증 조건은 바꾸지 않았다.
 브라우저·HTTP API·DB·SMTP 연결은 모의 객체와 외부 소켓 연결 차단 상태로 검증했다. BAT 종료 코드 시험은 가짜 Python 명령만 실행했다.
+후속 별점 분포 수정 검증에서는 제공된 3개 구간 응답으로 오류를 재현한 뒤, MMKT 205개(DRY 82개 포함)를 다시 실행해 모두 통과했다. 실제 API·DB·메일은 실행하지 않았다.
+개별 상품 실패 격리·정상 빈 사양·검증 CSV 복구 보완 후에는 MMKT 216개(DRY 93개 포함)가 모두 통과했다. 외부 연결은 차단하고, 실제 브라우저·DB·SMTP 대신 모의 객체를 사용했다.
 
 ## 메일과 재실행
 
@@ -211,6 +228,7 @@ OTTO 1개는 저장소 안 테스트 폴더의 생성 권한 오류가 있어 �
 - 기존 `common.notify._send`와 내부 설정 로더를 재사용하며 수신자·계정·전송 방식은 새로 만들지 않는다.
 - 정상 마지막 페이지 때문에 300개 미만이어도 실제 수량/목표와 `last_page`를 표시한 성공 보고서다.
 - 수집·적재 실패 또는 COMMIT 불확실은 기존 방식의 `[CHECK]` 실패 보고서이며 성공 메일을 보내지 않는다.
+- 개별 상품 실패가 있으면 정상 상품 적재가 성공해도 `[CHECK]` 일부 수집 보고서로 보내고 실패 상품번호·목록·묶음 번호·원인을 표시한다. 같은 배치의 재적재에서도 실패 이력을 지우거나 성공 메일로 바꾸지 않는다.
 - `--collect-only`, `--check-table`은 메일을 보내지 않는다. `--write-db`는 검증 파일 적재 확정 후 보고한다.
 - 동일 batch_id·대상 테이블의 성공 메일 발송 기록이 있으면 재적재 시 중복 발송하지 않는다. 다른 테이블 발송 기록을 재사용하지 않는다.
 - SMTP 발송 후 상태 파일 저장이 실패하면 발송 여부와 오류를 로그에 남기고, 다음 실행에서 `previous_send_unknown`으로 자동 재발송을 보류한다. 운영자가 메일 수신 여부와 해당 manifest를 확인해야 한다.

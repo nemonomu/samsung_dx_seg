@@ -105,7 +105,7 @@ def typed_value(value, column: str, metadata: dict):
     raise CollectionError("DB_COLUMN_TYPE_UNSUPPORTED:" + column)
 
 
-def load_validated_output(path: Path) -> list[dict]:
+def load_validated_output(path: Path, *, with_manifest: bool = False) -> list[dict] | tuple[list[dict], dict]:
     manifest_path = path.parent / "mmkt_dry_manifest.json"
     if not path.is_file() or not manifest_path.is_file():
         raise CollectionError("VALIDATED_OUTPUT_MISSING")
@@ -128,7 +128,9 @@ def load_validated_output(path: Path) -> list[dict]:
             raise CollectionError("OUTPUT_BATCH_INVALID")
         if any(row.get("sku") not in (None, "") and valid_sku(row["sku"]) is None for row in rows):
             raise CollectionError("OUTPUT_SKU_INVALID")
-    return rows
+    # Return the exact manifest that was validated, without a second file read
+    # between validation and load-state bookkeeping.
+    return (rows, manifest) if with_manifest else rows
 
 
 def product_key(row):

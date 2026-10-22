@@ -81,6 +81,39 @@ class ModelAndRatingTests(unittest.TestCase):
             with self.subTest(payload=payload), self.assertRaises(CollectionError):
                 parse_ratings(payload)
 
+    def test_observed_sparse_distribution_preserves_real_average_and_counts(self):
+        # Real response: zero-count score buckets are omitted, not malformed.
+        payload = {"data": {"reviews": {"totalResults": 11, "rating": {"distribution": [
+            {"value": 5, "count": 9}, {"value": 3, "count": 1}, {"value": 4, "count": 1},
+        ]}}}}
+        self.assertEqual({"count_of_reviews": 11, "star_rating": 4.7, "count_of_star_ratings": 11},
+                         parse_ratings(payload))
+        self.assertEqual(3, len(payload["data"]["reviews"]["rating"]["distribution"]))
+
+    def test_sparse_scores_can_arrive_in_any_order_and_review_count_is_independent(self):
+        from itertools import permutations
+        for distribution in permutations([{"value": 5, "count": 9}, {"value": 3, "count": 1}, {"value": 4, "count": 1}]):
+            result = parse_ratings({"data": {"reviews": {"totalResults": 2, "rating": {"distribution": list(distribution)}}}})
+            self.assertEqual((2, 11, 4.7), tuple(result[k] for k in ("count_of_reviews", "count_of_star_ratings", "star_rating")))
+
+    def test_single_score_and_explicit_zero_sparse_distribution(self):
+        for count, expected in ((3, (3, 5.0)), (0, (0, None))):
+            result = parse_ratings({"data": {"reviews": {"totalResults": count, "rating": {
+                "distribution": [{"value": 5, "count": count}]}}}})
+            self.assertEqual(expected, (result["count_of_star_ratings"], result["star_rating"]))
+
+    def test_bad_sparse_distributions_still_fail_instead_of_becoming_zero(self):
+        invalid = ([{"value": 5, "count": 1}, {"value": 5, "count": 2}],
+                   [{"value": 0, "count": 1}], [{"value": 6, "count": 1}],
+                   [{"value": 4.5, "count": 1}], [{"value": 5, "count": .5}],
+                   [{"value": 5, "count": -1}], [{"value": 5, "count": None}],
+                   [{"value": True, "count": 1}], [{"value": 5, "count": True}],
+                   [{"value": 5, "count": "NaN"}], [{"value": "Infinity", "count": 1}],
+                   [None], ["invalid"])
+        for distribution in invalid:
+            with self.subTest(distribution=distribution), self.assertRaisesRegex(CollectionError, "REVIEW_DISTRIBUTION_INVALID"):
+                parse_ratings({"data": {"reviews": {"totalResults": 0, "rating": {"distribution": distribution}}}})
+
 
 class ProductionExecutionTests(unittest.TestCase):
     def browser(self):
@@ -197,7 +230,33 @@ class ProductionExecutionTests(unittest.TestCase):
             self.assertFalse(mail.call_args.kwargs["collection_success"])
             self.assertTrue(mail.call_args.kwargs["error"])
             self.assertFalse(any(e["event"] == "rating_defaulted" for e in logs))
-            self.assertFalse((root / "output/mmkt_dry_output.csv").exists())
+            self.assertEqual([], database.load_validated_output(root / "output/mmkt_dry_output.csv"))
+            self.assertEqual("partial", logs[-1]["collection_status"])
+
+    def test_sparse_rating_response_reaches_csv_db_and_success_mail_without_extra_calls(self):
+        browser = self.browser()
+        original = browser.gql
+        def gql(operation, variables):
+            response = original(operation, variables)
+            if operation == "GetProductReviews":
+                response["data"] = {"data": {"reviews": {"totalResults": 11, "rating": {"distribution": [
+                    {"value": 5, "count": 9}, {"value": 3, "count": 1}, {"value": 4, "count": 1}]}}}}
+            return response
+        browser.gql = gql
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            code, db, mail, _, logs = self.execute(root, browser=browser)
+            with (root / "output/mmkt_dry_output.csv").open(encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+        self.assertEqual(0, code)
+        self.assertEqual([("4.7", "11", "11")] * 2,
+                         [tuple(row[k] for k in ("star_rating", "count_of_star_ratings", "count_of_reviews")) for row in rows])
+        self.assertEqual(rows, db.call_args.args[1])
+        self.assertEqual(4, len(browser.calls))
+        self.assertTrue(mail.call_args.kwargs["collection_success"])
+        self.assertTrue(mail.call_args.kwargs["db_written"])
+        self.assertIsNone(mail.call_args.kwargs["error"])
+        self.assertFalse(any(event["event"] == "rating_defaulted" for event in logs))
 
     def test_mail_failure_returns_nonzero_but_does_not_undo_confirmed_data_success(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -194,13 +194,16 @@ class DryDetailTests(unittest.TestCase):
         with self.assertRaisesRegex(CollectionError, "^DETAIL_TARGET_NOT_FOUND$"):
             parse_specs(specs("99"), "1")
 
-    def test_specs_missing_target_features_never_borrow_recommendation(self):
+    def test_empty_target_specs_use_title_without_borrowing_recommendation(self):
         payload = specs("1")
         products = payload["data"]["comparisonTableRecommendations"]["tableData"]["products"]
         products[0]["productAggregate"]["product"]["featureGroupsWithProductId"]["featureGroups"] = []
         products.extend(specs("99")["data"]["comparisonTableRecommendations"]["tableData"]["products"])
-        with self.assertRaisesRegex(CollectionError, "^DETAIL_FEATURES_MISSING$"):
-            parse_specs(payload, "1")
+        result = parse_specs(payload, "1")
+        self.assertEqual("MODEL123", result["sku"])
+        self.assertIsNone(result["capacity"])
+        self.assertIsNone(result["loading_type"])
+        self.assertEqual({}, result["_features"])
 
     def test_dryer_labels_and_no_wash_capacity_fallback(self):
         result = parse_specs(specs("1", extra={"Füllmenge Baumwolle (Waschen)": "99 kg",
@@ -377,15 +380,18 @@ class DryPipelineTests(unittest.TestCase):
             manifest = run.crawl(self.args(Path(directory), target=1, bsr_target=1), browser)
         self.assertEqual((1, 2), (manifest["output_rows"], manifest["api_calls"]))
 
-    def test_unknown_type_is_failure_instead_of_short_category(self):
+    def test_unknown_type_is_recorded_partial_instead_of_short_category(self):
         browser = Browser({(sort, 1): page_html([("1", "MODEL123")], shown=1, total=1)
                            for sort in ("main", "bsr")}, {"1": "Unbekannt"})
         def gql(operation, variables):
             return {"status": 200, "data": specs("1", product_type="Unbekannt", name="MODEL123")}
         browser.gql = gql
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaisesRegex(CollectionError, "UNCONFIRMED_PRODUCT_TYPES"):
-                run.crawl(self.args(Path(directory)), browser)
+            result = run.crawl(self.args(Path(directory)), browser)
+        self.assertTrue(result["success"])  # completed CSV, not a clean collection
+        self.assertEqual(("partial", 0, 2),
+                         (result["collection_status"], result["output_rows"], result["product_failure_count"]))
+        self.assertEqual({"UNCONFIRMED_PRODUCT_TYPE"}, {p["error"] for p in result["product_failures"]})
 
     def test_errors_and_repeated_pages_never_become_short_success(self):
         for html in ("BLOCKED", "<html>bad parser response</html>",

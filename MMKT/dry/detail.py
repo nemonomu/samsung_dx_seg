@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import time
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from common.parsers import _comparison_main, _rating_distribution_stats, text_clean
@@ -34,14 +35,29 @@ def parse_specs(payload: dict, sku_id: str, listing_name: str | None = None) -> 
         raise CollectionError("DETAIL_TARGET_NOT_FOUND")
     # A successful specification response can include other products despite
     # limit=0. Their presence is not an error and must never change the target.
-    product = (main.get("productAggregate") or {}).get("product") or {}
-    if not isinstance(product, dict):
+    product = (main.get("productAggregate") or {}).get("product")
+    if not isinstance(product, dict) or not product:
         raise CollectionError("DETAIL_PRODUCT_INVALID")
+    if "featureGroupsWithProductId" not in product:
+        raise CollectionError("DETAIL_FEATURE_GROUPS_MISSING")
+    container = product["featureGroupsWithProductId"]
+    if container is not None and (not isinstance(container, dict) or "featureGroups" not in container):
+        raise CollectionError("DETAIL_FEATURE_GROUPS_INVALID")
+    groups = container.get("featureGroups") if container is not None else None
+    if groups is not None and not isinstance(groups, list):
+        raise CollectionError("DETAIL_FEATURE_GROUPS_INVALID")
     features = {}
     records = []
-    for group in (product.get("featureGroupsWithProductId") or {}).get("featureGroups") or []:
-        for feature in group.get("features") or []:
-            if isinstance(feature, dict) and feature.get("name") and feature.get("value") is not None:
+    for group in groups or []:
+        if not isinstance(group, dict) or "features" not in group:
+            raise CollectionError("DETAIL_FEATURE_GROUP_INVALID")
+        entries = group["features"]
+        if entries is not None and not isinstance(entries, list):
+            raise CollectionError("DETAIL_FEATURE_GROUP_INVALID")
+        for feature in entries or []:
+            if not isinstance(feature, dict):
+                raise CollectionError("DETAIL_FEATURE_INVALID")
+            if feature.get("name") and feature.get("value") is not None:
                 if not isinstance(feature["value"], (str, int, float)):
                     raise CollectionError("DETAIL_FEATURE_VALUE_INVALID")
                 value = text_clean(feature["value"])
@@ -52,10 +68,43 @@ def parse_specs(payload: dict, sku_id: str, listing_name: str | None = None) -> 
                     features[str(feature["name"])] = value
                     records.append({"name": str(feature["name"]), "value": value, "unit": unit})
     if not features:
-        raise CollectionError("DETAIL_FEATURES_MISSING")
+        # Explicitly empty/null specs are valid missing data. Missing keys or
+        # malformed containers above are parsing failures, never this fallback.
+        emit("specs_empty", item=sku_id, fallback="title_then_null")
     title = text_clean(product.get("title") or product.get("name"))
     fields, sources = select_fields(records, [v for v in (listing_name, title) if v])
     return {**fields, "_sources": sources, "_features": features, "_detail_name": title}
+
+
+def _dryer_rating_stats(distribution) -> tuple[int | None, float | None]:
+    """The API omits zero-count score buckets; validate those it supplies.
+
+    Completing absent buckets with zero is only an in-memory calculation input.
+    Never mutate or persist the response, and never accept invalid score/counts.
+    The shared parser and other product lines keep their existing behavior.
+    """
+    if distribution is None or distribution == []:
+        return None, None
+    if not isinstance(distribution, list) or len(distribution) > 5:
+        raise CollectionError("REVIEW_DISTRIBUTION_INVALID")
+    counts = {}
+    for bucket in distribution:
+        if not isinstance(bucket, dict):
+            raise CollectionError("REVIEW_DISTRIBUTION_INVALID")
+        raw = (bucket.get("value"), bucket.get("count"))
+        if any(isinstance(value, bool) or not isinstance(value, (int, float, str)) for value in raw):
+            raise CollectionError("REVIEW_DISTRIBUTION_INVALID")
+        try:
+            score, count = (Decimal(str(value)) for value in raw)
+        except (InvalidOperation, ValueError, TypeError):
+            raise CollectionError("REVIEW_DISTRIBUTION_INVALID") from None
+        if (not score.is_finite() or not count.is_finite()
+                or score != score.to_integral_value() or count != count.to_integral_value()
+                or not 1 <= score <= 5 or count < 0 or int(score) in counts):
+            raise CollectionError("REVIEW_DISTRIBUTION_INVALID")
+        counts[int(score)] = int(count)
+    return _rating_distribution_stats([{"value": score, "count": counts.get(score, 0)}
+                                       for score in range(1, 6)])
 
 
 def parse_ratings(payload: dict) -> dict:
@@ -72,12 +121,10 @@ def parse_ratings(payload: dict) -> dict:
     if rating is not None and not isinstance(rating, dict):
         raise CollectionError("REVIEW_RATING_INVALID")
     distribution = (rating or {}).get("distribution")
-    if distribution is not None and not isinstance(distribution, list):
-        raise CollectionError("REVIEW_DISTRIBUTION_INVALID")
-    n_star, star = _rating_distribution_stats(distribution)
-    if distribution and n_star is None:
-        # Missing statistics are legitimate; a supplied but malformed set isn't.
-        raise CollectionError("REVIEW_DISTRIBUTION_INVALID")
+    n_star, star = _dryer_rating_stats(distribution)
+    if distribution:
+        emit("rating_distribution_parsed", provided_buckets=len(distribution),
+             sparse=len(distribution) < 5, count_of_star_ratings=n_star, star_rating=star)
     return {"count_of_reviews": count, "star_rating": star, "count_of_star_ratings": n_star}
 
 
@@ -130,6 +177,10 @@ class DetailCollector:
             for field, record in spec["_sources"].items():
                 emit("field_selected", item=sku_id, field=field, **record)
             reason = exclusion_reason(row or {}, features=spec["_features"], detail_name=spec["_detail_name"])
+            if reason == "unconfirmed_product_type":
+                # Do not cache an unverified product without rating statistics.
+                # A later listing occurrence can provide better title evidence.
+                raise CollectionError("UNCONFIRMED_PRODUCT_TYPE")
             ratings = ({} if reason else
                        parse_ratings(self.query("GetProductReviews", _reviews_vars(sku_id, 1))))
             self.cache[sku_id] = {**spec, **ratings}

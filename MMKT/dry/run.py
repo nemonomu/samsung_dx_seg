@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import json
 import time
 from pathlib import Path
 from datetime import datetime
@@ -107,7 +106,8 @@ def make_fetcher(session, base_url: str, args, sort="main", progress_state=None)
 def crawl(args, session, meta=None) -> dict:
     meta = meta or run_metadata()
     collector = DetailCollector(session, retries=args.page_retries, sleep_s=args.sleep)
-    unknown = set()
+    product_failures = []
+    failed_items = set()
     accepted = set()
     counters = {}
     sort = "main"
@@ -117,7 +117,7 @@ def crawl(args, session, meta=None) -> dict:
     def progress_state():
         return {"accepted": len(accepted), "target": target,
                 "excluded_count": sum(count for reason, count in counters.items() if reason != "duplicate"),
-                "duplicates": counters.get("duplicate", 0)}
+                "duplicates": counters.get("duplicate", 0), "failed_products": len(failed_items)}
 
     def eligibility(row):
         sku_id = str(row.get("sku_id") or "").strip()
@@ -129,20 +129,32 @@ def crawl(args, session, meta=None) -> dict:
             counters[early] = counters.get(early, 0) + 1
             emit("product_excluded", item=row.get("sku_id"), reason=early, excluded=counters)
             return early
-        if not sku_id:
-            return "missing_product_id"
-        canonical_product_url(row.get("product_url"), sku_id)
-        if sku_id in accepted:
+        if sku_id in accepted or sku_id in failed_items:
             counters["duplicate"] = counters.get("duplicate", 0) + 1
             emit("product_duplicate", item=sku_id, duplicates=counters["duplicate"])
             return "duplicate"
         # Do not cache banner decisions by ID: a standard occurrence is valid.
         context("detail", sort=sort, page=current_page, item=sku_id, **progress_state())
         emit("detail_start", cached=sku_id in collector.cache, detail_products=len(collector.cache))
-        detail = collector.get(sku_id, row)
-        reason = exclusion_reason(row, features=detail["_features"], detail_name=detail["_detail_name"])
-        if reason == "unconfirmed_product_type":
-            unknown.add(sku_id)
+        try:
+            if not sku_id:
+                raise CollectionError("MISSING_PRODUCT_ID")
+            canonical_product_url(row.get("product_url"), sku_id)
+            detail = collector.get(sku_id, row)
+            reason = exclusion_reason(row, features=detail["_features"], detail_name=detail["_detail_name"])
+            if reason == "unconfirmed_product_type":
+                raise CollectionError("UNCONFIRMED_PRODUCT_TYPE")
+        except Exception as exc:
+            # Only individual product work is recoverable. Listing navigation,
+            # parsing, CSV/DB failures and user interrupts retain their own paths.
+            error = str(exc) if isinstance(exc, CollectionError) else "PRODUCT_PROCESSING_FAILED"
+            failure(exc, code=error)
+            failed_items.add(sku_id)
+            record = {"sort": sort, "page": current_page, "item": sku_id,
+                      "error": error, "error_type": type(exc).__name__}
+            product_failures.append(record)
+            emit("product_failed", **record, action="skip_and_continue", **progress_state())
+            return "product_failed"
         if reason:
             counters[reason] = counters.get(reason, 0) + 1
             emit("product_excluded", item=sku_id, reason=reason, excluded=counters)
@@ -156,6 +168,7 @@ def crawl(args, session, meta=None) -> dict:
     manifest = {"success": False, **meta, "pages": {}, "targets": {"main": args.target, "bsr": args.bsr_target}}
     for sort, url, target in (("main", config.LISTING_URL, args.target), ("bsr", config.BSR_URL, args.bsr_target)):
         accepted = set()
+        failed_items = set()
         counters = {}
         context("listing", sort=sort, target=target)
         emit("listing_start", accepted=0, target=target)
@@ -168,56 +181,65 @@ def crawl(args, session, meta=None) -> dict:
                                             retries=args.page_retries, sleep_s=args.sleep, eligibility=eligibility)
         # Page logs contain only parsed product diagnostics/counters, no HTML/errors.
         manifest["pages"][sort] = pages
-        manifest[sort] = {"rows": len(rows), "stop_reason": reason}
+        manifest[sort] = {"rows": len(rows), "stop_reason": reason, "failed_products": len(failed_items)}
         emit("listing_complete", sort=sort, accepted=len(rows), target=target, stop_reason=reason,
-             pages=len(pages), excluded=counters)
+             pages=len(pages), excluded=counters, failed_products=len(failed_items))
         for page in pages:
             emit("page_summary", sort=sort, **page)
         if reason not in {"target_reached", "last_page"}:
             raise CollectionError("LISTING_FAILED:" + sort + ":" + reason)
         listing_results[sort] = rows
-    if unknown:
-        # An unknown classification must not masquerade as a genuinely short category.
-        raise CollectionError("UNCONFIRMED_PRODUCT_TYPES")
     rows = merge_rows(listing_results["main"], listing_results["bsr"], collector.cache, meta)
     path = args.output_dir / "mmkt_dry_output.csv"
     context("csv_save", batch_id=meta["batch_id"])
     write_output(path, rows)
     manifest.update(success=True, output_rows=len(rows), api_calls=collector.api_calls,
+                    collection_status="partial" if product_failures else "complete",
+                    product_failure_count=len(product_failures), product_failures=product_failures,
                     unique_detail_products=len(collector.cache), output_digest=file_digest(path),
                     missing_counts={key: sum(row[key] is None for row in rows) for key in config.COLUMNS if key != "id"})
     emit("csv_saved", path=str(path), rows=len(rows), api_calls=collector.api_calls,
-         missing_counts=manifest["missing_counts"])
+         missing_counts=manifest["missing_counts"], collection_status=manifest["collection_status"],
+         product_failure_count=len(product_failures))
     return manifest
 
 
 def load_output(args, table):
     context("output_validation", table=".".join(table))
     path = args.output_dir / "mmkt_dry_output.csv"
-    rows = load_validated_output(path)
-    # Older validated files can have blank stars. Keep the file/digest unchanged.
-    rows = [default_missing_ratings(row, source="validated_csv") for row in rows]
+    rows, manifest = load_validated_output(path, with_manifest=True)
     manifest_path = args.output_dir / "mmkt_dry_manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    emit("output_validated", batch_id=manifest.get("batch_id"), rows=len(rows), table=".".join(table))
-    manifest["database"] = {"table": ".".join(table), "state": "running", "db_written": None}
-    write_json(manifest_path, manifest)
+    written = False
     try:
+        # Every subsequent failure retains this validated artifact's identity.
+        # Older validated files can have blank stars; normalize a memory copy.
+        rows = [default_missing_ratings(row, source="validated_csv") for row in rows]
+        emit("output_validated", batch_id=manifest.get("batch_id"), rows=len(rows), table=".".join(table))
+        manifest["database"] = {"table": ".".join(table), "state": "running", "db_written": None}
+        if not rows and manifest.get("product_failure_count", 0):
+            raise DatabaseError("NO_VALID_PRODUCTS", db_written=False)
+        try:
+            write_json(manifest_path, manifest)
+        except Exception:
+            raise DatabaseError("DB_STATE_SAVE_FAILED", db_written=False) from None
         result = inspect_or_insert(table, rows)
+        written = True
+        manifest["database"].update(state="success", db_written=True, **result)
+        try:
+            write_json(manifest_path, manifest)
+        except Exception:
+            raise DatabaseError("DB_COMMITTED_MANIFEST_SAVE_FAILED", db_written=True) from None
     except BaseException as exc:
         exc.validated_output = True
-        manifest["database"].update(state="failed", db_written=getattr(exc, "db_written", False),
-                                    error=str(exc) if isinstance(exc, CollectionError) else type(exc).__name__)
+        exc.db_written = getattr(exc, "db_written", written)
+        exc.validated_manifest = manifest
+        if not written:
+            manifest.setdefault("database", {"table": ".".join(table)}).update(
+                state="failed", db_written=exc.db_written,
+                error=str(exc) if isinstance(exc, CollectionError) else type(exc).__name__)
         with contextlib.suppress(Exception):
             write_json(manifest_path, manifest)
         raise
-    manifest["database"].update(state="success", db_written=True, **result)
-    try:
-        write_json(manifest_path, manifest)
-    except Exception:
-        exc = DatabaseError("DB_COMMITTED_MANIFEST_SAVE_FAILED", db_written=True)
-        exc.validated_output = True
-        raise exc from None
     return manifest, result
 
 
@@ -227,6 +249,7 @@ def main(argv=None) -> int:
     session = None
     meta = run_metadata()
     collection_success = False
+    artifact_ready = False
     db_written = False
     manifest = {"success": False, **meta}
     started = time.monotonic()
@@ -237,9 +260,14 @@ def main(argv=None) -> int:
             emit("mail_skipped", reason="collect_only" if args.collect_only else "check_table")
             return {}
         try:
+            options = {}
+            if args.write_db and not artifact_ready:
+                # A transient validation/read failure must not replace a source
+                # manifest that we have not yet been able to validate.
+                options["status_path"] = args.output_dir / "mmkt_dry_load_failure.json"
             return notify_run(args.output_dir, manifest, table, collection_success=collection_success,
                               db_written=db_written, error=error,
-                              elapsed_s=round(time.monotonic() - started, 1))
+                              elapsed_s=round(time.monotonic() - started, 1), **options)
         except Exception as exc:
             failure(exc, code="MAIL_NOTIFICATION_FAILED")
             return {"failed": True, "sent": None, "state": "notification_error"}
@@ -273,44 +301,54 @@ def main(argv=None) -> int:
                 manifest["timing"] = {"collection_elapsed_s": round(time.monotonic() - started, 1),
                                       "collection_completed_at": datetime.now().isoformat(timespec="seconds")}
                 write_json(args.output_dir / "mmkt_dry_manifest.json", manifest)
-                collection_success = True
-                emit("collection_complete", **manifest["timing"], output_rows=manifest["output_rows"])
+                artifact_ready = True
+                collection_success = not manifest.get("product_failure_count", 0)
+                emit("collection_complete", **manifest["timing"], output_rows=manifest["output_rows"],
+                     collection_status=manifest.get("collection_status", "complete"),
+                     product_failure_count=manifest.get("product_failure_count", 0))
                 with quiet_external():
                     session.close()
                 session = None
             if not args.collect_only:
                 manifest, result = load_output(args, table)
-                collection_success = True
+                artifact_ready = True
+                collection_success = not manifest.get("product_failure_count", 0)
                 db_written = True
             else:
                 result = {}
-            notification = report()
+            error = "PARTIAL_PRODUCT_FAILURES" if not collection_success else None
+            notification = report(error)
             context("complete", batch_id=manifest.get("batch_id"))
-            emit("run_complete", success=not notification.get("failed", False), collection_success=collection_success,
+            emit("run_complete", success=collection_success and not notification.get("failed", False),
+                 collection_success=collection_success, collection_completed=artifact_ready,
+                 collection_status=manifest.get("collection_status", "complete"),
+                 product_failure_count=manifest.get("product_failure_count", 0), error=error,
                  db_success=True if db_written else None, db_written=db_written,
                  main=manifest.get("main"), bsr=manifest.get("bsr"), output_rows=manifest["output_rows"],
                  inserted=result.get("inserted", 0), already_loaded=result.get("already_loaded", False),
                  collection_elapsed_s=(manifest.get("timing") or {}).get("collection_elapsed_s"),
                  total_elapsed_s=round(time.monotonic() - started, 1), notification=notification)
-            return 1 if notification.get("failed") else 0
+            return 1 if error or notification.get("failed") else 0
         except BaseException as exc:
             error = str(exc) if isinstance(exc, CollectionError) else type(exc).__name__
             failure(exc, code=error)
             manifest_path = args.output_dir / "mmkt_dry_manifest.json"
-            collection_success = collection_success or getattr(exc, "validated_output", False)
+            artifact_ready = artifact_ready or getattr(exc, "validated_output", False)
             db_written = getattr(exc, "db_written", db_written)
-            if collection_success:
-                with contextlib.suppress(Exception):
-                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if not args.check_table and not args.write_db and not collection_success:
+            if getattr(exc, "validated_manifest", None) is not None:
+                manifest = exc.validated_manifest
+            collection_success = artifact_ready and not manifest.get("product_failure_count", 0)
+            if not args.check_table and not args.write_db and not artifact_ready:
                 manifest = {"success": False, "error": error, **meta}
                 with contextlib.suppress(Exception):
                     write_json(manifest_path, manifest)
             notification = report(error)
             context("complete", batch_id=manifest.get("batch_id"))
             emit("run_complete", success=False, collection_success=collection_success,
-                 db_success=db_written if collection_success and not args.collect_only else None,
-                 error=error, db_written=db_written, csv_preserved=collection_success,
+                 collection_completed=artifact_ready, collection_status=manifest.get("collection_status", "failed"),
+                 product_failure_count=manifest.get("product_failure_count", 0),
+                 db_success=db_written if artifact_ready and not args.collect_only else None,
+                 error=error, db_written=db_written, csv_preserved=artifact_ready,
                  total_elapsed_s=round(time.monotonic() - started, 1), notification=notification)
             return 130 if isinstance(exc, KeyboardInterrupt) else 1
         finally:

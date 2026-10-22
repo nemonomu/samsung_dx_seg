@@ -29,12 +29,18 @@ def send_error_code(error) -> str:
 
 def build_report(manifest, table, *, success, error=None, elapsed_s=None):
     subject = "[SEG] MediaMarkt DRY crawled" if success else "[CHECK] [SEG] MediaMarkt DRY failed"
+    if not success and manifest.get("product_failure_count", 0):
+        subject = "[CHECK] [SEG] MediaMarkt DRY partial collection"
     lines = [subject, "", f"Batch: {manifest.get('batch_id') or 'not completed'}",
              f"Table: {'.'.join(table)}", f"Collected unique products: {manifest.get('output_rows', 0)}"]
     for sort in ("main", "bsr"):
         listing = manifest.get(sort) or {}
         lines.append(f"{sort}: {listing.get('rows', 0)}/{(manifest.get('targets') or {}).get(sort, '?')}"
                      f" ({listing.get('stop_reason') or 'not completed'})")
+    lines.append(f"Product failures (per listing): {manifest.get('product_failure_count', 0)}")
+    for product in manifest.get("product_failures", []):
+        lines.append(f"Failed product: {product['sort']} page={product['page']} item={product['item']}"
+                     f" code={product['error']}")
     timing = manifest.get("timing") or {}
     lines.extend([f"Collection seconds: {timing.get('collection_elapsed_s', 'not available')}",
                   f"Collection completed: {timing.get('collection_completed_at', 'not completed')}",
@@ -52,7 +58,7 @@ def build_report(manifest, table, *, success, error=None, elapsed_s=None):
 
 
 def notify_run(output_dir: Path, manifest: dict, table, *, collection_success: bool,
-               db_written: bool | None, error=None, elapsed_s=None) -> dict:
+               db_written: bool | None, error=None, elapsed_s=None, status_path: Path | None = None) -> dict:
     """Confirmed success gets a success subject; all other outcomes get CHECK.
 
     A persisted sent marker avoids duplicate mail on a load-only retry of the
@@ -63,6 +69,7 @@ def notify_run(output_dir: Path, manifest: dict, table, *, collection_success: b
     context("notification", batch_id=manifest.get("batch_id"), table=table_name)
     database = manifest.get("database") or {}
     success = (collection_success and manifest.get("success") is True and db_written is True
+               and not manifest.get("product_failure_count", 0)
                and database.get("state") == "success" and database.get("db_written") is True
                and database.get("table") == table_name and error is None)
     previous = (manifest.get("notifications") or {}).get(table_name) or manifest.get("notification") or {}
@@ -87,7 +94,7 @@ def notify_run(output_dir: Path, manifest: dict, table, *, collection_success: b
     def save():
         manifest["notification"] = dict(result)
         manifest.setdefault("notifications", {})[table_name] = dict(result)
-        write_json(output_dir / "mmkt_dry_manifest.json", manifest)
+        write_json(status_path or output_dir / "mmkt_dry_manifest.json", manifest)
 
     save()  # fail before SMTP if the status cannot be persisted
     if enabled and not dry_run:
