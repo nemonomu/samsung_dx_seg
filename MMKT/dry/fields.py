@@ -43,8 +43,31 @@ def valid_sku(value) -> str | None:
     return value
 
 
-def title_sku(title) -> str | None:
+def title_sku(title, model_hints=()) -> str | None:
     title = text_clean(title) or ""
+    confirmed_title = None
+    # A specification may confirm the boundaries of a spaced title model, but
+    # never replace it. Reject partial matches (e.g. a missing regional suffix).
+    for hint in model_hints:
+        hint = valid_sku(hint)
+        if not hint:
+            continue
+        parts = hint.split()
+        if len(parts) > 1 and re.fullmatch(r"\d{7,12}", parts[-1]):
+            hint = " ".join(parts[:-1])  # separate catalogue/PNC code
+        compact = re.sub(r"\s+", "", hint)
+        if (len(compact) < 5 or not any(c.isalpha() for c in compact)
+                or not any(c.isdigit() for c in compact)
+                or any(_MEASURE.fullmatch(p) or ("+" in p and _ENERGY_CLASS.fullmatch(p)) for p in hint.split())):
+            continue
+        match = re.search(r"(?<!\w)" + r"\s*".join(map(re.escape, compact)) + r"(?![\w/+.-])", title, re.I)
+        if match and (confirmed_title is None or match.start() < confirmed_title[0]):
+            confirmed_title = (match.start(), match.group())
+
+    def choose(candidate, start):
+        # A matching API hint can complete the first title model's boundaries,
+        # never select a different model mentioned later in the same title.
+        return confirmed_title[1] if confirmed_title and confirmed_title[0] <= start else candidate
     matches = list(_TOKEN.finditer(title))
     tokens = [match.group() for match in matches]
     for index, token in enumerate(tokens):
@@ -55,12 +78,38 @@ def title_sku(title) -> str | None:
                 and title[matches[index].end():matches[index + 1].start()].isspace()):
             following = tokens[index + 2] if index + 2 < len(tokens) else ""
             if not re.fullmatch(r"(?:kg|g|k?w|watt|v|hz|rpm|cm|mm|l|db|programme?n?|programs)", following, re.I):
-                return token + " " + tokens[index + 1]
+                return choose(token + " " + tokens[index + 1], matches[index].start())
+        # Spaced alphanumeric models such as TR 9 W 80690 or DV 91 DG 52 A 0 AEEG.
+        # Require multiple numeric components, not a lone series/program count.
+        if (index > 0 and re.fullmatch(r"[A-Z]{2,4}", token)
+                and normalized(token) not in _NON_MODEL_WORDS
+                and index + 1 < len(tokens) and re.fullmatch(r"\d{1,3}", tokens[index + 1])):
+            end = index
+            for pos in range(index + 1, min(len(tokens), index + 8)):
+                if (not title[matches[pos-1].end():matches[pos].start()].isspace()
+                        or not re.fullmatch(r"[A-Z]{1,4}|\d{1,6}", tokens[pos])
+                        or normalized(tokens[pos]) in _NON_MODEL_WORDS):
+                    break
+                end = pos
+            picked = tokens[index:end+1]
+            following = tokens[end+1] if end + 1 < len(tokens) else ""
+            if (sum(part.isdigit() for part in picked) >= 2
+                    and sum(c.isdigit() for part in picked for c in part) >= 4
+                    and not re.fullmatch(r"kg|g|k?w|watt|hz|rpm|cm|mm|l|db|programme?n?", following, re.I)):
+                candidate = title[matches[index].start():matches[end].end()]
+                if valid_sku(candidate):
+                    return choose(candidate, matches[index].start())
         if (len(token) < 5 or not any(c.isalpha() for c in token)
                 or not any(c.isdigit() for c in token) or not valid_sku(token)
                 or re.fullmatch(r"(?:iq|serie|series|programm[e]?)[-_]?\d+", token, re.I)):
             continue
         picked = [token]
+        # CSOE H8A2DE-S / NDE H8A2TCEXS-S: the short prefix belongs to the model,
+        # while the first title token (normally the brand) is never prepended.
+        if (index > 1 and re.fullmatch(r"[A-Z]{2,4}", tokens[index-1])
+                and normalized(tokens[index-1]) not in _NON_MODEL_WORDS
+                and title[matches[index-1].end():matches[index].start()].isspace()):
+            picked.insert(0, tokens[index-1])
         for tail in tokens[index + 1:index + 4]:
             if (len(tail) < 2 or not valid_sku(tail)
                     or normalized(tail) in _NON_MODEL_WORDS
@@ -70,8 +119,9 @@ def title_sku(title) -> str | None:
                 picked.append(tail)
             else:
                 break
-        return " ".join(picked)
-    return None
+        start = matches[index-1].start() if picked[0] != token else matches[index].start()
+        return choose(" ".join(picked), start)
+    return confirmed_title[1] if confirmed_title else None
 
 
 def evidence(source, raw=None, unit=None, *, label=None, value=None):
@@ -119,16 +169,25 @@ def loading_candidate(value):
 def select_fields(features: list[dict], titles: list[str]) -> tuple[dict, dict]:
     """features contain only name/value/unit, never an entire API product."""
     sources = {key: evidence("missing") for key in ("sku", "capacity", "loading_type")}
+    model = None
     for key in MODEL_LABELS:
         match = next((f for f in features if label_key(f["name"]) == key and valid_sku(f["value"])), None)
         if match:
-            sources["sku"] = evidence("spec", match["value"], label=match["name"], value=valid_sku(match["value"]))
+            model = match
             break
     for title in titles:
-        if sources["sku"]["value"] is None and title_sku(title):
-            sources["sku"] = evidence("title", title_sku(title), value=title_sku(title))
+        candidate = title_sku(title, (model["value"],) if model else ())
+        if sources["sku"]["value"] is None and candidate:
+            sources["sku"] = evidence("title", candidate, value=candidate)
         if sources["loading_type"]["value"] is None and loading_candidate(title):
             sources["loading_type"] = evidence("title", loading_candidate(title), value=loading_candidate(title))
+    if model:
+        if sources["sku"]["value"] is None:
+            sources["sku"] = evidence("spec", model["value"], label=model["name"], value=valid_sku(model["value"]))
+        else:
+            signature = lambda value: re.sub(r"\s+", "", value).casefold()
+            sources["sku"].update(spec_value=model["value"], spec_label=model["name"],
+                                  conflict=signature(sources["sku"]["value"]) != signature(model["value"]))
     title_capacities = [capacity_candidate(title, source="title") for title in titles]
     title_capacities = [candidate for candidate in title_capacities if candidate]
     if title_capacities:

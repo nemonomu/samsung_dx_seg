@@ -44,9 +44,9 @@ class ModelAndRatingTests(unittest.TestCase):
         for value in ("A++", "A+++", "800W", "3-in-1-Filter"):
             self.assertIsNone(valid_sku(value))
 
-    def test_valid_spec_model_is_not_replaced_by_title_or_stripped(self):
+    def test_valid_spec_model_is_preserved_when_title_has_no_model(self):
         value = "SPEC-MODEL123++"
-        result = parse_specs(specs("1", name="BRAND WPT 7155 Trockner", extra={"Modelkennung": value}), "1")
+        result = parse_specs(specs("1", name="BRAND Trockner", extra={"Modelkennung": value}), "1")
         self.assertEqual(value, result["sku"])
         self.assertEqual("spec", result["_sources"]["sku"]["source"])
 

@@ -19,7 +19,7 @@ from dry.detail import CollectionError, DetailCollector
 from dry.output import canonical_product_url, default_missing_ratings, merge_rows, run_metadata, write_output
 from dry.output import write_manifest as write_json
 from dry.notify import notify_run
-from dry.policy import exclusion_reason
+from dry.policy import exclusion_reason, washer_dryer_evidence
 from dry.events import RunLog, context, emit, failure, quiet_external
 from dry.listing import collect_pages
 
@@ -142,7 +142,8 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
         early = exclusion_reason(row, require_evidence=False)
         if early:
             counters[early] = counters.get(early, 0) + 1
-            emit("product_excluded", item=row.get("sku_id"), reason=early, excluded=counters)
+            emit("product_excluded", item=row.get("sku_id"), reason=early, excluded=counters,
+                 evidence=washer_dryer_evidence(row) if early == "washer_dryer" else None)
             return early
         if sku_id in accepted or sku_id in failed_items:
             counters["duplicate"] = counters.get("duplicate", 0) + 1
@@ -172,7 +173,9 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
             return "product_failed"
         if reason:
             counters[reason] = counters.get(reason, 0) + 1
-            emit("product_excluded", item=sku_id, reason=reason, excluded=counters)
+            emit("product_excluded", item=sku_id, reason=reason, excluded=counters,
+                 evidence=washer_dryer_evidence(row, features=detail["_features"],
+                                              detail_name=detail["_detail_name"]) if reason == "washer_dryer" else None)
         else:
             accepted.add(sku_id)
             emit("product_accepted", item=sku_id, accepted=len(accepted), target=target,

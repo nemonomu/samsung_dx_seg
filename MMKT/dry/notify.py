@@ -5,6 +5,7 @@ No raw SMTP errors, addresses or authentication settings enter logs/manifests.
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from common.notify import _send, _truthy, env_value
@@ -27,11 +28,94 @@ def send_error_code(error) -> str:
     return "SMTP_SEND_FAILED"
 
 
+_REASONS_KO = {"last_page": "마지막 목록 확인", "target_reached": "목표 수량 도달",
+               "washer_dryer": "세탁건조 일체형", "washing_machine": "세탁기",
+               "set_or_combo": "세트·콤보", "advertisement": "별도 광고 배너",
+               "portabel_title": "제목 Portabel", "accessory": "부속품",
+               "other_appliance": "다른 종류의 제품", "duplicate": "중복"}
+_ERRORS_KO = {"UNCONFIRMED_PRODUCT_TYPE": "상품 종류를 확인하지 못함",
+              "PARTIAL_PRODUCT_FAILURES": "일부 상품 처리 실패",
+              "DETAIL_API_FAILED": "상세 API 호출 실패", "DETAIL_AVAILABILITY_INVALID": "구매 상태 응답 형식 오류",
+              "REVIEW_DISTRIBUTION_INVALID": "별점 통계 응답 형식 오류",
+              "DB_BACKFILL_FAILED": "기존 DB 값 조회 실패", "DB_CONNECT_FAILED": "DB 연결 실패",
+              "DB_INSERT_FAILED": "DB 적재 실패", "DB_COMMIT_FAILED": "DB 반영 여부 확인 필요",
+              "DB_COMMITTED_MANIFEST_SAVE_FAILED": "DB 반영 후 결과 기록 실패",
+              "FINAL_CSV_SAVE_FAILED": "최종 CSV 저장 실패",
+              "FINAL_MANIFEST_SAVE_FAILED": "수집 결과 기록 실패"}
+
+
+def _duration_ko(value):
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return "확인 불가"
+    if not math.isfinite(seconds) or seconds < 0:
+        return "확인 불가"
+    minutes, remainder = divmod(seconds, 60)
+    return f"{int(minutes)}분 {remainder:.1f}초"
+
+
+def _korean_summary(manifest, table, *, error, elapsed_s):
+    failures = manifest.get("product_failure_count", 0)
+    status = manifest.get("collection_status")
+    collection = ("실패" if status == "failed" else "일부 상품 실패" if failures or status == "partial" else
+                  "완료" if status == "complete" or manifest.get("success") is True else "미완료")
+    lines = ["한글 요약", f"수집 상태: {collection}", f"배치: {manifest.get('batch_id') or '미생성'}",
+             f"대상 테이블: {'.'.join(table)}", f"병합 후 고유 상품: {manifest.get('output_rows', 0)}개"]
+    states = {"complete": "완료", "not_started": "미실행", "running": "진행 중", "failed": "실패"}
+    for sort in ("main", "bsr"):
+        listing = manifest.get(sort) or {}
+        state = listing.get("state") or ("complete" if listing.get("stop_reason") in {"last_page", "target_reached"} else "not_started")
+        count = "미실행" if state == "not_started" else str(listing.get("rows", 0)) + "개"
+        target = (manifest.get("targets") or {}).get(sort, "확인 불가")
+        reason = _REASONS_KO.get(listing.get("stop_reason"), "종료 근거 미확정")
+        lines.append(f"{sort.upper()}: {count} / 목표 {target}개 — {states.get(state, '확인 필요')} ({reason})")
+        if listing.get("last_requested_page") is not None:
+            lines.append(f"  마지막 정상 묶음: {listing.get('last_successful_page')}; 마지막 요청 묶음: {listing['last_requested_page']}")
+        excluded = listing.get("excluded") or {}
+        reasons = [f"{_REASONS_KO.get(key, key)} {count}건" for key, count in excluded.items() if key != "duplicate"]
+        if reasons:
+            lines.append("  제외: " + ", ".join(reasons))
+        lines.append(f"  중복: {listing.get('duplicates', excluded.get('duplicate', 0))}건")
+    lines.append(f"개별 상품 실패: {failures}건")
+    for product in manifest.get("product_failures", []):
+        code = product.get("error")
+        lines.append(f"실패 상품: {product.get('item')} / {str(product.get('sort', '')).upper()}"
+                     f" / 묶음 {product.get('page')} / {_ERRORS_KO.get(code, '오류 상세 확인 필요')} ({code})")
+    db = manifest.get("database") or {}
+    db_state, written = db.get("state"), db.get("db_written")
+    if db.get("table") and db["table"] != ".".join(table):
+        db_result = "확인 필요 (대상 테이블 불일치)"
+    elif written is True:
+        db_result = "반영 확인됨" + (" (후속 기록 오류 확인 필요)" if db_state != "success" else "")
+    elif not db or db_state == "not_started":
+        db_result = "미실행"
+    elif written is None:
+        db_result = "반영 여부 불확실 — 확인 필요"
+    else:
+        db_result = "실패" if db_state == "failed" else "미적재"
+    lines.extend([f"DB 적재: {db_result}", f"신규 적재: {db.get('inserted', 0)}개",
+                  f"동일 배치 기존 적재: {'예' if db.get('already_loaded') else '아니오'}"])
+    if db.get("backfilled"):
+        lines.append("DB 결측 보완: " + ", ".join(f"{field} {count}건" for field, count in db["backfilled"].items()))
+    timing = manifest.get("timing") or {}
+    lines.extend([f"수집 소요시간: {_duration_ko(timing.get('collection_elapsed_s'))}",
+                  f"이번 실행 소요시간(적재 단계까지): {_duration_ko(elapsed_s)}",
+                  f"수집 완료 시각: {timing.get('collection_completed_at') or '미완료'}"])
+    if error:
+        explanation = "목록 수집 실패" if str(error).startswith("LISTING_FAILED:") else _ERRORS_KO.get(error, "오류 상세 확인 필요")
+        lines.append(f"확인 사유: {explanation} ({error})")
+    return lines
+
+
 def build_report(manifest, table, *, success, error=None, elapsed_s=None):
-    subject = "[SEG] MediaMarkt DRY crawled" if success else "[CHECK] [SEG] MediaMarkt DRY failed"
+    english_subject = "[SEG] MediaMarkt DRY crawled" if success else "[CHECK] [SEG] MediaMarkt DRY failed"
+    subject = "[SEG] MediaMarkt DRY 수집·적재 완료 / crawled" if success else "[CHECK] [SEG] MediaMarkt DRY 확인 필요 / failed"
     if not success and manifest.get("product_failure_count", 0):
-        subject = "[CHECK] [SEG] MediaMarkt DRY partial collection"
-    lines = [subject, "", f"Batch: {manifest.get('batch_id') or 'not completed'}",
+        english_subject = "[CHECK] [SEG] MediaMarkt DRY partial collection"
+        subject = "[CHECK] [SEG] MediaMarkt DRY 일부 상품 실패 / partial collection"
+    lines = [subject, "", *_korean_summary(manifest, table, error=error, elapsed_s=elapsed_s),
+             "", "English details", english_subject, "", f"Batch: {manifest.get('batch_id') or 'not completed'}",
              f"Table: {'.'.join(table)}", f"Collected unique products: {manifest.get('output_rows', 0)}"]
     for sort in ("main", "bsr"):
         listing = manifest.get(sort) or {}

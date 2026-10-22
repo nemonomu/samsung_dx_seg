@@ -65,6 +65,12 @@ Set-Location 'C:\samsung_dx_seg'
 `mit Zubehör-Set` 같은 표현 때문에 건조기 단품이 제외되지 않도록 한다. 실제 세탁기·세탁건조기·세트·타워와
 부속품 자체를 판매하는 상품은 계속 제외한다.
 
+추가 선별 근거로 같은 제목 안의 `9 kg / 5 kg` 같은 용량 쌍과 `1400 U/Min.` 같은 탈수 회전수를 함께 확인한다.
+`8 kg / 8 kg`처럼 같은 수치도 판정 대상이며, 용량 쌍이나 회전수 하나만으로는 제외하지 않는다.
+`mit`·`für` 등의 뒤에 나오는 부속품/호환 설명은 이 복합 판정 근거로 섞지 않는다.
+명확한 혼합 상품은 `washer_dryer` 정상 제외로 기록하고, 실제 유형 미확정 실패와 구분한다.
+상품번호·브랜드 예외는 없으며 `product_excluded.evidence`에 일체형 표기 또는 용량 쌍·회전수를 기록한다.
+
 실제 응답에서 확인한 `Wärmepumpetrockner`(`Wärmepumpentrockner`에서 `n`이 빠진 표기)도
 히트펌프 건조기로 인식한다. 선별용 비교에만 적용하며 상품명·제품유형 원본·SKU는 바꾸지 않는다.
 상품번호별 예외나 임의의 유사 단어 판정은 추가하지 않고, 세탁기·세트·일체형·배너 제외를 우선한다.
@@ -136,13 +142,13 @@ DRY는 `dry/listing.py`의 전용 수집 루프를 사용한다. 기존 여섯 �
 | country | 크롤러 생성 | LDY 공통값 `SEG` |
 | account_name | 크롤러 생성 | LDY 공통값 `Mediamarkt` |
 | item | 목록 | LDY와 동일한 MediaMarkt 상품번호 `sku_id` |
-| sku | 상세 API → 제목 | 명시적 모델 라벨 우선. 없으면 목록 → API 제목의 검증 가능한 모델. `WPT 7155`와 붙어 있는 `HHPD-M8G3PDD++` 처리. 소비전력·기능·별도 에너지등급·시리즈 숫자는 제외하고 유효한 스펙 모델 유지 |
+| sku | 제목 → 상세 API | 목록 → 현재 API 제목에서 명확한 모델을 우선한다. 없을 때만 명시적인 모델 라벨을 사용한다. `CSOE H8A2DE-S`, `WPT 7154`, 분리된 문자·숫자 모델과 실제 `++`/`+++`를 보존한다. 제목과 스펙 충돌 시 제목 선택. 소비전력·기능·별도 에너지등급·시리즈 숫자는 제외 |
 | retailer_sku_name | 목록 | Main 우선, BSR 전용 상품은 BSR |
 | product_url | 목록 | Main 우선, BSR 전용 상품은 BSR. 상품번호·도메인 확인 후 추적 쿼리/fragment 제거 |
 | count_of_reviews | 상세 API | `reviews.totalResults`. LDY와 같은 사이트 리뷰 결과 수 의미이며 별점만 있는 항목이 포함될 수 있음. 텍스트 리뷰 개수로 해석하지 않음 |
 | star_rating | 상세 API → 목록 → 0 | 정상적인 1~5점 분포의 가중평균, 소수 1자리. 없으면 Main → BSR 목록 별점. API가 별점 수 0을 확인하면 평균 0. 최종 결측도 0 |
 | count_of_star_ratings | 상세 API → 목록 → 0 | 1~5점 분포의 count 합계. 없으면 Main → BSR 목록 AggregateRating 수, 최종 결측은 0. 리뷰 결과 수를 대신 넣지 않음 |
-| final_sku_price | 목록 | Main 우선, BSR 전용 상품은 BSR. 기존 LDY의 유로 표시 형식 유지 |
+| final_sku_price | 목록 → API 상태 파생 문구 | Main 가격 우선, 없으면 같은 상품의 BSR 가격. 양쪽 가격이 없고 기존 상세 API에서 현재 구매 불가가 확인되면 `Artikel ist derzeit nicht verfügbar`. 그 외는 결측. 기존 유로 표시 형식 유지 |
 | original_sku_price | 목록 | Main 우선, BSR 전용 상품은 BSR. 원가 미표시면 결측 |
 | savings | 목록 정규화 | 사이트 할인율에서 음수 기호 제거. `-10%` → `10%`, 가격으로 임의 계산하지 않음 |
 | main_rank | 크롤러 파생 | Main 적격 고유 상품의 순서 1..N, Main에 없으면 결측 |
@@ -159,6 +165,17 @@ DRY는 `dry/listing.py`의 전용 수집 루프를 사용한다. 기존 여섯 �
 별점 분포는 0건인 점수 구간이 생략된 정상 응답도 처리한다. 예를 들어 5점 9건·3점 1건·4점 1건이면 별점 수는 11, 가중평균은 4.7이다.
 계산에만 생략 구간의 건수를 0으로 취급하고 원문은 바꾸거나 저장하지 않는다. 중복 점수·1~5 범위 밖 점수·음수/소수 건수·잘못된 자료형은 여전히 실패한다. `rating_distribution_parsed`에 받은 구간 수와 계산 결과를 기록한다.
 별점 평균은 API 분포에서 파생한 값이다. 실제 대상 SKU의 기술 사양만 선별에 사용하며, 추천상품·마케팅 설명 전체에서 단어를 찾지 않는다.
+
+### 제목 모델과 구매 불가 문구
+
+- 제목 모델이 명확하면 API의 다른 모델값이나 숫자 식별값보다 우선한다. API 모델은 제목 안에 실제 존재하는 경우 분리된 모델의 경계 확인에만 도움을 주며, 제목의 첫 모델을 뒤의 다른 모델로 바꾸지 않는다.
+- `field_selected`의 `source=title`, `spec_value`, `spec_label`, `conflict`로 선택값과 스펙 충돌을 확인한다. 제목·스펙에 모델이 없으면 NULL이며 기존 DB 보완 규칙만 적용한다.
+- 사용자 원격 진단에서 현재 `GetComparisonTableRecommendations` 응답의 대상 상품 `cofrProductAggregate` 안 상태 필드가 확인됐다. 요청 횟수·변수는 늘리지 않는다.
+- `cofrOnlineStatusFeature.isAvailableAndBuyable=false`, `cofrDeliveryFeature.delivery.displayStatus=NOT_AVAILABLE`, `cofrPickupFeature.displayStatus=NOT_AVAILABLE`가 모두 확인되고 목록 가격도 없을 때만 구매 불가 문구를 선택한다.
+- 배송 불가만 있거나 픽업 가능·구매 가능·필드 누락·알 수 없는 상태이면 이 문구로 바꾸지 않는다. 선택 필드가 명시적으로 잘못된 자료형이면 상품 파싱 실패로 기록한다.
+- 이 문구는 화면 문장의 원문 복사가 아니라 API 상태의 표준 표시값이다. `purchase_status`와 최종 `field_selected`의 `source=API_status`, `derived=true`로 구분한다. 중간 저장마다 동일 문구 선택 로그를 반복하지 않는다.
+- `onlineStatus` 원문과 진단용 `UNRECOGNIZED_STATUS`는 판정에 사용하지 않는다. 상태 부재나 API 오류를 품절로 숨기지 않으며, 추천상품의 상태도 사용하지 않는다.
+- 상태는 상세 메모리 캐시에만 좁게 보관하며 최종 CSV·중간 상품 행은 계속 정확히 20컬럼이다. 이전 CSV 재적재에서는 API를 부르거나 가격을 재해석하지 않는다.
 건조기 사양 표기의 공개 근거: [SIEMENS WT43N202](https://www.mediamarkt.de/de/product/_siemens-wt43n202-trockner-80-kg-b-2580915.html), [건조기 카테고리](https://www.mediamarkt.de/de/category/trockner-4.html).
 
 DB 적재 직전에 information_schema로 컬럼·자료형·NULL·기본값 존재·id 생성을 확인한다.
@@ -247,6 +264,7 @@ python -B -X utf8 -m unittest discover -s tests -p test_dry_updates.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_production.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_resilience.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_listing_end.py -v
+python -B -X utf8 -m unittest discover -s tests -p test_dry_review_fixes.py -v
 ```
 
 실제 AWS UC 접속·건조기 API·테이블 구조·INSERT는 이 로컬 테스트의 검증 범위가 아니다.
@@ -266,8 +284,20 @@ Main 205/BSR 100·모의 본테이블 205행 연결을 확인했으며, 원격�
 이번 보완 후 로컬 MMKT 237개(DRY 114개 포함)와 변경 Python 8개 구문 검사가 통과했다.
 제공 로그의 23개 묶음별 확보 수량·제외 사유가 테스트 입력과 일치하는지도 별도로 확인했다.
 
+2026-10-22 후속 검수 반영: MMKT 260개(DRY 137개 포함), OTTO 79개, 루트 실행기·공통 테스트 27개가 통과했다.
+OTTO의 기존 1개 테스트는 저장소 내부 임시 폴더 생성 권한 문제로 처음 실패했으며, 해당 테스트의 출력 루트만
+시스템 임시 폴더로 바꿔 같은 검증을 통과했다. OTTO 소스·검증 조건은 수정하지 않았다.
+제공된 207개 제목의 구버전/신버전 판정을 비교했을 때 확인된 BOSCH 혼합 상품 1개만 추가 제외되고 나머지 206개 판정은 동일했다.
+이는 제목 비교이며 보존되지 않은 전체 API 스펙을 재현한 결과는 아니다. 검수된 SKU 12개 결측도 기존 로그의 모델 근거와 제목을 대조해 유지됨을 확인했다.
+혼합 2개 정상 제외·목표 미달 종료·SKU 충돌·구매 불가 문구·CSV 검증·모의 DB·한글/영문 성공 메일을 한 흐름으로 검증했다.
+구매 상태 자료형 오류 상품은 실패로 남기되 다른 정상 상품의 적재를 이어가며 CHECK를 유지하는 경우도 검증했다.
+외부 소켓·실제 UC/DB/SMTP는 차단하거나 모의 객체로 대체했으며 실제 수집·적재·메일은 실행하지 않았다.
+이 검수 반영본의 AWS 최신 제목·상태 응답 변형, 실제 본테이블 INSERT, 한글 메일 수신 화면은 아직 확인하지 않았다.
+
 ## 메일과 재실행
 
+- DRY 제목은 한글 상태와 영문 상태를 함께 표시한다. 본문 첫 부분은 한글 요약, 아래 `English details`는 기존 영문 상세다. 다른 제품의 공통 발송기·설정은 변경하지 않는다.
+- 한글 요약은 Main/BSR 실제 수량·목표·종료 사유·제외/중복·실패 상품과 이유, DB 반영 여부·신규 적재·결측 보완 건수, 수집 소요시간·이번 실행의 적재 단계까지 시간을 구분한다. 미실행과 0개, 상품 일부 실패와 DB 반영 성공, COMMIT 반영 불확실을 구분한다.
 - 기존 `SEG_EMAIL_NOTIFY` 활성화 및 `SEG_EMAIL_DRY_RUN` 비활성 설정을 그대로 따른다. 설정 비활성·모의 전송이면 실제 발송하지 않고 로그에 표시한다.
 - 기존 `common.notify._send`와 내부 설정 로더를 재사용하며 수신자·계정·전송 방식은 새로 만들지 않는다.
 - 정상 마지막 페이지 때문에 300개 미만이어도 실제 수량/목표와 `last_page`를 표시한 성공 보고서다.

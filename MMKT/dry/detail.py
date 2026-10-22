@@ -29,6 +29,49 @@ def normalized_capacity(raw: Any) -> str | None:
     return candidate["value"] if candidate else None
 
 
+def parse_purchase_status(payload: dict, sku_id: str) -> dict:
+    """Retain only observed public availability fields of the exact target.
+
+    Missing status is unknown; malformed present containers/booleans are parsing
+    errors. Never read free-text messages, onlineStatus or recommendation state.
+    """
+    main, _ = _comparison_main(payload, sku_id)
+    if main is None:
+        raise CollectionError("DETAIL_TARGET_NOT_FOUND")
+
+    def optional_object(parent, key):
+        value = parent.get(key)
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise CollectionError("DETAIL_AVAILABILITY_INVALID")
+        return value
+
+    cofr = optional_object(main, "cofrProductAggregate")
+    online = optional_object(cofr, "cofrOnlineStatusFeature")
+    delivery = optional_object(optional_object(cofr, "cofrDeliveryFeature"), "delivery")
+    pickup = optional_object(cofr, "cofrPickupFeature")
+    buyable = online.get("isAvailableAndBuyable")
+    if buyable is not None and not isinstance(buyable, bool):
+        raise CollectionError("DETAIL_AVAILABILITY_INVALID")
+
+    def display_status(value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise CollectionError("DETAIL_AVAILABILITY_INVALID")
+        # Unknown server enums are not proof of unavailability. Do not emit an
+        # arbitrary original value or confuse a diagnostic mask with an enum.
+        return value if value in {"NOT_AVAILABLE", "AVAILABLE", "PARTIAL_AVAILABLE", "PARTIALLY_AVAILABLE"} else "UNKNOWN"
+
+    state = {"available_and_buyable": buyable,
+             "delivery_status": display_status(delivery.get("displayStatus")),
+             "pickup_status": display_status(pickup.get("displayStatus"))}
+    state["unavailable"] = (buyable is False and state["delivery_status"] == "NOT_AVAILABLE"
+                            and state["pickup_status"] == "NOT_AVAILABLE")
+    return state
+
+
 def parse_specs(payload: dict, sku_id: str, listing_name: str | None = None) -> dict:
     main, _ = _comparison_main(payload, sku_id)
     if main is None:
@@ -172,7 +215,8 @@ class DetailCollector:
             variables = copy.deepcopy(_comparison_vars(sku_id))
             variables["limit"] = 0
             variables["cofrConfig"]["isEnabled"] = False
-            spec = parse_specs(self.query("GetComparisonTableRecommendations", variables), sku_id,
+            payload = self.query("GetComparisonTableRecommendations", variables)
+            spec = parse_specs(payload, sku_id,
                                (row or {}).get("retailer_sku_name"))
             for field, record in spec["_sources"].items():
                 emit("field_selected", item=sku_id, field=field, **record)
@@ -181,6 +225,9 @@ class DetailCollector:
                 # Do not cache an unverified product without rating statistics.
                 # A later listing occurrence can provide better title evidence.
                 raise CollectionError("UNCONFIRMED_PRODUCT_TYPE")
+            if not reason:
+                spec["_purchase_status"] = parse_purchase_status(payload, sku_id)
+                emit("purchase_status", item=sku_id, **spec["_purchase_status"])
             ratings = ({} if reason else
                        parse_ratings(self.query("GetProductReviews", _reviews_vars(sku_id, 1))))
             self.cache[sku_id] = {**spec, **ratings}

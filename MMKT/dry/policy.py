@@ -21,6 +21,36 @@ _MODIFIER = re.compile(r"\b(?:mit|with|inkl(?:usive)?|incl(?:uding)?|einschliess
 _DRYER = re.compile(r"waschetrockner|warmepumpen?trockner|konden(?:sations|s)trockner|ablufttrockner|\btrockner\b|tumble[\s-]*dryer")
 _GENERIC_COMBINATION = re.compile(r"all[\s-]*in[\s-]*one|\b2[\s-]*in[\s-]*1\b")
 _INCLUDED_PART = re.compile(r"\bzubehor\b|accessor(?:y|ies)|filter|anschluss|verbindungssatz|montage|ablaufschlauch")
+_WASHER_DRYER = re.compile(r"waschtrockner|wasch[\s/+-]*(?:und[\s-]*)?trock(?:ner|en)|washer[\s/-]*dryer")
+_CAPACITY_PAIR = re.compile(r"(?<![\w.,])\d+(?:[.,]\d+)?\s*kg\s*/\s*\d+(?:[.,]\d+)?\s*kg\b")
+_SPIN_SPEED = re.compile(r"(?<!\d)[1-9]\d{2,3}\s*(?:u\s*/\s*min\.?|rpm|umdrehungen\s*/\s*min\.?)\b")
+
+
+def washer_dryer_evidence(row: dict, *, features: dict | None = None,
+                          detail_name: str | None = None) -> dict | None:
+    """Require explicit identity or capacity-pair AND spin in the same title.
+
+    Do not combine unrelated specifications, recommendation text or accessory
+    compatibility clauses. Equal wash/dry capacities are still a valid pair.
+    """
+    features = features or {}
+    values = [("title", None, v) for v in (row.get("retailer_sku_name"), detail_name) if v]
+    values.extend(("spec", label, value) for label, value in (
+        ("product_type", row.get("product_type")), ("Produkttyp", features.get("Produkttyp")),
+        ("Trockner-Typ", features.get("Trockner-Typ"))) if value)
+    for source, label, raw in values:
+        text = normalized(raw)
+        explicit = _WASHER_DRYER.search(text)
+        if explicit:
+            return {"basis": "explicit_washer_dryer", "source": source,
+                    "label": label, "matched_text": explicit.group()}
+        if source == "title":
+            identity = _MODIFIER.split(text, maxsplit=1)[0]
+            pair, spin = _CAPACITY_PAIR.search(identity), _SPIN_SPEED.search(identity)
+            if pair and spin:
+                return {"basis": "capacity_pair_and_spin_speed", "source": source,
+                        "capacity_pair": pair.group(), "spin_speed": spin.group()}
+    return None
 
 
 def _identity_head(name: str) -> str:
@@ -49,7 +79,7 @@ def exclusion_reason(row: dict, *, features: dict | None = None,
     identity = " ".join([*(_identity_head(name) for name in names), product_type])
     if re.search(r"\bwaschturm\b|wash[\s-]*tower|laundry[\s-]*tower", text):
         return "set_or_combo"
-    if re.search(r"waschtrockner|wasch[\s/+-]*(?:und[\s-]*)?trock(?:ner|en)|washer[\s/-]*dryer", text):
+    if washer_dryer_evidence(row, features=features, detail_name=detail_name) or _WASHER_DRYER.search(text):
         return "washer_dryer"
     if re.search(r"waschmaschine|washing[\s-]*machine|\bwasher\b", text):
         return "washing_machine"

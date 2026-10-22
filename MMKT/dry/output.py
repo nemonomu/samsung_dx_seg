@@ -13,6 +13,8 @@ from dry import config
 from dry.detail import CollectionError
 from dry.events import emit
 
+UNAVAILABLE_PRICE = "Artikel ist derzeit nicht verfügbar"
+
 
 def canonical_product_url(value: str, item: str) -> str:
     parsed = urlsplit(value or "")
@@ -58,6 +60,23 @@ def default_missing_ratings(row: dict, *, source: str, log_defaults: bool = True
     return result
 
 
+def selected_price(primary: dict, secondary: dict, detail: dict, *, item: str, log: bool):
+    price = present(primary.get("final_sku_price"), secondary.get("final_sku_price"))
+    if price is not None:
+        return price
+    state = detail.get("_purchase_status") or {}
+    if state.get("unavailable") is True:
+        if log:
+            emit("field_selected", item=item, field="final_sku_price", source="API_status",
+                 value=UNAVAILABLE_PRICE, derived=True, reason="price_missing_and_purchase_unavailable",
+                 available_and_buyable=state.get("available_and_buyable"),
+                 delivery_status=state.get("delivery_status"), pickup_status=state.get("pickup_status"))
+        return UNAVAILABLE_PRICE
+    if log:
+        emit("price_missing", item=item, reason="purchase_unavailability_not_confirmed")
+    return None
+
+
 def merge_rows(main: list[dict], bsr: list[dict], details: dict[str, dict], meta: dict,
                *, log_defaults: bool = True) -> list[dict]:
     def ranked(rows):
@@ -85,7 +104,7 @@ def merge_rows(main: list[dict], bsr: list[dict], details: dict[str, dict], meta
                    star_rating=star,
                    count_of_star_ratings=present(detail.get("count_of_star_ratings"),
                                                 primary.get("count_of_reviews"), secondary.get("count_of_reviews")),
-                   final_sku_price=primary.get("final_sku_price"),
+                   final_sku_price=selected_price(primary, secondary, detail, item=item, log=log_defaults),
                    original_sku_price=primary.get("original_sku_price"),
                    savings=positive_savings(primary.get("savings")),
                    main_rank=m[item][1] if item in m else None,

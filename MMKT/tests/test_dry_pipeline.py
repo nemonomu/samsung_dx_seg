@@ -185,7 +185,7 @@ class DryDetailTests(unittest.TestCase):
         products.insert(0, first["data"]["comparisonTableRecommendations"]["tableData"]["products"][0])
         products.extend(last["data"]["comparisonTableRecommendations"]["tableData"]["products"])
         result = parse_specs(payload, "1")
-        self.assertEqual(("REALMODEL456", "Front load", "8kg"),
+        self.assertEqual(("MODEL123", "Front load", "8kg"),
                          (result["sku"], result["loading_type"], result["capacity"]))
         self.assertEqual("Wärmepumpentrockner", result["_features"]["Produkttyp"])
         self.assertNotIn("OTHER_PRODUCT_MODEL", repr(result))
@@ -208,7 +208,7 @@ class DryDetailTests(unittest.TestCase):
     def test_dryer_labels_and_no_wash_capacity_fallback(self):
         result = parse_specs(specs("1", extra={"Füllmenge Baumwolle (Waschen)": "99 kg",
                                                   "Füllmenge Baumwolle (Trocknen)": "7,5 kg"}), "1")
-        self.assertEqual(("REALMODEL456", "Front load", "7,5kg"), (result["sku"], result["loading_type"], result["capacity"]))
+        self.assertEqual(("MODEL123", "Front load", "7,5kg"), (result["sku"], result["loading_type"], result["capacity"]))
         result = parse_specs(specs("1", extra={"Nennkapazität": None, "Beladung": "Other", "Füllmenge Baumwolle (Waschen)": "99 kg"}), "1")
         self.assertIsNone(result["capacity"])
         self.assertIsNone(result["loading_type"])
@@ -291,7 +291,7 @@ class DryPipelineTests(unittest.TestCase):
         self.assertEqual((2, 1, 4), (manifest["main"]["rows"], manifest["bsr"]["rows"], manifest["api_calls"]))
         self.assertEqual([("1", "1", "1"), ("2", "2", "")],
                          [(row["item"], row["main_rank"], row["bsr_rank"]) for row in rows])
-        self.assertEqual((raw_name, "REALMODEL456"), (rows[0]["retailer_sku_name"], rows[0]["sku"]))
+        self.assertEqual((raw_name, "MODEL123"), (rows[0]["retailer_sku_name"], rows[0]["sku"]))
         self.assertEqual({"1", "2"}, {variables.get("ref") or variables.get("id") for _, variables in browser.calls})
 
     def test_full_short_category_with_hidden_combo_dedup_ranks_union_and_shared_api_cache(self):
@@ -341,7 +341,7 @@ class DryPipelineTests(unittest.TestCase):
                 rows = list(csv.DictReader(handle))
         self.assertTrue(manifest["success"])
         self.assertEqual((1, 2, 1), (manifest["output_rows"], manifest["api_calls"], manifest["unique_detail_products"]))
-        self.assertEqual([("1", "1", "1", "REALMODEL456", "8kg")],
+        self.assertEqual([("1", "1", "1", "MODEL123", "8kg")],
                          [(row["item"], row["main_rank"], row["bsr_rank"], row["sku"], row["capacity"]) for row in rows])
         self.assertEqual({"1"}, {variables.get("ref") or variables.get("id") for _, variables in browser.calls})
         self.assertNotIn("OTHER_PRODUCT_MODEL", repr(rows))
