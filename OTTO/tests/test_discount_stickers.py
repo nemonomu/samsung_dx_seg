@@ -142,7 +142,8 @@ class DiscountStickerTests(unittest.TestCase):
             stack.enter_context(patch.object(targets, "MAIN_TARGET_UNIQUE", 4))
             stack.enter_context(patch.object(targets, "BSR_TARGET_RANK", 4))
             stack.enter_context(patch.object(full_output, "fetch_similar_product_names", return_value={}))
-            stack.enter_context(patch.object(full_output, "collect_review", return_value={}))
+            stack.enter_context(patch.object(full_output, "collect_review", return_value={
+                "average_rating": "4.3", "rating_count": 32, "rating_state": "rated"}))
             stack.enter_context(patch.object(notify, "env_value", side_effect=lambda name, default=None:
                                            "1" if name == "SEG_EMAIL_NOTIFY" else "0"))
             send = stack.enter_context(patch.object(notify, "_send", return_value=(True, 1, None)))
@@ -163,7 +164,7 @@ class DiscountStickerTests(unittest.TestCase):
             database = MagicMock()
             connection = database.connect.return_value
             cursor = connection.cursor.return_value.__enter__.return_value
-            cursor.fetchall.return_value = [("discount_type",)]
+            cursor.fetchall.return_value = [("discount_type", "YES")]
             with patch.dict(sys.modules, {"psycopg2": database}), \
                     patch.object(db_save, "db_config", return_value={"host": "test.invalid"}), \
                     patch.object(db_save, "safe_backfill_from_retail_history", return_value={

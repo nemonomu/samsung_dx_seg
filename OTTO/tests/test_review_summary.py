@@ -21,11 +21,13 @@ from common.parsers import parse_review_html  # noqa: E402
 
 
 PLACEHOLDER_HTML = b"""
-<html><body><div class="js_pdp_cr-summary" hidden></div></body></html>
+<html><body><div class="pdp_cr-rating"><div class="pdp_cr-rating-score">4.3 von 5</div>(32)</div>
+<div class="js_pdp_cr-summary" hidden></div></body></html>
 """
 
 RENDERED_HTML = b"""
 <html><body>
+  <div class="pdp_cr-rating"><div class="pdp_cr-rating-score">4.3 von 5</div>(32)</div>
   <section class="js_pdp_cr-summary pdp_cr-summary">
     <h3>Das sagen unsere Kunden</h3>
     <div class="pdp_cr-summary__item-content">
@@ -217,8 +219,6 @@ class OttoReviewSummaryDisabledTests(unittest.TestCase):
             "summary_container_present", "summary_rendered", "summary_item_count",
         }
         html = RENDERED_HTML.replace(b'</body>', b'''
-        <div class="pdp_cr-rating"><div class="pdp_cr-rating-score">
-          <span class="oc-headline-300">4.3</span></div>von 5 (32)</div>
         <div id="cr-review-list">
         <div class="pdp_cr-item-content" data-review-id="r1" data-rating="5">
           <div class="js_pdp_cr-item__reviewText">Useful detailed review</div>
@@ -262,6 +262,7 @@ class OttoReviewSummaryDisabledTests(unittest.TestCase):
         review = {
             "_review_status": 200, "summarized_review_content": "Must not be saved",
             "average_rating": "4.3", "rating_count": 32,
+            "rating_state": "rated", "rating_reason": None,
             "recommendation_intent": "90%", "detailed_review_content": "review1 - Useful review",
         }
         for product in ("TV", "REF", "LDY"):

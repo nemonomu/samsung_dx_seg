@@ -452,23 +452,9 @@ def format_detailed_review_content(rows: list[dict[str, Any]], limit: int = 20) 
 
 
 def extract_review_rating(soup: BeautifulSoup) -> tuple[str | None, int | None]:
-    """Per-variation star rating from the review page summary.
-
-    Markup: `<div class="pdp_cr-rating-score"><span class="oc-headline-300">4.5</span>
-    <span>von 5</span></div>` and the wrapper text reads "4.5 von 5 (177)" where 177 is
-    the number of star ratings. Returns (average, count); (None, None) when the page has
-    no rating block (e.g. a variation with zero ratings).
-    """
-    score = soup.select_one(".pdp_cr-rating-score .oc-headline-300")
-    average = text_clean(score.get_text(" ", strip=True)) if score else None
-    count = None
-    wrapper = soup.select_one(".pdp_cr-rating")
-    if wrapper:
-        m = re.search(r"\(([\d.  ,]+)\)", wrapper.get_text(" ", strip=True))
-        if m:
-            digits = re.sub(r"[^\d]", "", m.group(1))
-            count = int(digits) if digits else None
-    return average, count
+    from common.review_rating import parse_rating
+    result = parse_rating(soup)
+    return result["average_rating"], result["rating_count"]
 
 
 def review_last_page(soup: BeautifulSoup) -> int:
@@ -484,20 +470,28 @@ def review_last_page(soup: BeautifulSoup) -> int:
 
 def parse_review_html(path: Path) -> dict[str, Any]:
     html = path.read_text(encoding="utf-8", errors="replace")
+    return parse_review_document(html, path=str(path))
+
+
+def parse_review_document(html: str | bytes, *, path: str | None = None) -> dict[str, Any]:
+    """Parse an HTTP response in memory; operational collection never writes HTML."""
+    from common.review_rating import parse_rating, review_product_ids
+    if isinstance(html, bytes):
+        html = html.decode("utf-8", errors="replace")
     soup = BeautifulSoup(html, "lxml")
     reviews = parse_detail_reviews(soup)
     non_empty_reviews = [row for row in reviews if row.get("review_text")]
-    average_rating, rating_count = extract_review_rating(soup)
+    rating = parse_rating(soup)
     summary_items = summary_review_items(soup) if REVIEW_SUMMARY_ENABLED else []
     return {
-        "path": str(path),
+        "path": path,
         "title": text_clean(soup.title.get_text(" ", strip=True)) if soup.title else None,
         "review_rows": len(reviews),
         "review_text_rows": len(non_empty_reviews),
         "last_page": review_last_page(soup),
         # per-variation star-rating summary (Kasada-free, matches the product page)
-        "average_rating": average_rating,
-        "rating_count": rating_count,
+        **rating,
+        "review_product_ids": review_product_ids(soup),
         "reviews": reviews,
         "summarized_review_content": MULTI_VALUE_DELIMITER.join(summary_items) if summary_items else None,
         "summary_placeholder_present": REVIEW_SUMMARY_ENABLED and bool(soup.select_one(".js_pdp_cr-summary")),
