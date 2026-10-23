@@ -29,6 +29,12 @@ _NON_MODEL_WORDS = {
 # Keep accented German words whole: splitting Wärmepumpentrockner at ä would
 # produce a standalone W and incorrectly treat the next word as a watt unit.
 _TOKEN = re.compile(r"[^\W_]+(?:[-_/.][^\W_]+)*(?:\+{1,3})?")
+# Whole trailing phrases only. Their leading whitespace and ending boundary
+# protect internal model strings, regional suffixes and unknown editions.
+_MODEL_DESCRIPTION = re.compile(
+    r"(?<!\S)(?:(?P<feature_capacity>(?:eco\s*speed|speed|steam)\s*&\s*"
+    r"\d+(?:[.,]\d+)?\s*(?:kg|g))|(?P<edition>nova\s+edition|(?:\d+\s+)?gala\s+edition))"
+    r"(?=$|[\s,;(])", re.I)
 
 
 def valid_sku(value) -> str | None:
@@ -43,7 +49,7 @@ def valid_sku(value) -> str | None:
     return value
 
 
-def title_sku(title, model_hints=()) -> str | None:
+def _title_sku_core(title, model_hints=(), *, model_only=False) -> str | None:
     title = text_clean(title) or ""
     confirmed_title = None
     # A specification may confirm the boundaries of a spaced title model, but
@@ -73,15 +79,27 @@ def title_sku(title, model_hints=()) -> str | None:
     for index, token in enumerate(tokens):
         # A short uppercase prefix plus a separate 4..6 digit identifier, e.g.
         # WPT 7155. Require whitespace only and reject quantity/series contexts.
-        if (index > 0 and re.fullmatch(r"[A-Z]{2,4}", token) and normalized(token) not in _NON_MODEL_WORDS
+        if ((index > 0 or model_only) and re.fullmatch(r"[A-Z]{2,4}", token) and normalized(token) not in _NON_MODEL_WORDS
                 and index + 1 < len(tokens) and re.fullmatch(r"\d{4,6}", tokens[index + 1])
                 and title[matches[index].end():matches[index + 1].start()].isspace()):
             following = tokens[index + 2] if index + 2 < len(tokens) else ""
             if not re.fullmatch(r"(?:kg|g|k?w|watt|v|hz|rpm|cm|mm|l|db|programme?n?|programs)", following, re.I):
-                return choose(token + " " + tokens[index + 1], matches[index].start())
+                end = index + 1
+                # A spaced model may continue with a short letter suffix (WP,
+                # for example). Preserve it as part of the model, not by ID.
+                for pos in range(index + 2, min(len(tokens), index + 5)):
+                    tail = tokens[pos]
+                    if (not title[matches[pos-1].end():matches[pos].start()].isspace()
+                            or not re.fullmatch(r"[A-Z]{2,4}", tail)
+                            or normalized(tail) in _NON_MODEL_WORDS
+                            or _MEASURE.fullmatch("1" + tail)
+                            or normalized(tail) in {"weiss", "white", "schwarz", "black", "grau", "silver"}):
+                        break
+                    end = pos
+                return choose(title[matches[index].start():matches[end].end()], matches[index].start())
         # Spaced alphanumeric models such as TR 9 W 80690 or DV 91 DG 52 A 0 AEEG.
         # Require multiple numeric components, not a lone series/program count.
-        if (index > 0 and re.fullmatch(r"[A-Z]{2,4}", token)
+        if ((index > 0 or model_only) and re.fullmatch(r"[A-Z]{2,4}", token)
                 and normalized(token) not in _NON_MODEL_WORDS
                 and index + 1 < len(tokens) and re.fullmatch(r"\d{1,3}", tokens[index + 1])):
             end = index
@@ -122,6 +140,45 @@ def title_sku(title, model_hints=()) -> str | None:
         start = matches[index-1].start() if picked[0] != token else matches[index].start()
         return choose(" ".join(picked), start)
     return confirmed_title[1] if confirmed_title else None
+
+
+def _model_description(value, *, model_only=False):
+    """Split a known description only after an independently readable model.
+
+    This is extraction-only: valid_sku, saved CSVs and DB history are not
+    normalized by this rule. Ambiguous boundaries retain the original value.
+    """
+    text = text_clean(value) or ""
+    for match in _MODEL_DESCRIPTION.finditer(text):
+        prefix = text[:match.start()].rstrip()
+        candidate = _title_sku_core(prefix, model_only=model_only)
+        signature = lambda s: re.sub(r"\s+", " ", s).casefold()
+        if candidate and signature(prefix).endswith(signature(candidate)):
+            return prefix, {"cleanup_reason": "trailing_" + match.lastgroup,
+                            "removed_description": match.group()}
+        # A description before a model or an unproven numeric identifier is
+        # insufficient evidence to truncate. The selected source logs why.
+        return text, {"cleanup_skipped": "model_boundary_unconfirmed"}
+    return text, {}
+
+
+def _title_sku_selection(title, model_hints=()):
+    model_hints = tuple(model_hints)
+    cleaned_title, title_cleanup = _model_description(title)
+    hints = [_model_description(hint, model_only=True) for hint in model_hints]
+    candidate = _title_sku_core(cleaned_title, [value for value, _ in hints])
+    cleanup = title_cleanup
+    if candidate:
+        before = _title_sku_core(title, model_hints)
+        if not cleanup and before != candidate:
+            cleanup = next((info for _, info in hints if "cleanup_reason" in info), {})
+        if cleanup:
+            cleanup = {**cleanup, "sku_before": before, "sku_after": candidate}
+    return candidate, cleanup
+
+
+def title_sku(title, model_hints=()) -> str | None:
+    return _title_sku_selection(title, model_hints)[0]
 
 
 def evidence(source, raw=None, unit=None, *, label=None, value=None):
@@ -176,18 +233,21 @@ def select_fields(features: list[dict], titles: list[str]) -> tuple[dict, dict]:
             model = match
             break
     for title in titles:
-        candidate = title_sku(title, (model["value"],) if model else ())
+        candidate, cleanup = _title_sku_selection(title, (model["value"],) if model else ())
         if sources["sku"]["value"] is None and candidate:
-            sources["sku"] = evidence("title", candidate, value=candidate)
+            sources["sku"] = {**evidence("title", cleanup.get("sku_before", candidate), value=candidate), **cleanup}
         if sources["loading_type"]["value"] is None and loading_candidate(title):
             sources["loading_type"] = evidence("title", loading_candidate(title), value=loading_candidate(title))
     if model:
+        model_value, cleanup = _model_description(model["value"], model_only=True)
         if sources["sku"]["value"] is None:
-            sources["sku"] = evidence("spec", model["value"], label=model["name"], value=valid_sku(model["value"]))
+            sources["sku"] = {**evidence("spec", model["value"], label=model["name"], value=valid_sku(model_value)), **cleanup}
+            if cleanup:
+                sources["sku"].update(sku_before=model["value"], sku_after=sources["sku"]["value"])
         else:
             signature = lambda value: re.sub(r"\s+", "", value).casefold()
             sources["sku"].update(spec_value=model["value"], spec_label=model["name"],
-                                  conflict=signature(sources["sku"]["value"]) != signature(model["value"]))
+                                  conflict=signature(sources["sku"]["value"]) != signature(model_value))
     title_capacities = [capacity_candidate(title, source="title") for title in titles]
     title_capacities = [candidate for candidate in title_capacities if candidate]
     if title_capacities:
