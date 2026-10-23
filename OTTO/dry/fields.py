@@ -20,7 +20,10 @@ WASHER = re.compile(r"\bwasch(?:maschine[n]?|vollautomat(?:en)?)\b", re.I)
 EXCLUDED = (
     (r"\bwasch[- ]?trockner\b", "washer_dryer"),
     (r"\b(?:mini[- ]?|reise[- ]?|camping[- ]?)(?:wäsche)?trockner\b|\b(?:tragbar\w*|portabel\w*|portable|mobil(?:e[rsmn]?)?)\b", "portable"),
-    (r"\b(?:haartrockner|haarföhn|föhn|foehn)\b", "hair_dryer"),
+    (r"\b(?:haartrockner|haarföhn|föhn|foehn|multi[- ]?haarstyler|haarstyler)\b", "hair_dryer"),
+    (r"\b(?:dörrautomat|doerrautomat|lebensmitteltrockner|obsttrockner)\b", "food_dehydrator"),
+    (r"\b(?:luftentfeuchter|bautrockner)\b", "dehumidifier"),
+    (r"\b(?:waschmaschinenumbauschrank|waschmaschinenschrank)\b", "furniture"),
     (r"\b(?:wäscheschleuder|waescheschleuder|schleuder|zentrifuge)\b", "spin_dryer"),
     (r"\b(?:wäscheständer|waeschestaender|flügelwäschetrockner|standtrockner|wandtrockner|wäscheleine|deckentrockner|turmtrockner|trockengestell|trockensack|trockenschrank)\b", "drying_rack_or_cabinet"),
     (r"\b(?:dampfschrank|kleiderpflegeschrank|kleiderschrank|dampfglätter|kleiderdampfer|styler|airdresser)\b", "garment_care"),
@@ -59,33 +62,47 @@ def title_kind(value):
     return "ambiguous", "product_type_unconfirmed"
 
 
-def classify(name, chars=None, infos=None):
+def classification_evidence(name, chars=None, infos=None, selection_name=None):
     chars, infos = chars or {}, infos or {}
-    title_decision = title_kind(name)
-    evidence = [(label, chars.get(label) or infos.get(label)) for label in TYPE_LABELS]
-    decisions = [(label, title_kind(value)) for label, value in evidence if value and label != "Set-Bestandteile"]
-    components = chars.get("Set-Bestandteile") or infos.get("Set-Bestandteile")
-    if WASHER.search(text(components)) and DRYER.search(text(components)):
-        return False, "Set-Bestandteile:washer_dryer_bundle"
-    # Explicit product-type evidence may contradict a superficially valid title.
-    for label, (decision, reason) in decisions:
-        if decision == "exclude":
-            return False, f"{label}:{reason}"
-    comparison = title_kind(chars.get("_name"))
-    if comparison[0] == "exclude":
-        return False, "comparison:" + comparison[1]
-    if title_decision[0] == "exclude":
-        return False, title_decision[1]
-    if title_decision[0] == "include" or comparison[0] == "include" or any(d[0] == "include" for _, d in decisions):
-        # Evidence sets diagnostic confidence only; absence is not an exclusion.
-        texts = [name, chars.get("_name"), *(value for _, value in evidence)]
-        machine_evidence = (any(SPECIFIC_DRYER.search(text(v)) for v in texts)
-                            or any(capacity(v) for v in texts[:2])
+    sources = [("listing_title", name), ("search_title", selection_name),
+               ("comparison_title", chars.get("_name"))]
+    sources += [("comparison:" + k, chars.get(k)) for k in TYPE_LABELS]
+    sources += [("listing_spec:" + k, infos.get(k)) for k in TYPE_LABELS]
+    result = []
+    for source, raw in sources:
+        if not text(raw):
+            continue
+        decision, reason = title_kind(raw)
+        if source.endswith("Set-Bestandteile"):
+            if WASHER.search(text(raw)) and DRYER.search(text(raw)):
+                decision, reason = "exclude", "washer_dryer_bundle"
+            else:
+                decision, reason = "ambiguous", "included_components_not_product_type"
+        result.append(dict(source=source, raw=text(raw)[:500], decision=decision, reason=reason))
+    return result
+
+
+def classify(name, chars=None, infos=None, selection_name=None):
+    chars, infos = chars or {}, infos or {}
+    evidence = classification_evidence(name, chars, infos, selection_name)
+    # Explicit sold composition is stronger than a title mentioning only one component.
+    bundle = next((e for e in evidence if e["source"].endswith("Set-Bestandteile")
+                   and e["decision"] == "exclude"), None)
+    if bundle:
+        return False, bundle["source"] + ":" + bundle["reason"]
+    positive = any(e["decision"] == "include" for e in evidence)
+    negative = next((e for e in evidence if e["decision"] == "exclude"), None)
+    if positive and negative:
+        return True, "ambiguous_included_conflicting_product_types"
+    if negative:
+        return False, negative["source"] + ":" + negative["reason"]
+    if positive:
+        titles = [name, selection_name, chars.get("_name")]
+        machine_evidence = (any(SPECIFIC_DRYER.search(text(v)) for v in titles)
+                            or any(capacity(v) for v in titles)
                             or bool(loading(chars.get("Beladung")))
                             or any(capacity(v, labelled=True) for k, v in {**infos, **chars}.items() if capacity_label(k)))
-        if machine_evidence:
-            return True, "standalone_dryer_evidence"
-        return True, "ambiguous_included_generic_dryer"
+        return True, "standalone_dryer_evidence" if machine_evidence else "ambiguous_included_generic_dryer"
     return True, "ambiguous_included_product_type"
 
 
@@ -132,26 +149,42 @@ def loading(raw):
 
 def model_from_name(name):
     value = text(name)
-    match = DRYER.search(value)
-    if match:
-        candidate = re.split(r"[,;]|\b(?:mit|für|inklusive|inkl\.|Frontlader|Toplader)\b", value[match.end():], maxsplit=1, flags=re.I)[0]
-        candidate = re.split(r"\d+(?:[.,]\d+)?\s*kg\b", candidate, maxsplit=1, flags=re.I)[0]
-        model = clean_model(text(candidate))
-        if model:
-            tokens = []
-            for token in model.split():
-                if not token.isupper() and not any(c.isdigit() for c in token):
-                    break
-                tokens.append(token)
-            model = " ".join(tokens)
-        if model and re.fullmatch(r"[A-Za-z0-9/_.+\- ]+", model) and any(c.isalpha() for c in model) and any(c.isdigit() for c in model):
-            mixed = list(re.finditer(r"\b(?=[A-Za-z0-9/_.+-]*[A-Za-z])(?=[A-Za-z0-9/_.+-]*\d)[A-Za-z0-9/_.+-]+", model))
-            return model[mixed[-1].start():] if mixed else model
-    # LDY shared fallback: first mixed model token, without importing full_output.
-    for token in re.findall(r"\b[A-Z0-9][A-Z0-9/_.-]{4,}\b", value):
-        if any(c.isalpha() for c in token) and any(c.isdigit() for c in token):
-            return token
+    dryer = DRYER.search(value)
+    if dryer:
+        value = value[dryer.end():]
+    value = re.split(r"[,;]|\b(?:mit|für|inklusive|inkl\.|Frontlader|Toplader)\b", value, maxsplit=1, flags=re.I)[0]
+    value = re.split(r"\d+(?:[.,]\d+)?\s*kg\b", value, maxsplit=1, flags=re.I)[0]
+    # Series descriptors are not model identifiers, regardless of brand.
+    value = re.sub(r"\b[A-Za-z]*\d+[A-Za-z]*\s+Serie\b|\b(?:Serie|Series)\s+[A-Za-z0-9]+\b", " ", value, flags=re.I)
+    tokens = text(value).split()
+    mixed = [i for i, token in enumerate(tokens)
+             if re.fullmatch(r"[A-Za-z0-9/_.+\-]{3,}", token)
+             and any(c.isalpha() for c in token) and any(c.isdigit() for c in token)]
+    if len(mixed) == 1:
+        start = end = mixed[0]
+        # A compact uppercase prefix adjacent to the model is part of split models.
+        if dryer and start and re.fullmatch(r"[A-Z]{1,6}", tokens[start-1]):
+            start -= 1
+        while end + 1 < len(tokens) and re.fullmatch(r"[A-Z]{1,3}", tokens[end+1]):
+            end += 1
+        return clean_model(" ".join(tokens[start:end+1]))
+    if not mixed:
+        # Split model such as WAM 914 A. Never return a naked number or a series.
+        matches = re.findall(r"\b[A-Z]{1,6}\s+\d{2,5}(?:\s+[A-Z]{1,3})?\b", value)
+        if len(matches) == 1:
+            return clean_model(matches[0])
+    # A model before the appliance type is the shared LDY-style last fallback.
+    if dryer and not tokens:
+        return model_from_name(text(name)[:dryer.start()])
     return None
+
+
+def savings(raw):
+    value = text(raw)
+    match = re.fullmatch(r"[-−–+]?\s*(\d+(?:[.,]\d+)?)\s*(%?)", value)
+    if not match or not 0 <= float(match[1].replace(",", ".")) <= 100:
+        return None
+    return match[1] + match[2]
 
 
 def candidates(target, chars, pdf=None):
@@ -172,7 +205,8 @@ def candidates(target, chars, pdf=None):
     return {
         "sku": models,
         "capacity": [(source, raw, capacity(raw, labelled=labelled)) for source, raw, labelled in caps],
-        "loading_type": [(source, raw, loading(raw)) for source, raw in loads],
+        "loading_type": [(source, raw, loading(raw)) for source, raw in loads]
+                        + [("product_pdf", pdf.get("loading_type_raw"), pdf.get("loading_type"))],
     }
 
 

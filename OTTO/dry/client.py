@@ -4,14 +4,14 @@ import json
 import re
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from bs4 import BeautifulSoup
 
 from common import compare, datasheet, listing, review_rating
 from dry.config import CATEGORY_LABELS, COMPARE_LABELS, SEARCH_TERM, SEARCH_URL, TYPE_LABELS, DryError
-from dry.fields import capacity, capacity_label, public_product_url, text
+from dry.fields import capacity, capacity_label, public_product_url, text, loading, savings, DRYER
 
 
 class RequestFailure(DryError):
@@ -143,36 +143,38 @@ class Client:
                 if review_rating.response_problem(response, url):
                     raise RequestFailure("comparison_redirect")
                 soup = BeautifulSoup(body, "lxml")
-                names = compare._names_from_html(soup, set(needed))
+                names = comparison_names(soup, set(needed))
                 values = {label: compare._row_values(soup, label) for label in COMPARE_LABELS}
                 for vid in needed:
                     chars = {label: vals[vid] for label, vals in values.items() if vals.get(vid)}
                     if names.get(vid):
                         chars["_name"] = names[vid]
                     if not chars:
-                        chars["_error"] = "comparison_option_missing"
+                        chars["_unavailable"] = "comparison_option_missing"
+                    if not names.get(vid):
+                        chars["_title_reason"] = "comparison_product_title_unavailable"
                     self.compare_cache[vid] = chars
             except RequestFailure as exc:
                 for vid in needed:
-                    self.compare_cache[vid] = {"_error": str(exc)}
+                    self.compare_cache[vid] = {"_error": str(exc), "_error_kind": "request"}
         return {v: self.compare_cache[v] for v in ids}
 
-    def pdf(self, uri, *, need_sku, need_capacity):
+    def pdf(self, uri, *, need_sku, need_capacity, need_loading=False):
         if not uri:
-            return {"_error": "own_pdf_link_missing"}
+            return {"_unavailable": "own_pdf_link_missing"}
         parsed = urlsplit(uri)
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-            return {"_error": "own_pdf_link_invalid"}
+            return {"_error": "own_pdf_link_invalid", "_error_kind": "extraction"}
         try:
             body, _ = self.fetch(uri, "product_pdf", kind="pdf")
             if not body.startswith(b"%PDF"):
                 raise RequestFailure("pdf_document_invalid")
             with self.events.activity("pdf_parse"):
-                return parse_pdf(body, need_sku=need_sku, need_capacity=need_capacity)
+                return parse_pdf(body, need_sku=need_sku, need_capacity=need_capacity, need_loading=need_loading)
         except RequestFailure as exc:
-            return {"_error": str(exc)}
+            return {"_error": str(exc), "_error_kind": "request" if exc.status is not None or str(exc).startswith("request_failed:") else "extraction"}
         except Exception as exc:
-            return {"_error": "pdf_parse:" + type(exc).__name__}
+            return {"_error": "pdf_parse:" + type(exc).__name__, "_error_kind": "extraction"}
 
     def rating(self, product_id):
         url = f"https://www.otto.de/kundenbewertungen/{quote(product_id, safe='')}/"
@@ -208,6 +210,38 @@ class Client:
         return retained
 
 
+def comparison_names(soup, wanted):
+    result = {}
+    for link in soup.select('a[href]'):
+        try:
+            parts = urlsplit(link.get("href", ""))
+        except ValueError:
+            continue
+        if parts.hostname not in (None, "www.otto.de") or not parts.path.startswith("/p/"):
+            continue
+        owner = link if link.get("data-variation-id") else link.find_parent(attrs={"data-variation-id": True})
+        owner_id = str(owner.get("data-variation-id")) if owner else None
+        linked = list(dict.fromkeys(parse_qs(parts.query).get("variationId", [])
+                                        + parse_qs(parts.fragment).get("variationId", [])))
+        if owner_id and linked and linked != [owner_id]:
+            continue
+        vid = owner_id or (linked[0] if len(linked) == 1 else None)
+        if vid not in wanted:
+            continue
+        title_nodes = link.select('[itemprop="name"], h1, h2, h3, h4, [class*="title"], [class*="product-name"]')
+        # Nested title spans must not duplicate the heading text.
+        title_nodes = [n for n in title_nodes if not any(p in title_nodes for p in n.parents)]
+        pieces = list(dict.fromkeys(text(n.get_text(" ", strip=True)) for n in title_nodes))
+        if not pieces and link.find(["p", "ul", "table"]):
+            continue
+        title = text(" ".join(pieces)) if pieces else text(link.get_text(" ", strip=True))
+        if title and not re.fullmatch(r"(?:zum|ansehen|details|produkt|merken|entfernen)(?:\s+produkt)?", title, re.I):
+            # All pieces belong to this product link, never surrounding feature paragraphs.
+            if vid not in result or len(title) > len(result[vid]):
+                result[vid] = title
+    return result
+
+
 def minimal_tile(tile):
     price, sale, title = tile.get("price") or {}, tile.get("saleTags") or {}, tile.get("title") or {}
     name = text(title.get("shortened")) or text(tile.get("name"))
@@ -223,16 +257,29 @@ def minimal_tile(tile):
     return dict(retailer_sku_name=name or None, top_infos=infos, pdf_uri=pdf_uri,
                 final_sku_price=euro(price.get("retailPrice")),
                 original_sku_price=euro(price.get("suggestedRetailPrice") or price.get("comparativePrice")),
-                savings=text(sale.get("discount")) or None)
+                savings=savings(sale.get("discount")))
 
 
-def parse_pdf(body, *, need_sku, need_capacity):
-    """Read only text for missing model/capacity; no OCR, energy parsing or disk capture."""
+def explicit_pdf_loading_line(line):
+    token = r"(?:Frontlader|Toplader|Frontbeladung|Topbeladung|front[- ]loading|top[- ]loading)"
+    if not re.search(r"\b" + token + r"\b", line, re.I):
+        return False
+    if re.search(r"\b(?:nicht|kein\w*|waschmaschine\w*|waschvollautomat\w*)\b|geeignet für|kompatibel", line, re.I):
+        return False
+    return bool(DRYER.search(line)
+                or re.match(r"\s*(?:Bauart|Beladung|Beladungsart|Gerätetyp|Produkttyp|Typ)\s*[:=]?\s*" + token, line, re.I)
+                or re.fullmatch(r"\s*" + token + r"(?:\s+(?:und|oder)\s*" + token + r")?\s*", line, re.I))
+
+
+def parse_pdf(body, *, need_sku, need_capacity, need_loading=False):
+    """Read only text for missing model/capacity/loading; no OCR, energy parsing or disk capture."""
     import pdfplumber
     result = {}
+    had_text = False
     with pdfplumber.open(io.BytesIO(body)) as pdf:
         for page in pdf.pages[:3]:
             content = page.extract_text() or ""
+            had_text = had_text or bool(content.strip())
             if need_sku and not result.get("sku"):
                 result["sku"] = datasheet._sku({}, content)
                 if result.get("sku"):
@@ -246,8 +293,20 @@ def parse_pdf(body, *, need_sku, need_capacity):
                         result["capacity"] = capacity(match[1], labelled=True)
                         result["capacity_raw"] = match[1]
                         break
-            if (not need_sku or result.get("sku")) and (not need_capacity or result.get("capacity")):
+            if need_loading and not result.get("loading_type"):
+                # Explicit labels only, never door instructions or generic front/top words.
+                lines = [line for line in content.splitlines()
+                         if explicit_pdf_loading_line(line)]
+                raw = text(" ".join(lines))
+                if raw:
+                    result["loading_type"] = loading(raw)
+                    result["loading_type_raw"] = raw[:500]
+            if all(not needed or result.get(field) for field, needed in (
+                    ("sku", need_sku), ("capacity", need_capacity), ("loading_type", need_loading))):
                 break
-    if (need_sku and not result.get("sku")) or (need_capacity and not result.get("capacity")):
-        result["_error"] = "pdf_required_label_missing_or_no_text"
+    missing = [field for field, needed in (("sku", need_sku), ("capacity", need_capacity),
+                                          ("loading_type", need_loading)) if needed and not result.get(field)]
+    if missing:
+        result["_missing"] = missing
+        result["_unavailable"] = "pdf_label_unconfirmed_in_first_3_pages" if had_text else "pdf_no_text_in_first_3_pages"
     return result

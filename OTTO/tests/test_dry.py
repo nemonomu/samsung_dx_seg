@@ -107,8 +107,9 @@ class ClassificationTests(Offline):
             with self.subTest(name=name):
                 self.assertFalse(fields.classify(name)[0])
 
-    def test_structured_type_overrides_title(self):
-        self.assertFalse(fields.classify("Wärmepumpentrockner DR900", {"Produkttyp": "Waschtrockner"})[0])
+    def test_conflicting_structured_type_is_included_for_review(self):
+        self.assertEqual(fields.classify("Wärmepumpentrockner DR900", {"Produkttyp": "Waschtrockner"}),
+                         (True, "ambiguous_included_conflicting_product_types"))
         self.assertTrue(fields.classify("Brand DR900", {"Produkttyp": "Wärmepumpentrockner"})[0])
 
     def test_unknown_is_reported_ambiguous(self):
@@ -225,7 +226,7 @@ class ClientTests(Offline):
             c.comparison(["v1"])
         self.assertEqual(values["v1"]["Modellbezeichnung"], "MODEL1")
         self.assertEqual(values["v2"]["Modellbezeichnung"], "MODEL2")
-        self.assertIn("_error", values["absent"])
+        self.assertEqual(values["absent"]["_unavailable"], "comparison_option_missing")
         self.assertEqual(fetch.call_count, 1)
 
     def test_latest_rating_fonts_and_no_review_pagination(self):
@@ -396,7 +397,7 @@ class ClientTests(Offline):
     def test_missing_pdf_link_does_not_request_anything(self):
         c = client.Client(Log())
         with patch.object(c, "fetch") as fetch:
-            self.assertIn("_error", c.pdf(None, need_sku=True, need_capacity=False))
+            self.assertEqual(c.pdf(None, need_sku=True, need_capacity=False)["_unavailable"], "own_pdf_link_missing")
         fetch.assert_not_called()
 
     def test_pdf_only_required_labels_and_stops_early(self):
@@ -473,7 +474,7 @@ class PipelineTests(Offline):
                 self.collect(source, 100)
 
     def test_comparison_exclusion_replenishes_target(self):
-        source = Source([[target(1), target(2), target(3)]], {"v1": {"Produkttyp": "Waschtrockner"}})
+        source = Source([[target(1, "Brand X900"), target(2), target(3)]], {"v1": {"Produkttyp": "Waschtrockner"}})
         rows, state = self.collect(source, 2)
         self.assertEqual([r["item"] for r in rows], ["2", "3"])
         self.assertFalse(any(c == ("rating", "1") for c in source.calls))
@@ -495,7 +496,7 @@ class PipelineTests(Offline):
         rows, _ = self.collect(source, 2)
         calls = [c for c in source.calls if c[0] == "pdf"]
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][2], dict(need_sku=True, need_capacity=False))
+        self.assertEqual(calls[0][2], dict(need_sku=True, need_capacity=False, need_loading=True))
         self.assertEqual(rows[1]["sku"], "PDF900")
 
     def test_end_to_end_artifacts_and_load_only_no_site(self):
@@ -625,8 +626,12 @@ class PipelineTests(Offline):
 
     def test_independent_runs_do_not_mix(self):
         with tempfile.TemporaryDirectory() as root, patch("sys.stdout", new=io.StringIO()):
-            states = [pipeline.execute(limit=1, output_root=root, client_factory=lambda e: Source([[target(1)]]),
-                                       database=MagicMock(return_value={"status": "loaded"}))[1] for _ in range(2)]
+            states = []
+            for day in (23, 24):
+                with patch.object(pipeline, "datetime", wraps=datetime) as clock:
+                    clock.now.return_value = datetime(2026, 10, day, 12, 34, 31)
+                    states.append(pipeline.execute(limit=1, output_root=root, client_factory=lambda e: Source([[target(1)]]),
+                                                   database=MagicMock(return_value={"status": "loaded"}))[1])
             self.assertNotEqual(states[0]["batch_id"], states[1]["batch_id"])
             self.assertNotEqual(states[0]["csv"], states[1]["csv"])
 
@@ -767,6 +772,250 @@ class DatabaseTests(Offline):
         conn.records[0] = tuple(values)
         repeat = storage.database(config.DEFAULT_TABLE, Log(), [row], connector=lambda: conn)
         self.assertEqual(repeat["duplicates"], 1)
+
+
+
+class RevisionTests(Offline):
+    def test_positive_savings_and_nulls(self):
+        for raw, expected in (("-43%", "43%"), ("−12,5 %", "12,5%"), ("43%", "43%"),
+                              (None, None), ("", None), ("bad", None), ("101%", None), ("0%", "0%")):
+            with self.subTest(raw=raw):
+                self.assertEqual(client.minimal_tile({"saleTags": {"discount": raw}})["savings"], expected)
+
+    def test_confirmed_dryers_survive_conflicting_description(self):
+        for name, description in (
+            ("Hanseatic Wärmepumpentrockner HWT8EGT", "Filter und Schlauch für einfache Reinigung"),
+            ("Hanseatic Wärmepumpentrockner HWT8DGT", "Ersatzfilter und Zubehör"),
+            ("Sharp Wärmepumpentrockner KD-NHH9S8GW3-DE", "Waschtrockner sind nicht dasselbe"),
+            ("LG Wärmepumpentrockner Vivace RT90V9W", "Filter einfach reinigen"),
+        ):
+            with self.subTest(name=name):
+                # Original excluded sentences were not captured. These reproduce the
+                # documented comparison:accessory/washer_dryer failure paths, not quotations.
+                accepted, reason = fields.classify(name, {"_name": description})
+                self.assertTrue(accepted)
+                self.assertTrue(reason.startswith("ambiguous"))
+                evidence = fields.classification_evidence(name, {"_name": description})
+                self.assertEqual(evidence[-1]["raw"], description)
+
+    def test_certain_non_dryers_and_conflicting_listing_titles(self):
+        for name in (
+            "DYSON Multihaarstyler Airwrap i.d. Multi-Haarstyler und - trockner",
+            "Furnicopia Dörrautomat Edelstahl Lebensmitteltrockner – 10 Tabletts",
+            "TREND WERK Waschmaschinenumbauschrank 66×64×184 cm für Waschmaschine & Trockner",
+            "Raumhirsch Furniture Waschmaschinenumbauschrank für zwei Geräte",
+            "ATEROLL Luftentfeuchter Elektrisch 20L",
+        ):
+            self.assertFalse(fields.classify(name)[0], name)
+        self.assertEqual(fields.classify("Filter für Trockner", selection_name="Wärmepumpentrockner DR900"),
+                         (True, "ambiguous_included_conflicting_product_types"))
+
+    def test_semantic_comparison_title_ignores_long_feature_and_wrong_option(self):
+        from bs4 import BeautifulSoup
+        from common import compare
+        feature = "Kombinierter Filtermechanismus schützt den Kondensator. " * 12
+        html = (f'<div data-variation-id="v1"><a href="/p/dryer-1/?variationId=v1">'
+                '<h3>BEKO Wärmepumpentrockner BMO3T382CW</h3><span class="product-subtitle">8 kg, Frontlader</span></a>'
+                f'<p>{feature}</p></div><div data-variation-id="v2"><a href="/p/dryer-2/?variationId=v2">'
+                '<h3>Trockner TWO123, 7 kg</h3></a></div>'
+                '<div data-variation-id="v1"><a href="/p/other/?variationId=v2">WRONG MODEL 99 kg</a></div>')
+        soup = BeautifulSoup(html, "lxml")
+        self.assertEqual(compare._names_from_html(soup, {"v1"})["v1"], fields.text(feature))
+        c = client.Client(Log())
+        with patch.object(c, "fetch", return_value=(html.encode(), {"status": 200})) as fetch:
+            values = c.comparison(["v1", "v2"])
+            c.comparison(["v1"])
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(values["v1"]["_name"], "BEKO Wärmepumpentrockner BMO3T382CW 8 kg, Frontlader")
+        selected = fields.choose(target(1, "BEKO Wärmepumpentrockner BMO3T382CW, 7 kg"), values["v1"])
+        self.assertEqual(selected["capacity"], "8 kg")
+        self.assertEqual(selected["loading_type"], "Front loader")
+        self.assertNotIn(feature.strip(), str(values))
+
+    def test_comparison_title_does_not_cross_fragment_option_or_external_product(self):
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup("""<div data-variation-id="v1">
+          <a href="/p/other/#variationId=v2">Wrong option DR999, 99 kg</a>
+          <a href="https://external.example/p/dryer/">External DR999, 99 kg</a>
+          <a href="/p/dryer/"><p>Long feature paragraph that is not a product title.</p></a>
+          <a href="/p/dryer/#variationId=v1"><h3><span class="product-title">Trockner DR900</span></h3></a>
+        </div>""", "lxml")
+        self.assertEqual(client.comparison_names(soup, {"v1"}), {"v1": "Trockner DR900"})
+
+    def test_comparison_without_semantic_title_leaves_name_empty(self):
+        body = b'<div data-variation-id="v1"><p>Filter explanation is much longer than a product title.</p></div>'
+        c = client.Client(Log())
+        with patch.object(c, "fetch", return_value=(body, {"status": 200})):
+            value = c.comparison(["v1"])["v1"]
+        self.assertNotIn("_name", value)
+        self.assertEqual(value["_title_reason"], "comparison_product_title_unavailable")
+
+    def test_model_fallback_series_split_and_preservation(self):
+        for name, model in (
+            ("Haier Wärmepumpentrockner G5 Serie HD80-C657U1", "HD80-C657U1"),
+            ("BOSCH Wärmepumpentrockner Serie 6 WQG235D00", "WQG235D00"),
+            ("BAUKNECHT Wärmepumpentrockner BT 97A WB", "BT 97A WB"),
+            ("BAUKNECHT Wärmepumpentrockner BTSV 87A WB", "BTSV 87A WB"),
+            ("Brand Trockner HGDS 8N1B-S", "HGDS 8N1B-S"),
+            ("Brand Trockner PT 840 DW", "PT 840 DW"),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(fields.choose(target(1, name), {})["sku"], model)
+                self.assertEqual(fields.choose(target(1, name), {"Modellbezeichnung": "VALID123"}, {"sku": "PDF123"})["sku"], "VALID123")
+                self.assertEqual(fields.choose(target(1, name), {}, {"sku": "PDF123"})["sku"], "PDF123")
+        for source in ({"Modellbezeichnung": "TSA523WP 8kg Active"},):
+            self.assertEqual(fields.choose(target(1), source)["sku"], "TSA523WP 8kg Active")
+        self.assertIsNone(fields.model_from_name("Trockner G5 Serie"))
+        self.assertIsNone(fields.model_from_name("Trockner DR900 DR901"))
+
+    def pdf_pages(self, texts, **needed):
+        pages = [MagicMock() for _ in texts]
+        for page, content in zip(pages, texts):
+            page.extract_text.return_value = content
+        document = MagicMock()
+        document.__enter__.return_value.pages = pages
+        with patch.dict(sys.modules, {"pdfplumber": types.SimpleNamespace(open=MagicMock(return_value=document))}):
+            result = client.parse_pdf(b"%PDF", **needed)
+        return result, pages
+
+    def test_pdf_loading_does_not_stop_after_model_capacity(self):
+        result, pages = self.pdf_pages([
+            "Modellkennung: KD-NHA7S6GW1D-DE\nNennkapazität (kg) 7",
+            "Ziehen Sie die Tür nach vorne und legen Sie die Wäsche ein.",
+            "Wäschetrockner - Frontlader", "must not be read"],
+            need_sku=True, need_capacity=True, need_loading=True)
+        self.assertEqual(result["loading_type"], "Front loader")
+        self.assertEqual(result["sku"], "KD-NHA7S6GW1D-DE")
+        self.assertEqual(result["capacity"], "7 kg")
+        pages[2].extract_text.assert_called_once()
+        pages[3].extract_text.assert_not_called()
+        self.assertEqual(fields.choose(target(1), {"Beladung": "Toplader"}, result)["loading_type"], "Top-loading")
+
+    def test_pdf_explicit_only_and_page_limit(self):
+        for content in ("Tür nach vorne ziehen", "freistehend Wärmepumpe", "Frontlader und Toplader", "",
+                        "Für Waschmaschine Frontlader geeignet", "Bauart: kein Frontlader", "Zubehör für Frontlader"):
+            result, pages = self.pdf_pages([content] * 3 + ["Frontlader"], need_sku=False, need_capacity=False, need_loading=True)
+            self.assertFalse(result.get("loading_type"))
+            self.assertIn("loading_type", result["_missing"])
+            pages[3].extract_text.assert_not_called()
+
+    def test_pdf_missing_only_loading_skips_model_and_capacity_extraction(self):
+        with patch.object(client.datasheet, "_sku") as sku, patch.object(client, "capacity") as cap:
+            result, pages = self.pdf_pages(["Bauart: Frontlader", "must not be read"],
+                                           need_sku=False, need_capacity=False, need_loading=True)
+        self.assertEqual(result["loading_type"], "Front loader")
+        sku.assert_not_called()
+        cap.assert_not_called()
+        pages[1].extract_text.assert_not_called()
+
+    def test_unconfirmed_pdf_raw_value_is_not_reinterpreted(self):
+        # A diagnostic excerpt is not a substitute for the validated PDF result.
+        self.assertIsNone(fields.choose(target(1), {}, {"loading_type_raw": "Frontlader", "loading_type": None})["loading_type"])
+
+    def test_real_pdf_adapter_fetches_once_for_all_requested_fields(self):
+        c = client.Client(Log())
+        parsed = {"sku": "PDF900", "loading_type": "Front loader", "loading_type_raw": "Frontlader"}
+        with patch.object(c, "fetch", return_value=(b"%PDF-1.7 mock", {})) as fetch, \
+                patch.object(client, "parse_pdf", return_value=parsed) as parse:
+            self.assertEqual(c.pdf("https://d.otto.de/files/own.pdf", need_sku=True, need_capacity=False, need_loading=True), parsed)
+        fetch.assert_called_once_with("https://d.otto.de/files/own.pdf", "product_pdf", kind="pdf")
+        parse.assert_called_once_with(b"%PDF-1.7 mock", need_sku=True, need_capacity=False, need_loading=True)
+
+    def test_pdf_request_and_parse_failures_are_distinct(self):
+        c = client.Client(Log())
+        with patch.object(c, "fetch", side_effect=client.RequestFailure("request_failed:product_pdf:TimeoutError")):
+            self.assertEqual(c.pdf("https://d.otto.de/own.pdf", need_sku=False, need_capacity=False, need_loading=True)["_error_kind"], "request")
+        with patch.object(c, "fetch", return_value=(b"%PDF-1.7", {})), patch.object(client, "parse_pdf", side_effect=ValueError("DO_NOT_LOG_RAW")):
+            result = c.pdf("https://d.otto.de/own.pdf", need_sku=False, need_capacity=False, need_loading=True)
+        self.assertEqual(result["_error_kind"], "extraction")
+        self.assertNotIn("DO_NOT_LOG_RAW", str(result))
+
+    def run_source(self, source, limit=1):
+        context = tempfile.TemporaryDirectory()
+        self.addCleanup(context.cleanup)
+        with patch("sys.stdout", new=io.StringIO()):
+            code, state = pipeline.execute(limit=limit, output_root=context.name, client_factory=lambda e: source,
+                                           database=MagicMock(return_value={"status": "loaded", "inserted": limit, "duplicates": 0}))
+        records = [json.loads(line) for line in Path(state["diagnostics"]).read_text(encoding="utf-8").splitlines()]
+        rows = storage.read_output(state["csv"])[0]
+        return code, state, records, rows
+
+    def test_pdf_one_request_for_all_missing_fields_and_no_extra_endpoints(self):
+        source = Source([[target(1)]], {"v1": {}})
+        source.pdf = MagicMock(return_value={"sku": "PDF900", "capacity": "9 kg", "loading_type_raw": "Frontlader", "loading_type": "Front loader"})
+        code, state, _, rows = self.run_source(source)
+        self.assertEqual(code, 0)
+        source.pdf.assert_called_once_with(None, need_sku=True, need_capacity=False, need_loading=True)
+        self.assertEqual(rows[0]["loading_type"], "Front loader")
+        self.assertEqual(state["counts"]["supplemented_items"], 1)
+
+    def test_missing_info_is_not_lost_row_or_request_failure(self):
+        source = Source([[target(1, "BOSCH Wärmepumpentrockner Serie 6 WQG235D00")]],
+                        {"v1": {"_unavailable": "comparison_option_missing"}})
+        source.tiles = MagicMock(return_value={"v1": {"final_sku_price": "499 €", "top_infos": {"Kapazität Trocknen": "8 kg"}}})
+        source.pdf = MagicMock(return_value={"sku": "WQG235D00", "_unavailable": "pdf_label_unconfirmed_in_first_3_pages", "_missing": ["loading_type"]})
+        code, state, events, rows = self.run_source(source)
+        self.assertEqual(code, 0)
+        self.assertEqual(state["counts"]["item_failures"], 0)
+        self.assertEqual(state["counts"]["incomplete_items"], 1)
+        self.assertEqual(state["counts"]["supplemented_items"], 1)
+        self.assertEqual((rows[0]["sku"], rows[0]["capacity"], rows[0]["loading_type"]), ("WQG235D00", "8 kg", ""))
+        outcome = next(e for e in events if e["event"] == "product_result")
+        self.assertTrue(outcome["row_saved"])
+        self.assertEqual(outcome["status"], "supplemented")
+
+    def test_request_error_is_preserved_after_other_sources_recover(self):
+        source = Source([[target(1)]], {"v1": {"_error": "request_failed:comparison:TimeoutError", "_error_kind": "request"}})
+        code, state, events, rows = self.run_source(source)
+        self.assertEqual(code, 2)
+        self.assertEqual(rows[0]["sku"], "PDF900")
+        self.assertEqual(state["counts"]["item_failures"], 0)
+        self.assertEqual(state["counts"]["request_error_items"], 1)
+        self.assertTrue(next(e for e in events if e["event"] == "product_result")["row_saved"])
+
+    def test_final_price_only_and_missing_savings_diagnostic(self):
+        for prices, expected in (({"final_sku_price": "400 €"}, 0),
+                                 ({"final_sku_price": "400 €", "original_sku_price": "600 €"}, 1)):
+            source = Source([[target(1)]])
+            source.tiles = MagicMock(return_value={"v1": prices})
+            code, state, events, rows = self.run_source(source)
+            self.assertEqual(state["counts"]["price_warning_items"], expected)
+            self.assertEqual(code, 2 if expected else 0)
+            self.assertEqual(rows[0]["savings"], "")
+
+    def test_batch_format_and_same_second_file_protection(self):
+        with tempfile.TemporaryDirectory() as root, patch("sys.stdout", new=io.StringIO()), patch.object(pipeline, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime(2026, 10, 23, 12, 34, 31)
+            db = MagicMock(return_value={"status": "loaded"})
+            _, state = pipeline.execute(limit=1, output_root=root, client_factory=lambda e: Source([[target(1)]]), database=db)
+            self.assertEqual(state["batch_id"], "o_dry_20261023_123431")
+            before = Path(state["csv"]).read_bytes()
+            with self.assertRaises(FileExistsError):
+                pipeline.execute(limit=1, output_root=root, database=db)
+            self.assertEqual(Path(state["csv"]).read_bytes(), before)
+            rows, _ = storage.read_output(state["csv"])
+            self.assertEqual(rows[0]["batch_id"], state["batch_id"])
+            for file in ("run.log", "diagnostics.jsonl"):
+                events = [json.loads(line) for line in Path(state["csv"]).with_name(file).read_text(encoding="utf-8").splitlines()]
+                self.assertTrue(all(e["batch_id"] == state["batch_id"] for e in events))
+
+    def test_legacy_csv_reload_keeps_original_batch(self):
+        with tempfile.TemporaryDirectory() as root, patch("sys.stdout", new=io.StringIO()):
+            db = FakeConnection()
+            database = lambda table, events, rows=None: storage.database(table, events, rows, connector=lambda: db)
+            legacy = "o_dry_20261023_123431_2caccf63"
+            row = DatabaseTests().row()
+            row["batch_id"] = legacy
+            state = dict(batch_id=legacy, target=1, collection_status="complete")
+            storage.checkpoint(Path(root), [row], state)
+            factory = MagicMock(side_effect=AssertionError("NO_RECRAWL"))
+            for _ in range(2):
+                code, result = pipeline.execute(load_only=Path(root) / "otto_dry.csv", client_factory=factory, database=database)
+                self.assertEqual(code, 0)
+                self.assertEqual(result["batch_id"], legacy)
+            self.assertEqual(result["database"]["duplicates"], 1)
+            self.assertEqual(result["database"]["inserted"], 0)
+            factory.assert_not_called()
 
 
 if __name__ == "__main__":

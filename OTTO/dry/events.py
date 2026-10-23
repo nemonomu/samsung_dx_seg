@@ -25,7 +25,7 @@ class Events:
             print(line, flush=True)
             self.log.write(line + "\n")
             self.log.flush()
-            if event in {"classification", "field", "rating", "failure", "schema", "summary"}:
+            if event in {"classification", "field", "rating", "failure", "schema", "summary", "product_result"}:
                 self.diagnostics.write(line + "\n")
                 self.diagnostics.flush()
 

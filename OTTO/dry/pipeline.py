@@ -7,13 +7,40 @@ from uuid import uuid4
 from dry import config, storage
 from dry.client import Client, RequestFailure
 from dry.events import Events
-from dry.fields import candidates, choose, classify, name_key, title_kind
+from dry.fields import candidates, choose, classify, name_key, classification_evidence
+
+
+def product_outcome(target, chars, pdf, rating, row):
+    issues = []
+    for source, payload in (("comparison", chars), ("product_pdf", pdf)):
+        if payload.get("_unavailable"):
+            issues.append(dict(source=source, kind="unavailable", reason=payload["_unavailable"],
+                               missing_fields=payload.get("_missing", [])))
+        if payload.get("_error"):
+            issues.append(dict(source=source, kind=payload.get("_error_kind", "extraction"), reason=payload["_error"]))
+    if rating["rating_state"] == "failed":
+        reason = rating.get("rating_reason") or "rating_unconfirmed"
+        issues.append(dict(source="rating", kind="request" if reason.startswith("request_failed:") else "extraction", reason=reason))
+    missing = [k for k in ("sku", "capacity", "loading_type", "final_sku_price", "star_rating", "count_of_reviews")
+               if row.get(k) in (None, "")]
+    price_warning = bool(row.get("final_sku_price") and row.get("original_sku_price") and not row.get("savings"))
+    if price_warning:
+        issues.append(dict(source="price", kind="warning", reason="prices_present_savings_missing"))
+    sources = {field: next((source for source, _, value in values if value), None)
+               for field, values in candidates(target, chars, pdf).items()}
+    supplemented = any(v == "product_pdf" for v in sources.values()) or sources["sku"] == "listing_title"
+    return dict(status="supplemented" if supplemented else "collected", missing_fields=missing, issues=issues,
+                supplemented_items=supplemented, incomplete_items=bool(missing),
+                request_error_items=any(i["kind"] == "request" for i in issues),
+                extraction_error_items=any(i["kind"] == "extraction" for i in issues), price_warning_items=price_warning)
 
 
 def collect(client, events, state, save):
     rows, names, fingerprints = [], set(), set()
     stats = state["counts"] = dict(reviewed=0, excluded=0, duplicates=0, ambiguous=0,
-                                   item_failures=0, eligible=0, tile_http_400_failures=0)
+                                   item_failures=0, eligible=0, tile_http_400_failures=0,
+                                   supplemented_items=0, incomplete_items=0, request_error_items=0,
+                                   extraction_error_items=0, price_warning_items=0)
     offset, page = 0, 1
     limit = state["target"]
     started = time.monotonic()
@@ -45,21 +72,22 @@ def collect(client, events, state, save):
                     tile = tiles.get(target["variation_id"])
                     if tile is None:
                         stats["item_failures"] += 1
-                        events.emit("failure", item=target["product_id"], reason="tile_missing",
+                        events.emit("failure", item=target["product_id"], reason="tile_missing", row_saved=False,
                                     product_url=target.get("product_url"))
                         continue
                     target.update({k: v for k, v in tile.items() if v not in (None, "")})
                     if not target.get("product_url") or not target.get("retailer_sku_name"):
                         stats["item_failures"] += 1
-                        events.emit("failure", item=target["product_id"], reason="required_identity_missing")
+                        events.emit("failure", item=target["product_id"], reason="required_identity_missing", row_saved=False)
                         continue
-                    decision, reason = title_kind(original_name)
-                    if decision != "exclude":
-                        decision, reason = title_kind(target["retailer_sku_name"])
-                    if decision == "exclude":
+                    accepted, reason = classify(target["retailer_sku_name"], infos=target.get("top_infos"),
+                                                selection_name=original_name)
+                    if not accepted:
                         stats["excluded"] += 1
                         events.emit("classification", item=target["product_id"], name=target["retailer_sku_name"],
-                                    product_url=target["product_url"], accepted=False, reason=reason)
+                                    product_url=target["product_url"], accepted=False, reason=reason,
+                                    evidence=classification_evidence(target["retailer_sku_name"], infos=target.get("top_infos"),
+                                                                     selection_name=original_name))
                     elif name_key(target["retailer_sku_name"]) in names:
                         stats["duplicates"] += 1
                         events.emit("classification", item=target["product_id"], accepted=False, reason="duplicate_name")
@@ -74,10 +102,12 @@ def collect(client, events, state, save):
                                 percent=round(len(rows)/limit*100, 1), remaining=limit-len(rows),
                                 item=target["product_id"], name=target["retailer_sku_name"], product_url=target["product_url"])
                     chars = chars_by_id.get(target["variation_id"], {})
-                    accepted, reason = classify(target["retailer_sku_name"], chars, target.get("top_infos"))
+                    accepted, reason = classify(target["retailer_sku_name"], chars, target.get("top_infos"), target.get("selection_name"))
                     events.emit("classification", item=target["product_id"], name=target["retailer_sku_name"],
                                 product_url=target["product_url"], accepted=accepted, reason=reason,
-                                needs_review=reason.startswith("ambiguous"))
+                                needs_review=reason.startswith("ambiguous"),
+                                evidence=classification_evidence(target["retailer_sku_name"], chars, target.get("top_infos"),
+                                                                 target.get("selection_name")) if not accepted or reason.startswith("ambiguous") else [])
                     stats["ambiguous"] += int(reason.startswith("ambiguous"))
                     if not accepted:
                         stats["excluded"] += 1
@@ -90,17 +120,13 @@ def collect(client, events, state, save):
                     options = candidates(target, chars)
                     need_sku = not options["sku"][0][2]  # PDF precedes name fallback
                     need_capacity = not any(v for _, _, v in options["capacity"])
-                    if need_sku or need_capacity:
+                    need_loading = not any(v for _, _, v in options["loading_type"])
+                    if need_sku or need_capacity or need_loading:
                         events.emit("pdf_fallback", item=target["product_id"], variation_id=target["variation_id"],
-                                    need_sku=need_sku, need_capacity=need_capacity, own_link_available=bool(target.get("pdf_uri")))
-                    pdf = client.pdf(target.get("pdf_uri"), need_sku=need_sku, need_capacity=need_capacity) if need_sku or need_capacity else {}
+                                    need_sku=need_sku, need_capacity=need_capacity, need_loading=need_loading, own_link_available=bool(target.get("pdf_uri")))
+                    pdf = client.pdf(target.get("pdf_uri"), need_sku=need_sku, need_capacity=need_capacity, need_loading=need_loading) if need_sku or need_capacity or need_loading else {}
                     selected = choose(target, chars, pdf, events)
                     rating = client.rating(target["product_id"])
-                    problems = [p for p in (chars.get("_error"), pdf.get("_error"),
-                                            rating.get("rating_reason") if rating["rating_state"] == "failed" else None) if p]
-                    if problems:
-                        stats["item_failures"] += 1
-                        events.emit("failure", item=target["product_id"], stage="product", reasons=problems)
                     row = dict.fromkeys(config.COLUMNS)
                     row.update(country=config.COUNTRY, account_name=config.ACCOUNT_NAME,
                                item=target["product_id"], retailer_sku_name=target["retailer_sku_name"],
@@ -110,11 +136,17 @@ def collect(client, events, state, save):
                                crawl_datetime=state["crawl_datetime"], batch_id=state["batch_id"], **selected)
                     for field in ("final_sku_price", "original_sku_price", "savings"):
                         row[field] = target.get(field)
+                    outcome = product_outcome(target, chars, pdf, rating, row)
+                    for counter in ("supplemented_items", "incomplete_items", "request_error_items",
+                                    "extraction_error_items", "price_warning_items"):
+                        stats[counter] += int(outcome[counter])
                     rows.append(row)
                     names.add(key)
                     stats["eligible"] = len(rows)
                     with events.stage("CSV 저장"):
                         save(rows)
+                    events.emit("product_result", item=target["product_id"], row_saved=True,
+                                comparison_title_reason=chars.get("_title_reason"), **outcome)
                     elapsed = time.monotonic() - started
                     average = elapsed / len(rows)
                     events.emit("product_end", number=len(rows), target=limit, percent=round(len(rows)/limit*100, 1),
@@ -149,7 +181,7 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
                      collection_status=original["collection_status"], target=original["target"], output_rows=len(rows))
     else:
         now = datetime.now()
-        batch_id = "o_dry_" + now.strftime("%Y%m%d_%H%M%S_") + uuid4().hex[:8]
+        batch_id = "o_dry_" + now.strftime("%Y%m%d_%H%M%S")
         directory = Path(output_root).resolve() / batch_id
         rows = []
         state = dict(batch_id=batch_id, mode="collect", target=limit, collection_status="not_started",
@@ -182,7 +214,8 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
             state["db_status"] = state["database"]["status"]
         else:
             state["db_status"] = "skipped_empty"
-        if state["collection_status"] == "shortfall" or state.get("counts", {}).get("item_failures"):
+        if state["collection_status"] == "shortfall" or any(state.get("counts", {}).get(k) for k in
+                ("item_failures", "request_error_items", "extraction_error_items", "price_warning_items")):
             code = 2
     except (Exception, KeyboardInterrupt) as exc:
         reason = str(exc) if isinstance(exc, config.DryError) else type(exc).__name__
