@@ -132,7 +132,8 @@ def collect(client, events, state, save):
                                item=target["product_id"], retailer_sku_name=target["retailer_sku_name"],
                                product_url=target["product_url"], count_of_reviews=rating["rating_count"],
                                count_of_star_ratings=rating["rating_count"], star_rating=rating["average_rating"],
-                               main_rank=number, bsr_rank=number, calendar_week=state["calendar_week"],
+                               main_rank=number, bsr_rank=number if number <= config.BSR_LIMIT else None,
+                               calendar_week=state["calendar_week"],
                                crawl_datetime=state["crawl_datetime"], batch_id=state["batch_id"], **selected)
                     for field in ("final_sku_price", "original_sku_price", "savings"):
                         row[field] = target.get(field)
@@ -153,6 +154,9 @@ def collect(client, events, state, save):
                                 remaining=limit-len(rows), item_seconds=round(time.monotonic()-item_started, 2),
                                 average_seconds=round(average, 2), estimated_remaining_seconds=round(average*(limit-len(rows)), 2))
             events.emit("listing_progress", page=page, **stats, remaining=limit-len(rows))
+        if len(rows) == limit:
+            state["end_reason"] = "target_reached"
+            break
         if end:
             state["end_reason"] = "actual_search_end"
             break
@@ -162,7 +166,8 @@ def collect(client, events, state, save):
         page += 1
     if not rows and stats["item_failures"]:
         raise RequestFailure("no_rows_collected_with_item_failures")
-    state["collection_status"] = "complete" if len(rows) == limit else "shortfall"
+    state["collection_status"] = "complete"
+    # Retain the existing informational field; actual search exhaustion is not an error.
     state["shortfall_reason"] = None if len(rows) == limit else {
         "reason": "actual_search_end_after_filtering", "missing": limit-len(rows), **stats}
     return rows
@@ -173,12 +178,16 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
     storage.table_parts(table)
     if limit <= 0:
         raise config.DryError("limit_must_be_positive")
+    if limit > config.MAX_LIMIT:
+        raise config.DryError(f"limit_exceeds_maximum:{config.MAX_LIMIT}")
     if load_only:
         rows, original = storage.read_output(load_only)
         batch_id = original["batch_id"]
         directory = Path(load_only).resolve().parent / ("reload_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid4().hex[:6])
         state = dict(batch_id=batch_id, mode="load_only", source_csv=str(Path(load_only).resolve()),
                      collection_status=original["collection_status"], target=original["target"], output_rows=len(rows))
+        # Preserve original item errors when an old shortfall or completed batch is reloaded.
+        state.update({key: original[key] for key in ("counts", "end_reason", "shortfall_reason") if key in original})
     else:
         now = datetime.now()
         batch_id = "o_dry_" + now.strftime("%Y%m%d_%H%M%S")
@@ -188,10 +197,11 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
                      crawl_datetime=now.strftime("%Y-%m-%d %H:%M:%S"), calendar_week="w" + str(now.isocalendar().week))
     directory.mkdir(parents=True, exist_ok=False)
     events = Events(directory, batch_id)
-    state.update(table=table, db_status="not_started", started_at=datetime.now().astimezone().isoformat(timespec="seconds"))
+    state.update(table=table, bsr_limit=config.BSR_LIMIT, db_status="not_started",
+                 started_at=datetime.now().astimezone().isoformat(timespec="seconds"))
     code = 0
     phase = "database"
-    events.emit("start", target=state["target"], table=table, log=str(directory / "run.log"),
+    events.emit("start", target=state["target"], bsr_limit=config.BSR_LIMIT, table=table, log=str(directory / "run.log"),
                 mode=state["mode"], estimated_remaining_seconds=None)
     try:
         storage.atomic_json(directory / "state.json", state)
@@ -214,7 +224,7 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
             state["db_status"] = state["database"]["status"]
         else:
             state["db_status"] = "skipped_empty"
-        if state["collection_status"] == "shortfall" or any(state.get("counts", {}).get(k) for k in
+        if any(state.get("counts", {}).get(k) for k in
                 ("item_failures", "request_error_items", "extraction_error_items", "price_warning_items")):
             code = 2
     except (Exception, KeyboardInterrupt) as exc:

@@ -1,4 +1,4 @@
-"""Usage: python OTTO/dry/run.py [--limit 100] [--load-only path/to/otto_dry.csv]."""
+"""Usage: python OTTO/dry/run.py [--limit 300] [--load-only path/to/otto_dry.csv]."""
 import argparse
 import os
 import sys

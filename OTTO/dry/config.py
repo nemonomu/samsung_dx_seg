@@ -4,7 +4,9 @@ from pathlib import Path
 from common.io_util import COUNTRY, RETAILER
 
 ACCOUNT_NAME = RETAILER
-DEFAULT_LIMIT = 100
+MAX_LIMIT = 300
+DEFAULT_LIMIT = MAX_LIMIT
+BSR_LIMIT = 100
 PDF_PARSE_TIMEOUT = 30
 PDF_MAX_ATTEMPTS = 3
 DEFAULT_TABLE = "dx_seg.dx_seg_ldy_dryer_retail_test"
@@ -19,7 +21,7 @@ COLUMNS = (
 )
 OPTIONAL_COLUMNS = {
     "sku", "count_of_reviews", "star_rating", "count_of_star_ratings",
-    "final_sku_price", "original_sku_price", "savings", "loading_type", "capacity",
+    "final_sku_price", "original_sku_price", "savings", "loading_type", "capacity", "bsr_rank",
 }
 CAPACITY_LABELS = (
     "Füllmenge Baumwolle (Trocknen)", "Nennkapazität (Trocknen)",

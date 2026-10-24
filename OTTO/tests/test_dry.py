@@ -152,6 +152,36 @@ class ClassificationTests(Offline):
         self.assertEqual(fields.choose(t, c)["capacity"], "6 kg")
         self.assertEqual(fields.choose(t, {}, {"capacity": "5 kg"})["capacity"], "5 kg")
 
+    def test_capacity_search_title_fallback_priority_and_diagnostics(self):
+        t = target(1, "Brand Ablufttrockner DR900")
+        t["selection_name"] = "Brand Ablufttrockner DR900, 830W 3kg"
+        log = Log()
+        self.assertEqual(fields.choose(t, {}, events=log)["capacity"], "3 kg")
+        event = next(v for e, v in log.records if v["field"] == "capacity")
+        self.assertEqual(event["source"], "search_title")
+        self.assertEqual(next(c["raw"] for c in event["candidates"] if c["source"] == "search_title"), t["selection_name"])
+        # Existing title precedence stays intact; titles precede specification/PDF.
+        t["top_infos"] = {"Nennkapazität": "7 kg"}
+        c = {"Nennkapazität": "6 kg"}
+        log = Log()
+        self.assertEqual(fields.choose(t, c, {"capacity": "5 kg"}, log)["capacity"], "3 kg")
+        self.assertTrue(next(v for e, v in log.records if v["field"] == "capacity")["conflict"])
+        t["retailer_sku_name"] += ", 8 kg"
+        self.assertEqual(fields.choose(t, c)["capacity"], "8 kg")
+        c["_name"] = "Brand Ablufttrockner DR900, 9 kg"
+        self.assertEqual(fields.choose(t, c)["capacity"], "9 kg")
+
+    def test_capacity_search_title_rejects_weight_and_uncertain_values(self):
+        t = target(1, "Brand Ablufttrockner DR900")
+        for title in ("Brand Ablufttrockner DR900, Produktgewicht 50 kg",
+                      "Brand Ablufttrockner DR900, 50 kg Produktgewicht",
+                      "Brand Ablufttrockner DR900, Waschkapazität 8 kg",
+                      "Brand Ablufttrockner DR900, 8 kg / 9 kg", "Brand Ablufttrockner DR900"):
+            with self.subTest(title=title):
+                t["selection_name"] = title
+                self.assertIsNone(fields.choose(t, {})["capacity"])
+                self.assertEqual(fields.choose(t, {"Nennkapazität": "6 kg"})["capacity"], "6 kg")
+
     def test_capacity_units_weight_and_wash_labels(self):
         self.assertEqual(fields.capacity("9,0 kg"), "9 kg")
         self.assertIsNone(fields.capacity("Produktgewicht 50 kg"))
@@ -461,11 +491,40 @@ class PipelineTests(Offline):
         self.assertEqual(len([c for c in source.calls if c[0] == "rating"]), 100)
         self.assertFalse(any(c[0] == "pdf" for c in source.calls))
 
-    def test_fewer_than_target_is_shortfall_and_more_than_six_pages(self):
+    def test_search_title_survives_tile_shortening_and_avoids_capacity_pdf(self):
+        for model_available in (True, False):
+            with self.subTest(model_available=model_available):
+                t = target(1, "Brand Ablufttrockner DR900, 830W 3kg")
+                c = {"Beladung": "Frontlader"}
+                if model_available:
+                    c["Modellbezeichnung"] = "DR900"
+                source = Source([[t]], {"v1": c})
+                original_tiles = source.tiles
+                def shortened(ids):
+                    tiles = original_tiles(ids)
+                    tiles["v1"]["retailer_sku_name"] = "Brand Ablufttrockner DR900"
+                    return tiles
+                source.tiles = shortened
+                rows, state = self.collect(source, 1)
+                self.assertEqual(rows[0]["capacity"], "3 kg")
+                self.assertEqual(rows[0]["retailer_sku_name"], "Brand Ablufttrockner DR900")
+                self.assertEqual(rows[0]["main_rank"], 1)
+                self.assertEqual(rows[0]["bsr_rank"], 1)
+                self.assertEqual(tuple(rows[0]), config.COLUMNS)
+                self.assertEqual(state["collection_status"], "complete")
+                pdf_calls = [call for call in source.calls if call[0] == "pdf"]
+                self.assertEqual(len(pdf_calls), 0 if model_available else 1)
+                if pdf_calls:
+                    self.assertEqual(pdf_calls[0][2], dict(need_sku=True, need_capacity=False, need_loading=False))
+                self.assertEqual(sum(call[0] == "comparison" for call in source.calls), 1)
+                self.assertEqual(sum(call[0] == "rating" for call in source.calls), 1)
+
+    def test_actual_end_completes_below_target_and_more_than_six_pages(self):
         source = Source([[target(i)] for i in range(1, 9)])
         rows, state = self.collect(source, 100)
         self.assertEqual(len(rows), 8)
-        self.assertEqual(state["collection_status"], "shortfall")
+        self.assertEqual(state["collection_status"], "complete")
+        self.assertEqual(state["end_reason"], "actual_search_end")
         self.assertEqual(state["shortfall_reason"]["missing"], 92)
 
     def test_failure_not_shortfall_and_repeated_page_aborts(self):
@@ -615,11 +674,13 @@ class PipelineTests(Offline):
             self.assertEqual(state["collection_status"], "not_started")
             factory.assert_not_called()
 
-    def test_shortfall_is_saved_loaded_and_reported(self):
+    def test_actual_end_below_target_is_saved_loaded_and_reported(self):
         with tempfile.TemporaryDirectory() as root, patch("sys.stdout", new=io.StringIO()):
             db = MagicMock(return_value={"status": "loaded", "inserted": 1, "duplicates": 0})
             code, state = pipeline.execute(limit=100, output_root=root, client_factory=lambda e: Source([[target(1)]]), database=db)
-            self.assertEqual(code, 2)
+            self.assertEqual(code, 0)
+            self.assertEqual(state["collection_status"], "complete")
+            self.assertEqual(state["end_reason"], "actual_search_end")
             self.assertEqual(state["shortfall_reason"]["missing"], 99)
             self.assertEqual(len(storage.read_output(state["csv"])[0]), 1)
             self.assertEqual(len(db.call_args.args[2]), 1)

@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from dry.config import ACCOUNT_NAME, COUNTRY, COLUMNS, OPTIONAL_COLUMNS, DryError
+from dry.config import ACCOUNT_NAME, COUNTRY, COLUMNS, OPTIONAL_COLUMNS, MAX_LIMIT, BSR_LIMIT, DryError
 from dry.fields import name_key
 
 
@@ -45,12 +45,13 @@ def read_output(path):
     if tuple(reader.fieldnames or ()) != COLUMNS:
         raise DryError("output_column_order_invalid")
     rows = list(reader)
-    if not rows or len(rows) != state.get("output_rows"):
+    if not rows or len(rows) != state.get("output_rows") or len(rows) > MAX_LIMIT:
         raise DryError("output_row_count_invalid")
     names = set()
     for rank, row in enumerate(rows, 1):
+        expected_bsr = str(rank) if rank <= BSR_LIMIT else ""
         if (row.get("id") or row.get("batch_id") != state.get("batch_id")
-                or row.get("main_rank") != str(rank) or row.get("bsr_rank") != str(rank)
+                or row.get("main_rank") != str(rank) or row.get("bsr_rank") != expected_bsr
                 or row.get("country") != COUNTRY or row.get("account_name") != ACCOUNT_NAME
                 or not row.get("item") or not row.get("product_url")
                 or row.get("count_of_reviews") != row.get("count_of_star_ratings")):

@@ -312,7 +312,8 @@ def candidates(target, chars, pdf=None):
     pdf = pdf or {}
     infos = target.get("top_infos") or {}
     caps = [("comparison_title", chars.get("_name"), False),
-            ("listing_title", target.get("retailer_sku_name"), False)]
+            ("listing_title", target.get("retailer_sku_name"), False),
+            ("search_title", target.get("selection_name"), False)]
     caps += [("listing_spec:" + k, v, True) for k, v in infos.items() if capacity_label(k)]
     caps += [("comparison_spec:" + k, chars[k], True) for k in CAPACITY_LABELS if chars.get(k)]
     caps += [("product_pdf", pdf.get("capacity_raw") or pdf.get("capacity"), True)]
