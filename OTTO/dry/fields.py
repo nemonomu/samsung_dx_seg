@@ -19,7 +19,7 @@ SPECIFIC_DRYER = re.compile(r"\b(?:wärme[- ]?pumpen|waerme[- ]?pumpen|kondens(?
 WASHER = re.compile(r"\bwasch(?:maschine[n]?|vollautomat(?:en)?)\b", re.I)
 EXCLUDED = (
     (r"\bwasch[- ]?trockner\b", "washer_dryer"),
-    (r"\b(?:mini[- ]?|reise[- ]?|camping[- ]?)(?:wäsche)?trockner\b|\b(?:tragbar\w*|portabel\w*|portable|mobil(?:e[rsmn]?)?)\b", "portable"),
+    (r"\b(?:mini[- ]?|reise[- ]?|camping[- ]?)(?:wäsche)?trockner\b", "portable"),
     (r"\b(?:haartrockner|haarföhn|föhn|foehn|multi[- ]?haarstyler|haarstyler)\b", "hair_dryer"),
     (r"\b(?:dörrautomat|doerrautomat|lebensmitteltrockner|obsttrockner)\b", "food_dehydrator"),
     (r"\b(?:luftentfeuchter|bautrockner)\b", "dehumidifier"),
@@ -29,11 +29,48 @@ EXCLUDED = (
     (r"\b(?:dampfschrank|kleiderpflegeschrank|kleiderschrank|dampfglätter|kleiderdampfer|styler|airdresser)\b", "garment_care"),
     (r"\b\w*(?:untergestell|unterschrank|sockel|zwischenbaurahmen|verbindungsrahmen|stapelrahmen|trocknerbälle|trocknerball|ersatzteil|ersatzfilter|flusensieb|türgriff|schlauch|abdeckung|antivibrationsmatte|zubehör)\w*\b|\b(?:filter|gestell|rahmen|reiniger|matte|ersatz|halterung|ständer|halter)\b", "accessory"),
 )
+_PORTABLE_WORD = r"(?:tragbar\w*|portabel\w*|portabl\w*|mobil(?:e[rsmn]?)?)"
+
+
+def portable_appliance(value):
+    """Bind a portable adjective to the appliance, not any other noun in its title."""
+    for dryer in DRYER.finditer(value):
+        # Adjectives immediately modifying the appliance; no arbitrary noun gap.
+        before = re.search(r"\b" + _PORTABLE_WORD
+                           + r"(?:\s+(?:elektrisch\w*|kompakt\w*|klein\w*))*[- ]+$",
+                           value[:dryer.start()], re.I)
+        if before and not re.search(r"\b(?:nicht|kein\w*)\s*$", value[:before.start()], re.I):
+            return True
+        # Postposed property: 'Trockner DR900, portabel'. An ensuing noun such as
+        # 'Fernsteuerung' or 'App' instead makes the adjective describe that noun.
+        after = re.match(r"\s*(?:(?=[A-Z0-9/_.+-]*\d)[A-Z0-9/_.+-]+\s*)?[,;: -]*"
+                         + r"(?:ist\s+)?" + _PORTABLE_WORD + r"\b\s*(?=$|[,;])",
+                         value[dryer.end():], re.I)
+        if after:
+            return True
+    return False
+
+
+def explicit_product_exclusion(value):
+    # Inspect the sold product phrase before feature/compatibility clauses. Keep
+    # 'für' here: it is part of the actual type 'Lüfter für Wäscheständer'.
+    head = re.split(r"\b(?:mit|inklusive|inkl\.|passend|geeignet|kompatibel|ohne|per|via)\b",
+                    value, maxsplit=1, flags=re.I)[0]
+    fan = re.search(r"\b(?:lüfter|luefter|ventilator|gebläse|geblaese)\s+(?:für|fuer)\s+(?:den\s+|einen\s+)?(?:wäscheständer|waeschestaender)\b", head, re.I)
+    if fan and not re.search(r"\b(?:nicht|kein\w*)\s*$", head[:fan.start()], re.I):
+        return "explicit_drying_rack_fan"
+    head = re.split(r"\bfür\b", head, maxsplit=1, flags=re.I)[0]
+    if portable_appliance(head) or (DRYER.search(head) and re.search(EXCLUDED[1][0], head, re.I)):
+        return "explicit_portable_dryer"
+    return None
 
 
 def title_kind(value):
     """Exclude explicit product types/compositions; keep uncertain search results."""
     value = text(value)
+    explicit = explicit_product_exclusion(value)
+    if explicit:
+        return "exclude", explicit
     # Feature/compatibility text is not a list of products being sold.
     head = re.split(r"\b(?:für|passend für|geeignet für|kompatibel mit|mit|inklusive|inkl\.|per|via)\b", value, maxsplit=1, flags=re.I)[0]
     dryer, washer = DRYER.search(head), WASHER.search(head)
@@ -54,10 +91,6 @@ def title_kind(value):
     if dryer:
         if re.match(r"[- ](?:untergestell|abdeckung|ersatzfilter|ersatzteil|filter|schlauch|rahmen|sockel|zubehör)\b", head[dryer.end():], re.I):
             return "exclude", "dryer_accessory_compound"
-        # A portable appliance is excluded; mobile app/control is a feature.
-        property_text = re.sub(r"\bmobil\w*\s+(?:App|Steuerung|Bedienung)\b", "", head, flags=re.I)
-        if re.search(EXCLUDED[1][0], property_text, re.I):
-            return "exclude", "portable"
         return "include", "standalone_dryer_title"
     return "ambiguous", "product_type_unconfirmed"
 
@@ -85,6 +118,12 @@ def classification_evidence(name, chars=None, infos=None, selection_name=None):
 def classify(name, chars=None, infos=None, selection_name=None):
     chars, infos = chars or {}, infos or {}
     evidence = classification_evidence(name, chars, infos, selection_name)
+    # An explicit sold type in a title beats a generic 'Wäschetrockner' label.
+    explicit = next((e for e in evidence if e["source"] in
+                     {"listing_title", "search_title", "comparison_title"}
+                     and e["reason"] in {"explicit_portable_dryer", "explicit_drying_rack_fan"}), None)
+    if explicit:
+        return False, explicit["source"] + ":" + explicit["reason"]
     # Explicit sold composition is stronger than a title mentioning only one component.
     bundle = next((e for e in evidence if e["source"].endswith("Set-Bestandteile")
                    and e["decision"] == "exclude"), None)
@@ -147,6 +186,16 @@ def loading(raw):
     return ("Front loader" if front else "Top-loading") if front != top else None
 
 
+def valid_sku(raw):
+    value = clean_model(text(raw))
+    return value if value and len(value) > 3 else None
+
+
+def sku_rejection(raw):
+    value = clean_model(text(raw))
+    return "sku_too_short" if value and len(value) <= 3 else "no_valid_model"
+
+
 def model_from_name(name):
     value = text(name)
     dryer = DRYER.search(value)
@@ -199,9 +248,9 @@ def candidates(target, chars, pdf=None):
     # Only actually supplied dryer categories. Never query washer categories or infer front.
     loads += [("dryer_category:" + k, chars.get(k) or infos.get(k)) for k in CATEGORY_LABELS
               if DRYER.search(text(chars.get(k) or infos.get(k)))]
-    models = [("comparison_model", chars.get("Modellbezeichnung"), clean_model(chars.get("Modellbezeichnung"))),
-              ("product_pdf", pdf.get("sku_raw") or pdf.get("sku"), clean_model(pdf.get("sku"))),
-              ("listing_title", target.get("retailer_sku_name"), model_from_name(target.get("retailer_sku_name")))]
+    models = [("comparison_model", chars.get("Modellbezeichnung"), valid_sku(chars.get("Modellbezeichnung"))),
+              ("product_pdf", pdf.get("sku_raw") or pdf.get("sku"), valid_sku(pdf.get("sku"))),
+              ("listing_title", target.get("retailer_sku_name"), valid_sku(model_from_name(target.get("retailer_sku_name"))))]
     return {
         "sku": models,
         "capacity": [(source, raw, capacity(raw, labelled=labelled)) for source, raw, labelled in caps],
@@ -219,6 +268,8 @@ def choose(target, chars, pdf=None, events=None):
             events.emit("field", item=target["product_id"], variation_id=target["variation_id"], field=field,
                         selected=result[field], source=winner[0] if winner else None,
                         reason=None if winner else "no_valid_value_in_available_sources",
-                        candidates=[dict(source=s, raw=r, normalized=v) for s, r, v in choices if r],
+                        candidates=[dict(source=s, raw=r, normalized=v, **(
+                            {"reason": sku_rejection(model_from_name(r) if s == "listing_title" else r)}
+                            if field == "sku" and not v else {})) for s, r, v in choices if r],
                         conflict=bool(winner and any(v and v != winner[2] for _, _, v in choices)))
     return result

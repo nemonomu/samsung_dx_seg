@@ -44,7 +44,7 @@ def target(number, name=None, pid=None):
 
 
 def chars(number):
-    return {"Modellbezeichnung": "DR" + str(number), "_name": f"Brand Wärmepumpentrockner DR{number}, 9 kg, Frontlader"}
+    return {"Modellbezeichnung": "DR" + str(number).zfill(4), "_name": f"Brand Wärmepumpentrockner DR{number}, 9 kg, Frontlader"}
 
 
 def rating_document(mean="4,3", count="123", font="future-font"):
@@ -891,13 +891,12 @@ class RevisionTests(Offline):
         pages[3].extract_text.assert_not_called()
         self.assertEqual(fields.choose(target(1), {"Beladung": "Toplader"}, result)["loading_type"], "Top-loading")
 
-    def test_pdf_explicit_only_and_page_limit(self):
+    def test_pdf_explicit_only_and_fourth_page(self):
         for content in ("Tür nach vorne ziehen", "freistehend Wärmepumpe", "Frontlader und Toplader", "",
                         "Für Waschmaschine Frontlader geeignet", "Bauart: kein Frontlader", "Zubehör für Frontlader"):
             result, pages = self.pdf_pages([content] * 3 + ["Frontlader"], need_sku=False, need_capacity=False, need_loading=True)
-            self.assertFalse(result.get("loading_type"))
-            self.assertIn("loading_type", result["_missing"])
-            pages[3].extract_text.assert_not_called()
+            self.assertEqual(result.get("loading_type"), "Front loader")
+            pages[3].extract_text.assert_called_once()
 
     def test_pdf_missing_only_loading_skips_model_and_capacity_extraction(self):
         with patch.object(client.datasheet, "_sku") as sku, patch.object(client, "capacity") as cap:
@@ -912,20 +911,19 @@ class RevisionTests(Offline):
         # A diagnostic excerpt is not a substitute for the validated PDF result.
         self.assertIsNone(fields.choose(target(1), {}, {"loading_type_raw": "Frontlader", "loading_type": None})["loading_type"])
 
-    def test_real_pdf_adapter_fetches_once_for_all_requested_fields(self):
+    def test_pdf_adapter_one_attempt_for_all_requested_fields(self):
         c = client.Client(Log())
         parsed = {"sku": "PDF900", "loading_type": "Front loader", "loading_type_raw": "Frontlader"}
-        with patch.object(c, "fetch", return_value=(b"%PDF-1.7 mock", {})) as fetch, \
-                patch.object(client, "parse_pdf", return_value=parsed) as parse:
+        with patch.object(client, "pdf_attempt", return_value=(parsed, b"%PDF mock")) as attempt:
             self.assertEqual(c.pdf("https://d.otto.de/files/own.pdf", need_sku=True, need_capacity=False, need_loading=True), parsed)
-        fetch.assert_called_once_with("https://d.otto.de/files/own.pdf", "product_pdf", kind="pdf")
-        parse.assert_called_once_with(b"%PDF-1.7 mock", need_sku=True, need_capacity=False, need_loading=True)
+        attempt.assert_called_once()
+        self.assertEqual(attempt.call_args.args[2], dict(sku=True, capacity=False, loading_type=True))
 
     def test_pdf_request_and_parse_failures_are_distinct(self):
         c = client.Client(Log())
-        with patch.object(c, "fetch", side_effect=client.RequestFailure("request_failed:product_pdf:TimeoutError")):
+        with patch.object(client, "pdf_attempt", return_value=({"_error": "pdf_request_timeout", "_error_kind": "request"}, None)):
             self.assertEqual(c.pdf("https://d.otto.de/own.pdf", need_sku=False, need_capacity=False, need_loading=True)["_error_kind"], "request")
-        with patch.object(c, "fetch", return_value=(b"%PDF-1.7", {})), patch.object(client, "parse_pdf", side_effect=ValueError("DO_NOT_LOG_RAW")):
+        with patch.object(client, "pdf_attempt", return_value=({"_error": "pdf_open:ValueError", "_error_kind": "extraction"}, None)):
             result = c.pdf("https://d.otto.de/own.pdf", need_sku=False, need_capacity=False, need_loading=True)
         self.assertEqual(result["_error_kind"], "extraction")
         self.assertNotIn("DO_NOT_LOG_RAW", str(result))

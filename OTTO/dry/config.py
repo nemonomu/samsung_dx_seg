@@ -5,6 +5,8 @@ from common.io_util import COUNTRY, RETAILER
 
 ACCOUNT_NAME = RETAILER
 DEFAULT_LIMIT = 100
+PDF_PARSE_TIMEOUT = 30
+PDF_MAX_ATTEMPTS = 3
 DEFAULT_TABLE = "dx_seg.dx_seg_ldy_dryer_retail_test"
 OUTPUT_ROOT = Path(__file__).resolve().parent / "data" / "output"
 SEARCH_TERM = "trockner"

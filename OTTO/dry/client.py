@@ -10,8 +10,9 @@ from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup
 
 from common import compare, datasheet, listing, review_rating
-from dry.config import CATEGORY_LABELS, COMPARE_LABELS, SEARCH_TERM, SEARCH_URL, TYPE_LABELS, DryError
-from dry.fields import capacity, capacity_label, public_product_url, text, loading, savings, DRYER
+from dry.config import CATEGORY_LABELS, COMPARE_LABELS, SEARCH_TERM, SEARCH_URL, TYPE_LABELS, DryError, PDF_PARSE_TIMEOUT, PDF_MAX_ATTEMPTS
+from dry.fields import capacity, capacity_label, public_product_url, text, loading, savings, DRYER, valid_sku, sku_rejection
+from dry.pdf_process import pdf_attempt
 
 
 class RequestFailure(DryError):
@@ -21,9 +22,10 @@ class RequestFailure(DryError):
 
 
 class Client:
-    def __init__(self, events, timeout=30, attempts=3, pause=0.25):
+    def __init__(self, events, timeout=30, attempts=3, pause=0.25, pdf_timeout=PDF_PARSE_TIMEOUT):
         self.events, self.timeout, self.attempts, self.pause = events, timeout, attempts, pause
         self.compare_cache = {}
+        self.pdf_timeout = pdf_timeout
         self.tile_http_400_failures = 0  # Run total for diagnostics, never the abort counter.
 
     def fetch(self, url, endpoint, *, kind="html", headers=None, attempts=None):
@@ -160,21 +162,46 @@ class Client:
         return {v: self.compare_cache[v] for v in ids}
 
     def pdf(self, uri, *, need_sku, need_capacity, need_loading=False):
+        needed = dict(sku=need_sku, capacity=need_capacity, loading_type=need_loading)
+        if not any(needed.values()):
+            return {}
         if not uri:
             return {"_unavailable": "own_pdf_link_missing"}
-        parsed = urlsplit(uri)
+        try:
+            parsed = urlsplit(uri)
+        except ValueError:
+            return {"_error": "own_pdf_link_invalid", "_error_kind": "extraction"}
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
             return {"_error": "own_pdf_link_invalid", "_error_kind": "extraction"}
-        try:
-            body, _ = self.fetch(uri, "product_pdf", kind="pdf")
-            if not body.startswith(b"%PDF"):
-                raise RequestFailure("pdf_document_invalid")
-            with self.events.activity("pdf_parse"):
-                return parse_pdf(body, need_sku=need_sku, need_capacity=need_capacity, need_loading=need_loading)
-        except RequestFailure as exc:
-            return {"_error": str(exc), "_error_kind": "request" if exc.status is not None or str(exc).startswith("request_failed:") else "extraction"}
-        except Exception as exc:
-            return {"_error": "pdf_parse:" + type(exc).__name__, "_error_kind": "extraction"}
+        retained, body, last = {}, None, {}
+        attempts = min(PDF_MAX_ATTEMPTS, max(1, self.attempts))
+        for attempt in range(1, attempts + 1):
+            remaining = {k: v and not retained.get(k) for k, v in needed.items()}
+            self.events.emit("pdf_attempt", attempt=attempt, max_attempts=attempts,
+                             needed=[k for k, v in remaining.items() if v], cached_document=body is not None,
+                             request_timeout=self.timeout, parse_timeout=self.pdf_timeout)
+            def progress(event, **values):
+                self.events.emit(event, **{**values, "attempt": attempt, "max_attempts": attempts})
+            with self.events.activity("pdf", attempt=attempt):
+                last, body = pdf_attempt(uri, body, remaining, self.timeout, self.pdf_timeout, progress)
+            for field in needed:
+                if last.get(field) and not retained.get(field):
+                    retained[field] = last[field]
+                    if last.get(field + "_raw"):
+                        retained[field + "_raw"] = last[field + "_raw"]
+            self.events.emit("pdf_attempt_end", attempt=attempt, confirmed=list(k for k in needed if retained.get(k)),
+                             outcome="failed" if last.get("_error") else "read",
+                             reason=last.get("_error") or last.get("_unavailable"))
+            if (not last.get("_error") or not last.get("_retryable", False)
+                    or all(not v or retained.get(k) for k, v in needed.items())):
+                break
+            if attempt < attempts:
+                time.sleep(min(attempt, 3))
+        result = {**retained, **{k: last[k] for k in ("_error", "_error_kind", "_unavailable") if k in last}}
+        missing = [k for k, v in needed.items() if v and not retained.get(k)]
+        if missing:
+            result["_missing"] = missing
+        return result
 
     def rating(self, product_id):
         url = f"https://www.otto.de/kundenbewertungen/{quote(product_id, safe='')}/"
@@ -271,42 +298,77 @@ def explicit_pdf_loading_line(line):
                 or re.fullmatch(r"\s*" + token + r"(?:\s+(?:und|oder)\s*" + token + r")?\s*", line, re.I))
 
 
-def parse_pdf(body, *, need_sku, need_capacity, need_loading=False):
+def pdf_model_candidates(content):
+    """Yield distinct labelled candidates in page order, including rejected ones."""
+    labels = list(datasheet._MODEL_LABEL_RE.finditer(content))
+    for index, label in enumerate(labels):
+        end = labels[index + 1].start() if index + 1 < len(labels) else len(content)
+        tail = content[label.end():end].lstrip(" :\t\r\n")
+        raw = tail.splitlines()[0] if tail else ""
+        raw = datasheet._MODEL_NEXT_FIELD_RE.split(raw, maxsplit=1)[0].strip(" :;,.|\t")
+        raw = re.split(r"\b(?:Gewicht|Weight|Beladung|Trockenkapazit[äa]t)\b", raw,
+                       maxsplit=1, flags=re.I)[0].strip()
+        if raw:
+            model = valid_sku(datasheet._valid_model(raw))
+            yield raw, model, None if model else sku_rejection(raw)
+
+
+def parse_pdf(body, *, need_sku, need_capacity, need_loading=False, progress=None):
     """Read only text for missing model/capacity/loading; no OCR, energy parsing or disk capture."""
-    import pdfplumber
     result = {}
     had_text = False
-    with pdfplumber.open(io.BytesIO(body)) as pdf:
-        for page in pdf.pages[:3]:
-            content = page.extract_text() or ""
-            had_text = had_text or bool(content.strip())
-            if need_sku and not result.get("sku"):
-                result["sku"] = datasheet._sku({}, content)
-                if result.get("sku"):
-                    result["sku_raw"] = result["sku"]  # extracted model only, not the entire PDF row
-            if need_capacity and not result.get("capacity"):
-                for line in content.splitlines():
-                    if re.search(r"wasch|gewicht|weight", line, re.I):
-                        continue
-                    match = re.search(r"(?:Nennkapazit[äa]t|Rated capacity|Trockenkapazit[äa]t)(?:\s*\([a-z]\))?\s*(?:\(?(?:kg)\)?)?\s*[:=]?\s*(\d+(?:[.,]\d+)?)", line, re.I)
-                    if match:
-                        result["capacity"] = capacity(match[1], labelled=True)
-                        result["capacity_raw"] = match[1]
-                        break
-            if need_loading and not result.get("loading_type"):
-                # Explicit labels only, never door instructions or generic front/top words.
-                lines = [line for line in content.splitlines()
-                         if explicit_pdf_loading_line(line)]
-                raw = text(" ".join(lines))
-                if raw:
-                    result["loading_type"] = loading(raw)
-                    result["loading_type_raw"] = raw[:500]
-            if all(not needed or result.get(field) for field, needed in (
-                    ("sku", need_sku), ("capacity", need_capacity), ("loading_type", need_loading))):
-                break
+    needed = dict(sku=need_sku, capacity=need_capacity, loading_type=need_loading)
+    if not any(needed.values()):
+        return result
+    started, stage = time.monotonic(), "open"
+    def emit(event, **values):
+        if progress:
+            progress(event, seconds=round(time.monotonic()-started, 2), **values)
+    try:
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(body)) as pdf:
+            emit("pdf_opened")
+            stage = "extract"
+            for number, page in enumerate(pdf.pages, 1):
+                emit("pdf_page", page=number, needed=[k for k, v in needed.items() if v and not result.get(k)])
+                content = page.extract_text() or ""
+                had_text = had_text or bool(content.strip())
+                if need_sku and not result.get("sku"):
+                    for raw, model, reason in pdf_model_candidates(content):
+                        emit("pdf_sku_candidate", page=number, raw=raw[:500], normalized=model,
+                             reason=reason, selected=model)
+                        if model:
+                            result.update(sku=model, sku_raw=raw[:500])
+                            break
+                if need_capacity and not result.get("capacity"):
+                    for line in content.splitlines():
+                        if re.search(r"wasch|gewicht|weight", line, re.I):
+                            continue
+                        match = re.search(r"(?:Nennkapazit[äa]t|Rated capacity|Trockenkapazit[äa]t)(?:\s*\([a-z]\))?\s*(?:\(?(?:kg)\)?)?\s*[:=]?\s*(\d+(?:[.,]\d+)?)", line, re.I)
+                        if match:
+                            result["capacity"] = capacity(match[1], labelled=True)
+                            result["capacity_raw"] = match[1]
+                            break
+                if need_loading and not result.get("loading_type"):
+                    # Explicit labels only, never door instructions or generic front/top words.
+                    lines = [line for line in content.splitlines()
+                             if explicit_pdf_loading_line(line)]
+                    raw = text(" ".join(lines))
+                    if raw:
+                        result["loading_type"] = loading(raw)
+                        result["loading_type_raw"] = raw[:500]
+                emit("pdf_progress", page=number, result=dict(result), confirmed=[k for k in needed if result.get(k)])
+                if all(not needed or result.get(field) for field, needed in (
+                        ("sku", need_sku), ("capacity", need_capacity), ("loading_type", need_loading))):
+                    break
+    except Exception as exc:
+        # Never expose exception text or discard values from earlier pages.
+        result.update(_error="pdf_" + stage + ":" + type(exc).__name__, _error_kind="extraction",
+                      _retryable=not isinstance(exc, ImportError))
     missing = [field for field, needed in (("sku", need_sku), ("capacity", need_capacity),
                                           ("loading_type", need_loading)) if needed and not result.get(field)]
     if missing:
         result["_missing"] = missing
-        result["_unavailable"] = "pdf_label_unconfirmed_in_first_3_pages" if had_text else "pdf_no_text_in_first_3_pages"
+        if not result.get("_error"):
+            result["_unavailable"] = "pdf_label_unconfirmed" if had_text else "pdf_no_text"
     return result
