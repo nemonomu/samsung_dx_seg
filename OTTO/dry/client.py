@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 
 from common import compare, datasheet, listing, review_rating
 from dry.config import CATEGORY_LABELS, COMPARE_LABELS, SEARCH_TERM, SEARCH_URL, TYPE_LABELS, DryError, PDF_PARSE_TIMEOUT, PDF_MAX_ATTEMPTS
-from dry.fields import capacity, capacity_label, public_product_url, text, loading, savings, DRYER, valid_sku, sku_rejection
+from dry.fields import capacity, capacity_candidate, capacity_label, public_product_url, text, loading, savings, DRYER, valid_sku, sku_rejection
 from dry.pdf_process import pdf_attempt
 
 
@@ -344,10 +344,15 @@ def parse_pdf(body, *, need_sku, need_capacity, need_loading=False, progress=Non
                     for line in content.splitlines():
                         if re.search(r"wasch|gewicht|weight", line, re.I):
                             continue
-                        match = re.search(r"(?:Nennkapazit[äa]t|Rated capacity|Trockenkapazit[äa]t)(?:\s*\([a-z]\))?\s*(?:\(?(?:kg)\)?)?\s*[:=]?\s*(\d+(?:[.,]\d+)?)", line, re.I)
-                        if match:
-                            result["capacity"] = capacity(match[1], labelled=True)
-                            result["capacity_raw"] = match[1]
+                        for match in re.finditer(r"(?:Nennkapazit[äa]t|Rated capacity|Trockenkapazit[äa]t)(?:\s*\([a-z]\))?\s*(?:\(?(?:kg)\)?)?\s*[:=]?\s*(\d[\d.,]*(?:[ \t]+[\d.,]+)*)", line, re.I):
+                            raw = match[1].rstrip(".,")
+                            normalized, reason = capacity_candidate(raw, labelled=True)
+                            emit("pdf_capacity_candidate", page=number, raw=match[0][:500],
+                                 normalized=normalized, reason=reason)
+                            if normalized:
+                                result.update(capacity=normalized, capacity_raw=raw)
+                                break
+                        if result.get("capacity"):
                             break
                 if need_loading and not result.get("loading_type"):
                     # Explicit labels only, never door instructions or generic front/top words.

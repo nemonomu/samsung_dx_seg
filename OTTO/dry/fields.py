@@ -42,13 +42,19 @@ _SOLD_TYPES = (
     # A carpet air mover may put its purpose after speed/features in the title.
     (r"\b(?:elektro[- ]gebläse|air\s+mover)\b", "sold_non_clothing_dryer"),
 )
-_SOLD_REASONS = {reason for _, reason in _SOLD_TYPES} | {"accessory", "drying_rack_or_cabinet", "dryer_accessory_compound"}
+_SOLD_REASONS = {reason for _, reason in _SOLD_TYPES} | {"accessory", "drying_rack_or_cabinet", "dryer_accessory_compound", "heated_drying_rack"}
 _PORTABLE_WORD = r"(?:tragbar\w*|portabel\w*|portabl\w*|mobil(?:e[rsmn]?)?)"
+_HEATED_RACK = re.compile(r"\bheiz[- ]?(?:(?:wäsche|waesche)[- ]?)?trockner\s+mit\s+fl(?:ü|ue)geln\b", re.I)
+# Measured/dimensional drying features are not title-only model identifiers.
+_NAME_FEATURE = re.compile(r"\b(?:(?:\d+(?:[.,]\d+)?[- ]?(?:grad|minuten?|stunden?|stufen?)|\d+d)"
+                           r"[- ]+(?:\w*trocknung|luftstrom|luftzirkulation)"
+                           r"|\d+(?:[.,]\d+)?[- ]?(?:watt|kw|w|db)(?:[- ]+(?:heizleistung|leistung))?(?![-\w])"
+                           r"|\d+[- ]?(?:programme?|heizstufen?))\b", re.I)
 
 
 def product_phrase(value):
     """Keep sold purpose ('für Helm'), stop at features/compatibility clauses."""
-    return re.split(r"\b(?:mit|inklusive|inkl\.|passend|geeignet|kompatibel|ohne|per|via)\b",
+    return re.split(r"\b(?:(?:mit|inklusive|passend|geeignet|kompatibel|ohne|per|via)\b|inkl\.(?=\s|$))",
                     value, maxsplit=1, flags=re.I)[0]
 
 
@@ -71,7 +77,7 @@ def accessory_description(value, dryer, accessory_start):
     right = re.split(r"[,;|]", value[accessory_start:], maxsplit=1)[0]
     clause = left + right
     return bool(re.search(r"\b(?:leicht|einfach)\s+zu\s+reinig(?:en|end\w*)\b"
-                          r"|\b(?:inklusive|inbegriffen|enthalten|beiliegend\w*)\b", clause, re.I))
+                          r"|\b(?:inklusive|inbegriffen|enthalten|beiliegend\w*)\b|\binkl\.(?=\s|$)", clause, re.I))
 
 
 def portable_appliance(value):
@@ -106,15 +112,34 @@ def explicit_product_exclusion(value):
     return None
 
 
+def heated_rack_kind(value):
+    """Keep the type's own 'mit Flügeln', without searching feature clauses as goods."""
+    for hit in _HEATED_RACK.finditer(value):
+        prefix, suffix = value[:hit.start()], value[hit.end():]
+        if product_phrase(prefix) != prefix or re.search(r"\b(?:nicht|kein\w*)\s*$", prefix, re.I):
+            continue
+        dryer = _SELECTION_DRYER.search(prefix)
+        if dryer and re.match(r"\s*(?:im\s+Lieferumfang\s+)?(?:inklusive|inkl\.|inbegriffen|enthalten|beiliegend\w*)"
+                              r"\s*(?=$|[,;])", suffix, re.I):
+            continue
+        if specific_appliance(prefix + suffix) or (dryer and re.search(r"[,;]", prefix[dryer.end():])):
+            return "ambiguous", "conflicting_product_types"
+        return "exclude", "heated_drying_rack"
+    return None
+
+
 def title_kind(value):
     """Exclude explicit product types/compositions; keep uncertain search results."""
     value = text(value)
     explicit = explicit_product_exclusion(value)
     if explicit:
         return "exclude", explicit
+    rack = heated_rack_kind(value)
+    if rack:
+        return rack
     # Feature/compatibility text is not a list of products being sold.
     phrase = product_phrase(value)
-    head = re.split(r"\b(?:für|fuer|passend für|geeignet für|kompatibel mit|mit|inklusive|inkl\.|ohne|per|via)\b",
+    head = re.split(r"\b(?:(?:für|fuer|passend für|geeignet für|kompatibel mit|mit|inklusive|ohne|per|via)\b|inkl\.(?=\s|$))",
                     value, maxsplit=1, flags=re.I)[0]
     dryer, washer = _SELECTION_DRYER.search(head), WASHER.search(head)
     has_accessory_description = False
@@ -225,14 +250,24 @@ def public_product_url(value, variation_id):
                        urlencode({"variationId": variation_id}), ""))
 
 
-def capacity(raw, *, labelled=False):
+def capacity_candidate(raw, *, labelled=False):
+    """Return a value and rejection reason, retaining ambiguous numeric context."""
     value = text(raw)
     if not value:
-        return None
+        return None, "no_valid_capacity"
+    if labelled and re.fullmatch(r"[\d.,]+(?:\s+[\d.,]+)+", value):
+        return None, "ambiguous_numeric_capacity"
     candidates = []
+    ambiguous = False
     for match in re.finditer(r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*kg\b", value, re.I):
         prefix = value[max(0, match.start() - 40):match.start()]
         suffix = value[match.end():match.end()+30]
+        preceding_number = re.search(r"(?<![\w.,])(?=\d)[\d.,]+\s+$", prefix)
+        model_number = (re.search(r"\b(?:Serie|Series|Modell(?:bezeichnung)?|Model(?: identifier)?)\s+\S+\s+$", prefix, re.I)
+                        or re.search(r"\b[A-Z]{1,6}\s+\d{2,5}[,;]?\s+$", prefix))
+        if preceding_number and not model_number:
+            ambiguous = True
+            continue
         if (re.search(r"(?:gewicht|weight|waschen|waschkapazität)[^,;]{0,20}$", prefix, re.I)
                 or re.match(r"\s*(?:Produktgewicht|Eigengewicht|Gewicht|weight)\b", suffix, re.I)):
             continue
@@ -242,7 +277,13 @@ def capacity(raw, *, labelled=False):
     if not candidates and labelled and re.fullmatch(r"\d+(?:[.,]\d+)?", value):
         candidates = [value.replace(",", ".")]
     values = {format(float(v), "g") for v in candidates if float(v) > 0}
-    return next(iter(values)) + " kg" if len(values) == 1 else None
+    if len(values) == 1:
+        return next(iter(values)) + " kg", None
+    return None, "ambiguous_numeric_capacity" if ambiguous else "multiple_capacity_values" if len(values) > 1 else "no_valid_capacity"
+
+
+def capacity(raw, *, labelled=False):
+    return capacity_candidate(raw, labelled=labelled)[0]
 
 
 def capacity_label(label):
@@ -263,8 +304,10 @@ def valid_sku(raw):
     return value if value and len(value) > 3 else None
 
 
-def sku_rejection(raw):
-    value = clean_model(text(raw))
+def sku_rejection(raw, *, from_name=False):
+    if from_name and _NAME_FEATURE.search(text(raw)):
+        return "sku_feature_description"
+    value = clean_model(model_from_name(raw) if from_name else text(raw))
     return "sku_too_short" if value and len(value) <= 3 else "no_valid_model"
 
 
@@ -277,6 +320,7 @@ def model_from_name(name):
     value = re.split(r"\d+(?:[.,]\d+)?\s*kg\b", value, maxsplit=1, flags=re.I)[0]
     # Series descriptors are not model identifiers, regardless of brand.
     value = re.sub(r"\b[A-Za-z]*\d+[A-Za-z]*\s+Serie\b|\b(?:Serie|Series)\s+[A-Za-z0-9]+\b", " ", value, flags=re.I)
+    value = _NAME_FEATURE.sub(" ", value)
     tokens = text(value).split()
     mixed = [i for i, token in enumerate(tokens)
              if re.fullmatch(r"[A-Za-z0-9/_.+\-]{3,}", token)
@@ -342,7 +386,8 @@ def choose(target, chars, pdf=None, events=None):
                         selected=result[field], source=winner[0] if winner else None,
                         reason=None if winner else "no_valid_value_in_available_sources",
                         candidates=[dict(source=s, raw=r, normalized=v, **(
-                            {"reason": sku_rejection(model_from_name(r) if s == "listing_title" else r)}
-                            if field == "sku" and not v else {})) for s, r, v in choices if r],
+                            {"reason": sku_rejection(r, from_name=s == "listing_title") if field == "sku"
+                             else capacity_candidate(r, labelled=s.startswith(("listing_spec:", "comparison_spec:")) or s == "product_pdf")[1]}
+                            if field in {"sku", "capacity"} and not v else {})) for s, r, v in choices if r],
                         conflict=bool(winner and any(v and v != winner[2] for _, _, v in choices)))
     return result
