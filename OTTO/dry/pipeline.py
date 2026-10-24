@@ -107,7 +107,7 @@ def collect(client, events, state, save):
                                 product_url=target["product_url"], accepted=accepted, reason=reason,
                                 needs_review=reason.startswith("ambiguous"),
                                 evidence=classification_evidence(target["retailer_sku_name"], chars, target.get("top_infos"),
-                                                                 target.get("selection_name")) if not accepted or reason.startswith("ambiguous") else [])
+                                                                 target.get("selection_name")))
                     stats["ambiguous"] += int(reason.startswith("ambiguous"))
                     if not accepted:
                         stats["excluded"] += 1

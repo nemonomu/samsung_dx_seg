@@ -15,11 +15,15 @@ def name_key(value):
 
 
 DRYER = re.compile(r"\b(?:(?:wärme[- ]?pumpen|waerme[- ]?pumpen|kondens(?:ations)?|abluft|wäsche|waesche)[- ]?)?trockner\b", re.I)
-SPECIFIC_DRYER = re.compile(r"\b(?:wärme[- ]?pumpen|waerme[- ]?pumpen|kondens(?:ations)?|abluft)[- ]?trockner\b", re.I)
 WASHER = re.compile(r"\bwasch(?:maschine[n]?|vollautomat(?:en)?)\b", re.I)
+# Selection-only forms: do not change DRYER used by SKU and loading extraction.
+_SPECIFIC_SELECTION_FORM = r"(?:wärme[- ]?pumpen|waerme[- ]?pumpen|kondens(?:ations)?|abluft)[- ]?(?:(?:wäsche|waesche)[- ]?)?trockner"
+_SPECIFIC_SELECTION_DRYER = re.compile(r"\b" + _SPECIFIC_SELECTION_FORM + r"\b", re.I)
+_SELECTION_DRYER = re.compile(r"\b(?:" + _SPECIFIC_SELECTION_FORM + r"|(?:wäsche|waesche)[- ]?trockner|trockner)\b", re.I)
+_TRAVEL_DRYER = r"\b(?:reise[- ]?|camping[- ]?)(?:wäsche)?trockner\b"
 EXCLUDED = (
     (r"\bwasch[- ]?trockner\b", "washer_dryer"),
-    (r"\b(?:mini[- ]?|reise[- ]?|camping[- ]?)(?:wäsche)?trockner\b", "portable"),
+    (_TRAVEL_DRYER, "portable"),
     (r"\b(?:haartrockner|haarföhn|föhn|foehn|multi[- ]?haarstyler|haarstyler)\b", "hair_dryer"),
     (r"\b(?:dörrautomat|doerrautomat|lebensmitteltrockner|obsttrockner)\b", "food_dehydrator"),
     (r"\b(?:luftentfeuchter|bautrockner)\b", "dehumidifier"),
@@ -29,12 +33,50 @@ EXCLUDED = (
     (r"\b(?:dampfschrank|kleiderpflegeschrank|kleiderschrank|dampfglätter|kleiderdampfer|styler|airdresser)\b", "garment_care"),
     (r"\b\w*(?:untergestell|unterschrank|sockel|zwischenbaurahmen|verbindungsrahmen|stapelrahmen|trocknerbälle|trocknerball|ersatzteil|ersatzfilter|flusensieb|türgriff|schlauch|abdeckung|antivibrationsmatte|zubehör)\w*\b|\b(?:filter|gestell|rahmen|reiniger|matte|ersatz|halterung|ständer|halter)\b", "accessory"),
 )
+# These nouns identify a sold object, not a feature after 'mit/inklusive/...'.
+_SOLD_TYPES = (
+    (r"\b(?:heizstab|heizregister|thermodetektor|temperaturfühler|stellfuß|stellfuss|vibrationsdämpfer|schwingungsdämpfer|schutzhülle|schützhülle)\b|\b(?:sensor|griff)\s+(?:wie|für|fuer)\b|\b(?:wäsche|waesche)trockner[- ]kondensator\b", "sold_accessory"),
+    (r"\b(?:kompressor|schraubenkompressor)\b", "sold_compressor"),
+    (r"\b(?:filament|filatment|teppich|hundepflege|haustier)[- ]?trockner\b|\btrockner\s+(?:für|fuer)\s+(?:(?:den|die|das)\s+)?(?:helm(?:e)?|stiefel|filamente?|haustiere?|hunde|katzen|teppiche?)\b", "sold_non_clothing_dryer"),
+    (r"\b(?:unterziehshirt|unterhemd|füllwatte|bastelfilz|standregal|dusch[- ]wc|hänge[- ]?wc|bidet|haargel|3d[- ]drucker|hundeschermaschine)\b", "sold_unrelated_product"),
+    # A carpet air mover may put its purpose after speed/features in the title.
+    (r"\b(?:elektro[- ]gebläse|air\s+mover)\b", "sold_non_clothing_dryer"),
+)
+_SOLD_REASONS = {reason for _, reason in _SOLD_TYPES} | {"accessory", "drying_rack_or_cabinet", "dryer_accessory_compound"}
 _PORTABLE_WORD = r"(?:tragbar\w*|portabel\w*|portabl\w*|mobil(?:e[rsmn]?)?)"
+
+
+def product_phrase(value):
+    """Keep sold purpose ('für Helm'), stop at features/compatibility clauses."""
+    return re.split(r"\b(?:mit|inklusive|inkl\.|passend|geeignet|kompatibel|ohne|per|via)\b",
+                    value, maxsplit=1, flags=re.I)[0]
+
+
+def specific_appliance(value):
+    # 'Heizstab wie Brand Wärmepumpentrockner' describes a replacement part.
+    head = re.split(r"\b(?:für|fuer|wie)\b", product_phrase(value), maxsplit=1, flags=re.I)[0]
+    return bool(_SPECIFIC_SELECTION_DRYER.search(head))
+
+
+def accessory_description(value, dryer, accessory_start):
+    """Care/delivery wording after an appliance is not a clear sale of a part."""
+    if not dryer or accessory_start < dryer.end():
+        return False
+    # A connected product noun such as 'Trockner-Filter' still names a part.
+    if value[dryer.end():accessory_start].strip() == "-":
+        return False
+    # Keep the accessory's own clause, including a postposed 'inklusive' that
+    # product_phrase() cuts off. Do not borrow another feature's care claim.
+    left = re.split(r"[,;|]", value[dryer.end():accessory_start])[-1]
+    right = re.split(r"[,;|]", value[accessory_start:], maxsplit=1)[0]
+    clause = left + right
+    return bool(re.search(r"\b(?:leicht|einfach)\s+zu\s+reinig(?:en|end\w*)\b"
+                          r"|\b(?:inklusive|inbegriffen|enthalten|beiliegend\w*)\b", clause, re.I))
 
 
 def portable_appliance(value):
     """Bind a portable adjective to the appliance, not any other noun in its title."""
-    for dryer in DRYER.finditer(value):
+    for dryer in _SELECTION_DRYER.finditer(value):
         # Adjectives immediately modifying the appliance; no arbitrary noun gap.
         before = re.search(r"\b" + _PORTABLE_WORD
                            + r"(?:\s+(?:elektrisch\w*|kompakt\w*|klein\w*))*[- ]+$",
@@ -54,13 +96,12 @@ def portable_appliance(value):
 def explicit_product_exclusion(value):
     # Inspect the sold product phrase before feature/compatibility clauses. Keep
     # 'für' here: it is part of the actual type 'Lüfter für Wäscheständer'.
-    head = re.split(r"\b(?:mit|inklusive|inkl\.|passend|geeignet|kompatibel|ohne|per|via)\b",
-                    value, maxsplit=1, flags=re.I)[0]
+    head = product_phrase(value)
     fan = re.search(r"\b(?:lüfter|luefter|ventilator|gebläse|geblaese)\s+(?:für|fuer)\s+(?:den\s+|einen\s+)?(?:wäscheständer|waeschestaender)\b", head, re.I)
     if fan and not re.search(r"\b(?:nicht|kein\w*)\s*$", head[:fan.start()], re.I):
         return "explicit_drying_rack_fan"
     head = re.split(r"\bfür\b", head, maxsplit=1, flags=re.I)[0]
-    if portable_appliance(head) or (DRYER.search(head) and re.search(EXCLUDED[1][0], head, re.I)):
+    if portable_appliance(head) or re.search(_TRAVEL_DRYER, head, re.I):
         return "explicit_portable_dryer"
     return None
 
@@ -72,12 +113,37 @@ def title_kind(value):
     if explicit:
         return "exclude", explicit
     # Feature/compatibility text is not a list of products being sold.
-    head = re.split(r"\b(?:für|passend für|geeignet für|kompatibel mit|mit|inklusive|inkl\.|per|via)\b", value, maxsplit=1, flags=re.I)[0]
-    dryer, washer = DRYER.search(head), WASHER.search(head)
+    phrase = product_phrase(value)
+    head = re.split(r"\b(?:für|fuer|passend für|geeignet für|kompatibel mit|mit|inklusive|inkl\.|ohne|per|via)\b",
+                    value, maxsplit=1, flags=re.I)[0]
+    dryer, washer = _SELECTION_DRYER.search(head), WASHER.search(head)
+    has_accessory_description = False
+    # Explicit accessory compounds are sold parts even when preceded by a type.
+    compound = re.match(r"[- ](untergestell|abdeckung|ersatzfilter|ersatzteil|filter|schlauch|rahmen|sockel|zubehör)\b",
+                        head[dryer.end():], re.I) if dryer else None
+    if compound:
+        if compound[1].casefold() != "filter" or not accessory_description(value, dryer, dryer.end() + compound.start(1)):
+            return "exclude", "dryer_accessory_compound"
+    for pattern, reason in _SOLD_TYPES:
+        hit = re.search(pattern, phrase, re.I)
+        if hit and hit.start() < len(head):
+            if specific_appliance(head) or (dryer and hit.start() > dryer.end()
+                                           and re.search(r"[,;]", head[dryer.end():hit.start()])):
+                # An unintroduced feature after a dryer title is not a clear sale of a part.
+                return "ambiguous", "conflicting_product_types"
+            return "exclude", reason
     for pattern, reason in EXCLUDED:
         hit = re.search(pattern, head, re.I)
-        if hit and (dryer is None or hit.start() <= dryer.start()):
-            return "exclude", reason
+        if hit:
+            if reason == "accessory" and accessory_description(value, dryer, hit.start()):
+                has_accessory_description = True
+                continue
+            if reason in _SOLD_REASONS:
+                if specific_appliance(head):
+                    return "ambiguous", "conflicting_product_types"
+                return "exclude", reason
+            if dryer is None or hit.start() <= dryer.start():
+                return "exclude", reason
     if dryer and washer:
         first, second = sorted((dryer, washer), key=lambda match: match.start())
         between = head[first.end():second.start()]
@@ -88,9 +154,9 @@ def title_kind(value):
         return "ambiguous", "multiple_product_types_without_clear_bundle"
     if washer and dryer is None:
         return "exclude", "washer"
+    if has_accessory_description:
+        return "ambiguous", "accessory_description"
     if dryer:
-        if re.match(r"[- ](?:untergestell|abdeckung|ersatzfilter|ersatzteil|filter|schlauch|rahmen|sockel|zubehör)\b", head[dryer.end():], re.I):
-            return "exclude", "dryer_accessory_compound"
         return "include", "standalone_dryer_title"
     return "ambiguous", "product_type_unconfirmed"
 
@@ -129,15 +195,21 @@ def classify(name, chars=None, infos=None, selection_name=None):
                    and e["decision"] == "exclude"), None)
     if bundle:
         return False, bundle["source"] + ":" + bundle["reason"]
+    if any(e["reason"] == "conflicting_product_types" for e in evidence):
+        return True, "ambiguous_included_conflicting_product_types"
+    if any(e["reason"] == "accessory_description" for e in evidence):
+        return True, "ambiguous_included_accessory_description"
     positive = any(e["decision"] == "include" for e in evidence)
     negative = next((e for e in evidence if e["decision"] == "exclude"), None)
     if positive and negative:
-        return True, "ambiguous_included_conflicting_product_types"
+        specific_positive = any(e["decision"] == "include" and specific_appliance(e["raw"]) for e in evidence)
+        if specific_positive or negative["reason"] not in _SOLD_REASONS:
+            return True, "ambiguous_included_conflicting_product_types"
     if negative:
         return False, negative["source"] + ":" + negative["reason"]
     if positive:
         titles = [name, selection_name, chars.get("_name")]
-        machine_evidence = (any(SPECIFIC_DRYER.search(text(v)) for v in titles)
+        machine_evidence = (any(specific_appliance(text(v)) for v in titles)
                             or any(capacity(v) for v in titles)
                             or bool(loading(chars.get("Beladung")))
                             or any(capacity(v, labelled=True) for k, v in {**infos, **chars}.items() if capacity_label(k)))

@@ -95,7 +95,7 @@ class ClassificationTests(Offline):
             "Brand Waschmaschine WA900", "Brand Waschtrockner WA900", "Wasch-Trockner WA900",
             "Waschmaschine WA900 + Wärmepumpentrockner DR900", "Wärmepumpentrockner DR900 und Waschmaschine WA900 Set",
             "Wärmepumpentrockner DR900 & Waschmaschine WA900", "Mobiler Wäschetrockner DR900",
-            "Tragbarer Wäschetrockner DR900", "Mini-Trockner DR900", "Trockner DR900 portable",
+            "Tragbarer Wäschetrockner DR900", "Trockner DR900 portable",
             "Brand AirDresser", "Brand Styler", "Brand Wäscheschleuder",
             "Brand Haartrockner", "Brand Wäscheständer", "Flügelwäschetrockner XL",
             "Brand Trockenschrank", "Brand Trockengestell", "Brand Trockensack",
