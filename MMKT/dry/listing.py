@@ -65,6 +65,45 @@ def complete_dom(html, view):
                 and all(row.get("sku_status") == "Sponsored" for row in extras))
 
 
+def first_page_evidence(rows, view):
+    """Public occurrence-level evidence; DOM completeness is not admission.
+
+    The shared parser can complete ordinary cards from the internal listing.
+    A banner occurrence never disqualifies an ordinary occurrence of that ID.
+    """
+    state_ids = view.get("state_ids", ())
+    normal = [row for row in rows if row.get("sku_id") and not is_banner_ad(row)]
+    normal_ids = {str(row["sku_id"]) for row in normal}
+    banner_ids = {str(row["sku_id"]) for row in rows if row.get("sku_id") and is_banner_ad(row)}
+    missing = sorted(set(state_ids) - normal_ids)
+    duplicates = sorted({pid for pid in state_ids if state_ids.count(pid) > 1})
+    extras = sorted({str(row["sku_id"]) for row in normal
+                     if str(row["sku_id"]) not in state_ids and row.get("sku_status") != "Sponsored"})
+    issues = []
+    if missing:
+        issues.append("state_products_missing_from_normal_cards")
+    if duplicates:
+        issues.append("duplicate_state_product_ids")
+    if extras:
+        issues.append("extra_normal_cards_without_sponsored_evidence")
+    if not view.get("state_coherent") and not issues:
+        issues.append("internal_listing_state_unconfirmed")
+    return {"listing_valid": view.get("listing_valid", False),
+            "state_coherent": view.get("state_coherent", False),
+            "state_slots": len(state_ids), "normal_unique": len(normal_ids),
+            "missing_from_normal": missing, "duplicate_state_ids": duplicates,
+            "non_sponsored_extra_ids": extras, "banner_ids": sorted(banner_ids),
+            "banner_only_state_ids": sorted(set(missing) & banner_ids),
+            "banner_and_normal_ids": sorted(banner_ids & normal_ids),
+            "normal_sponsored_ids": sorted({str(row["sku_id"]) for row in normal
+                                            if row.get("sku_status") == "Sponsored"}),
+            "card_evidence": [{"item": str(row["sku_id"]),
+                               "listing_card_type": row.get("listing_card_type"),
+                               "sponsored_label": row.get("sku_status") == "Sponsored"}
+                              for row in rows if row.get("sku_id")],
+            "issues": issues}
+
+
 class EndEvidence:
     """A repeat is terminal only after independently verified slot coverage.
 
@@ -159,6 +198,7 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
     while True:
         for attempt in range(1, retries + 2):
             rows, diagnostics, new, excluded = [], {}, 0, {}
+            first_validation = None
             view = {"listing_valid": False, "last_page": False, "has_next": None,
                     "shown": None, "total": None}
             decision = {"end_basis": None, "end_candidate": False}
@@ -183,6 +223,8 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
                     error = "parse_failed"
                 elif any(not row.get("product_url") for row in rows if not is_banner_ad(row)):
                     error = "parse_failed"
+                elif page == 1 and not view["state_coherent"]:
+                    error = "first_page_inconsistent"
                 else:
                     decision = ledger.assess(page, html, view, repeated)
                     if repeated and not decision["end_basis"]:
@@ -191,6 +233,18 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
                         error = decision["pagination_error"]
                     elif not view.get("signature") and not decision["end_basis"] and view["has_next"] is not True:
                         error = "parse_failed"
+                if page == 1:
+                    # Failed attempts remain diagnostic only: no fingerprint,
+                    # eligibility/detail call, accepted row or end-ledger commit.
+                    # Reuse this attempt loop; do not nest another retry loop.
+                    first_validation = {**first_page_evidence(rows, view),
+                        "passed": not bool(error), "reason": error,
+                        "action": "start_detail_collection" if not error else
+                                  "retry_first_page" if attempt <= retries else "stop_listing",
+                        "details_allowed": not bool(error),
+                        "retry_wait_s": sleep_s if error and attempt <= retries else 0}
+                    emit("first_page_validation", stage="first_page_validation", page=page,
+                         attempt=attempt, max_attempts=retries + 1, **first_validation)
                 if not error and not repeated:
                     fingerprints.add(signature)
                     for row in rows:
@@ -220,6 +274,8 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
                      "raw_last_page": view["last_page"], "raw_has_next": view["has_next"],
                      "last_page": bool(decision["end_basis"]),
                      "has_next": False if decision["end_basis"] else view["has_next"]}
+            if first_validation is not None:
+                entry["first_page_validation"] = first_validation
             page_log.append(entry)
             emit("pagination_decision", page=page, attempt=attempt, accepted=len(seen),
                  error=error, last_page=bool(decision["end_basis"]),

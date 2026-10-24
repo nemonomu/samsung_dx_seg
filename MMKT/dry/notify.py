@@ -29,6 +29,7 @@ def send_error_code(error) -> str:
 
 
 _REASONS_KO = {"last_page": "마지막 목록 확인", "target_reached": "목표 수량 도달",
+               "first_page_inconsistent": "첫 상품 묶음 불일치 (재조회 소진)",
                "washer_dryer": "세탁건조 일체형", "washing_machine": "세탁기",
                "set_or_combo": "세트·콤보", "advertisement": "별도 광고 배너",
                "portabel_title": "제목 Portabel", "accessory": "부속품",
