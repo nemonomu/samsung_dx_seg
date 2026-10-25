@@ -10,11 +10,17 @@ from dry.events import emit, failure
 from dry.output import write_manifest
 
 
-def save_checkpoint(output_dir, manifest, rows, *, sort, page, attempt):
+def save_checkpoint(output_dir, manifest, rows, *, sort, page, attempt, phase="listing", sequence=None):
     batch = manifest["batch_id"]
     if not re.fullmatch(r"[A-Za-z0-9_-]+", batch):
         raise CollectionError("INTERMEDIATE_BATCH_INVALID")
-    path = output_dir / "intermediate" / batch / f"{sort}_{page:04d}_attempt_{attempt:02d}.json"
+    if phase == "listing":
+        name = f"{sort}_{page:04d}_attempt_{attempt:02d}.json"
+    elif phase in {"tail_read", "tail_result"} and isinstance(sequence, int) and sequence > 0:
+        name = f"{sort}_{phase}_{sequence:02d}_page_{page:04d}.json"
+    else:
+        raise CollectionError("INTERMEDIATE_PHASE_INVALID")
+    path = output_dir / "intermediate" / batch / name
     previous = manifest.get("intermediate") or {}
     saved = {"state": "saved", "last_path": str(path), "rows": len(rows),
              "saved_at": datetime.now().isoformat(timespec="seconds")}
@@ -31,5 +37,5 @@ def save_checkpoint(output_dir, manifest, rows, *, sort, page, attempt):
         failure(exc, code="INTERMEDIATE_SAVE_FAILED")
         raise CollectionError("INTERMEDIATE_SAVE_FAILED") from None
     manifest["intermediate"] = saved
-    emit("intermediate_saved", path=str(path), rows=len(rows), sort=sort, page=page, attempt=attempt,
+    emit("intermediate_saved", path=str(path), rows=len(rows), sort=sort, page=page, attempt=attempt, phase=phase,
          loadable=False)

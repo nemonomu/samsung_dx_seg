@@ -41,8 +41,32 @@ _ERRORS_KO = {"UNCONFIRMED_PRODUCT_TYPE": "상품 종류를 확인하지 못함"
               "DB_BACKFILL_FAILED": "기존 DB 값 조회 실패", "DB_CONNECT_FAILED": "DB 연결 실패",
               "DB_INSERT_FAILED": "DB 적재 실패", "DB_COMMIT_FAILED": "DB 반영 여부 확인 필요",
               "DB_COMMITTED_MANIFEST_SAVE_FAILED": "DB 반영 후 결과 기록 실패",
+              "INTERMEDIATE_SAVE_FAILED": "중간 결과 저장 실패",
               "FINAL_CSV_SAVE_FAILED": "최종 CSV 저장 실패",
               "FINAL_MANIFEST_SAVE_FAILED": "수집 결과 기록 실패"}
+
+_TAIL_REASONS_KO = {
+    "fresh_total_and_verified_tail_boundary": "최신 총수와 마지막 목록 경계 일치",
+    "new_following_products": "다음 묶음의 새 상품을 정규 수집으로 전달",
+    "confirmation_budget_exhausted": "추가 조회 한도 소진",
+    "current_total_missing_or_conflicting": "최신 총수 누락 또는 화면 내 수치 불일치",
+    "current_total_below_read_slots": "최신 총수가 확인한 목록 위치보다 작음",
+    "current_total_or_more_control_mismatch": "최신 총수 또는 더보기 상태 불일치",
+    "current_document_totals_conflict": "재확인한 화면끼리 총수 불일치",
+    "reference_unstable_during_confirmation": "재확인 전후 총수 또는 상품 변경",
+    "preceding_products_changed": "직전 묶음의 상품 또는 더보기 상태 변경",
+    "tail_changed_or_incomplete": "마지막 후보 상품 변경 또는 카드 누락",
+    "following_not_a_contiguous_expansion": "다음 목록의 연속성 미확인",
+    "following_cards_incomplete": "다음 조회 화면의 상품 카드 누락",
+    "preceding_fetch_or_parse_failed": "직전 묶음 접속 또는 파싱 실패",
+    "tail_fetch_or_parse_failed": "마지막 후보 접속 또는 파싱 실패",
+    "following_fetch_or_parse_failed": "다음 조회 접속 또는 파싱 실패",
+    "non_contiguous_history": "이전 묶음 확인 이력 누락",
+    "incoherent_or_repeated_history": "이전 목록 불일치 또는 반복",
+    "non_uniform_prefix": "이전 묶음의 목록 위치 불일치",
+    "incomplete_tail_candidate": "마지막 후보의 카드 또는 더보기 근거 부족",
+    "probe_checkpoint_failed": "재확인 중간 결과 저장 실패",
+}
 
 
 def _duration_ko(value):
@@ -73,6 +97,14 @@ def _korean_summary(manifest, table, *, error, elapsed_s):
         lines.append(f"{sort.upper()}: {count} / 목표 {target}개 — {states.get(state, '확인 필요')} ({reason})")
         if listing.get("last_requested_page") is not None:
             lines.append(f"  마지막 정상 묶음: {listing.get('last_successful_page')}; 마지막 요청 묶음: {listing['last_requested_page']}")
+        boundary = listing.get("tail_confirmation")
+        if boundary:
+            states_ko = {"confirmed": "마지막 확인됨", "more_products": "다음 상품 발견",
+                         "failed": "확인 실패", "checking": "확인 중 중단"}
+            lines.append(f"  끝부분 재확인: {states_ko.get(boundary.get('state'), '확인 필요')}; "
+                         f"추가 조회 {boundary.get('queries', 0)}/{boundary.get('query_limit', 8)}회; "
+                         f"최신 총수 {boundary.get('latest_total')}; "
+                         f"근거 {_TAIL_REASONS_KO.get(boundary.get('reason'), '확인 필요')} ({boundary.get('reason')})")
         excluded = listing.get("excluded") or {}
         reasons = [f"{_REASONS_KO.get(key, key)} {count}건" for key, count in excluded.items() if key != "duplicate"]
         if reasons:
@@ -130,6 +162,11 @@ def build_report(manifest, table, *, success, error=None, elapsed_s=None):
                          f" last requested group: {listing['last_requested_page']}; end basis: {listing.get('end_basis')}")
         if listing.get("excluded"):
             lines.append(f"{sort} exclusions/duplicates: {listing['excluded']}")
+        if listing.get("tail_confirmation"):
+            boundary = listing["tail_confirmation"]
+            lines.append(f"{sort} tail confirmation: state={boundary.get('state')}; "
+                         f"queries={boundary.get('queries', 0)}/{boundary.get('query_limit', 8)}; "
+                         f"latest total={boundary.get('latest_total')}; reason={boundary.get('reason')}")
     lines.append(f"Product failures (per listing): {manifest.get('product_failure_count', 0)}")
     for product in manifest.get("product_failures", []):
         lines.append(f"Failed product: {product['sort']} page={product['page']} item={product['item']}"

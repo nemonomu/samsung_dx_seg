@@ -60,12 +60,12 @@ def wait_for_captcha(session, html: str, wait_s: float) -> str:
     raise CollectionError("CAPTCHA_OR_ACCESS_BLOCKED")
 
 
-def make_fetcher(session, base_url: str, args, sort="main", progress_state=None):
+def make_fetcher(session, base_url: str, args, sort="main", progress_state=None, *, phase="listing"):
     attempts = {}
     def fetch(page):
         start = time.perf_counter()
         attempts[page] = attempts.get(page, 0) + 1
-        context("listing", sort=sort, page=page, attempt=attempts[page],
+        context(phase, phase=phase, sort=sort, page=page, attempt=attempts[page],
                 **(progress_state() if progress_state else {}))
         emit("page_start", render_wait_s=args.render_settle)
         try:
@@ -199,6 +199,12 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
                        stop_reason=stop, failed_products=len(failed_items),
                        excluded=dict(counters), duplicates=counters.get("duplicate", 0),
                        last_requested_page=entry["page"], end_basis=entry.get("end_basis"))
+        phase_options = {}
+        if entry.get("phase") == "tail_confirmation":
+            confirmed = entry["confirmation"]
+            listing.setdefault("tail_confirmation", {}).update(confirmed,
+                state={"complete": "confirmed", "continue": "more_products", "failed": "failed"}[confirmed["action"]])
+            phase_options = {"phase": "tail_result", "sequence": confirmed["confirmation_cycle"]}
         if not entry["error"]:
             listing["last_successful_page"] = entry.get("end_for_page", entry["page"])
         manifest["pages"][sort] = list(pages)
@@ -208,7 +214,26 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
         snapshot_rows = merge_rows(listing_results["main"], listing_results["bsr"], collector.cache, meta,
                                    log_defaults=False)
         save_checkpoint(args.output_dir, manifest, snapshot_rows, sort=sort,
-                        page=entry["page"], attempt=entry["attempt"])
+                        page=entry["page"], attempt=entry["attempt"], **phase_options)
+
+    def probe_checkpoint(record):
+        # Listing rows/pages and current_page belong exclusively to regular
+        # collection. A probe persists progress without changing that cursor.
+        status = manifest[sort].setdefault("tail_confirmation", {"reads": []})
+        if status.get("confirmation_cycle") != record["confirmation_cycle"]:
+            status.update(confirmation_cycle=record["confirmation_cycle"], reason=None, latest_total=None)
+        status.update(state="checking", queries=record["queries"], query_limit=record["query_limit"],
+                      remaining=record["remaining"], last_probe_page=record["page"])
+        status.setdefault("reads", []).append(dict(record))
+        refresh()
+        snapshot_rows = merge_rows(listing_results["main"], listing_results["bsr"], collector.cache, meta,
+                                   log_defaults=False)
+        try:
+            save_checkpoint(args.output_dir, manifest, snapshot_rows, sort=sort,
+                            page=record["page"], attempt=0, phase="tail_read", sequence=record["queries"])
+        except Exception:
+            status.update(state="failed", reason="probe_checkpoint_failed")
+            raise
 
     try:
         for sort, url, target in (("main", config.LISTING_URL, args.target), ("bsr", config.BSR_URL, args.bsr_target)):
@@ -217,12 +242,14 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
             context("listing", sort=sort, target=target)
             emit("listing_start", accepted=0, target=target)
             fetch = make_fetcher(session, url, args, sort, progress_state=progress_state)
+            probe = make_fetcher(session, url, args, sort, progress_state=progress_state, phase="tail_confirmation")
             def fetch_page(page):
                 nonlocal current_page
                 current_page = page
                 return fetch(page)
             rows, pages, reason = collect_pages(fetch_page, product="dry", target=target,
-                retries=args.page_retries, sleep_s=args.sleep, eligibility=eligibility, on_page=checkpoint)
+                retries=args.page_retries, sleep_s=args.sleep, eligibility=eligibility, on_page=checkpoint,
+                probe_page=probe, on_probe=probe_checkpoint)
             context("listing", sort=sort, page=current_page, **progress_state())
             emit("listing_complete", sort=sort, accepted=len(rows), target=target, stop_reason=reason,
                  pages=len(pages), excluded=counters, failed_products=len(failed_items),
