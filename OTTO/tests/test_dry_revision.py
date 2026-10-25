@@ -84,9 +84,8 @@ class SelectionRevisionTests(base.Offline):
                      "HEYDRY Elektrischer Wäschetrockner HEYDRY Lüfter für Wäscheständer",
                      "Brand Ventilator für den Wäscheständer", "Brand Luefter fuer Waeschestaender"):
             with self.subTest(name=name):
-                self.assertFalse(fields.classify(name, {"Produkttyp": "Wäschetrockner"})[0])
+                self.assertFalse(fields.classify(name)[0])
                 self.assertFalse(fields.classify("Wäschetrockner DR900", selection_name=name)[0])
-                self.assertFalse(fields.classify("Wäschetrockner DR900", {"_name": name})[0])
 
     def test_fan_features_and_compatibility_are_not_sold_type(self):
         for suffix in ("mit Lüfter", "mit Lüfter für Wäscheständer", "kompatibel mit Lüfter für Wäscheständer",
@@ -107,8 +106,6 @@ class SelectionRevisionTests(base.Offline):
             title = "Wärmepumpentrockner DR900, " + feature
             with self.subTest(title=title):
                 self.assertTrue(fields.classify(title)[0])
-                self.assertTrue(fields.classify(title, {"Produkttyp": "Wäschetrockner"})[0])
-                self.assertTrue(fields.classify("Wäschetrockner DR900", {"_name": title})[0])
                 self.assertTrue(fields.classify("Wäschetrockner DR900", selection_name=title)[0])
         self.assertTrue(fields.classify("Mobile Fernsteuerung, Wärmepumpentrockner DR900")[0])
 
@@ -120,8 +117,8 @@ class SelectionRevisionTests(base.Offline):
                       "Tragbarer Wäschetrockner DR900, mobile Fernsteuerung",
                       "Trockner DR900 portable", "Wäschetrockner DR900, portabel, App-Steuerung"):
             with self.subTest(title=title):
-                self.assertFalse(fields.classify(title, {"Produkttyp": "Wäschetrockner"})[0])
-                self.assertFalse(fields.classify("Wäschetrockner DR900", {"_name": title})[0])
+                self.assertFalse(fields.classify(title)[0])
+                self.assertFalse(fields.classify("Wäschetrockner DR900", selection_name=title)[0])
         self.assertTrue(fields.classify("Nicht portabler Wäschetrockner DR900")[0])
 
     def test_new_exclusions_replenish_100_ranks_without_extra_requests(self):

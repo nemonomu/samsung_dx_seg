@@ -144,7 +144,7 @@ class FourthSelectionTests(base.Offline):
         ):
             for chars in ({}, {"Produkttyp": "Wäschetrockner"}):
                 with self.subTest(name=name, chars=chars):
-                    self.assertTrue(fields.classify(name, chars)[0])
+                    self.assertTrue(fields.classify(name)[0])
         for name in (RACK_TITLE, RACK_TITLE + " inkl. Handtuchhalter",
                      "Portabler Wäschetrockner inkl. Fernbedienung",
                      "Lüfter für Wäscheständer inkl. Netzteil",
@@ -169,14 +169,12 @@ class FourthSelectionTests(base.Offline):
         self.assertEqual([c[1] for c in source.calls if c[0] == "rating"], ["2", "3", "4", "5"])
         self.assertFalse(any(c[0] == "pdf" for c in source.calls))
 
-    def test_heated_rack_not_rescued_by_generic_dryer(self):
-        for name in (RACK_TITLE, "Brand Heiztrockner mit Flügeln", "Elektrischer Wäschetrockner Heiztrockner mit Fluegeln"):
-            for chars in ({}, {"Produkttyp": "Wäschetrockner"}, {"_name": "Wäschetrockner"}):
-                with self.subTest(name=name, chars=chars):
-                    self.assertFalse(fields.classify(name, chars)[0])
-            self.assertFalse(fields.classify("Wäschetrockner", selection_name=name)[0])
-            self.assertFalse(fields.classify("Wäschetrockner", {"_name": name})[0])
-        self.assertTrue(fields.classify(RACK_TITLE, {"Produkttyp": "Wärmepumpentrockner"})[0])
+    def test_heated_rack_long_title_not_rescued_by_card_name(self):
+        for name in (RACK_TITLE,"Brand Heiztrockner mit Flügeln","Elektrischer Wäschetrockner Heiztrockner mit Fluegeln"):
+            with self.subTest(name=name):
+                self.assertFalse(fields.classify(name)[0])
+                self.assertFalse(fields.classify("Wäschetrockner",selection_name=name)[0])
+                self.assertFalse(fields.classify("Wärmepumpentrockner DR900",selection_name=name)[0])
 
     def test_appliance_features_compatibility_delivery_and_conflicts_stay_included(self):
         titles = (
@@ -194,23 +192,22 @@ class FourthSelectionTests(base.Offline):
             with self.subTest(name=name):
                 self.assertTrue(fields.classify(name)[0])
 
-    def test_pipeline_filters_both_stages_and_keeps_ranks_requests(self):
-        source = base.Source([[base.target(1, RACK_TITLE), base.target(2, "Unknown item"), base.target(3),
-                               base.target(4, base.target(3)["retailer_sku_name"]), base.target(5)]],
-                             {"v2": {"_name": RACK_TITLE}})
-        state = dict(target=2, batch_id="test", calendar_week="w43", crawl_datetime="2026-10-25 00:00:00")
-        log = base.Log()
-        rows = pipeline.collect(source, log, state, lambda r: None)
-        self.assertEqual([r["item"] for r in rows], ["3", "5"])
-        self.assertEqual([r["main_rank"] for r in rows], [1, 2])
-        self.assertEqual([r["bsr_rank"] for r in rows], [1, 2])
-        self.assertEqual((state["counts"]["excluded"], state["counts"]["duplicates"]), (2, 1))
-        self.assertFalse(any(c[0] == "pdf" for c in source.calls))
-        self.assertEqual([c[1] for c in source.calls if c[0] == "rating"], ["3", "5"])
-        compared = [vid for kind, *args in source.calls if kind == "comparison" for vid in args[0]]
-        self.assertNotIn("v1", compared)
-        self.assertEqual(len(compared), len(set(compared)))
-        reasons = [v["reason"] for e, v in log.records if e == "classification" and not v["accepted"]]
+    def test_title_only_selection_keeps_details_and_refills_duplicates(self):
+        source=base.Source([[base.target(1,RACK_TITLE),base.target(2,"Unknown item"),base.target(3),
+                             base.target(4,base.target(3)["retailer_sku_name"]),base.target(5)]],
+                           {"v2":{"_name":RACK_TITLE}})
+        state=dict(target=3,batch_id="test",calendar_week="w43",crawl_datetime="2026-10-25 00:00:00")
+        log=base.Log()
+        rows=pipeline.collect(source,log,state,lambda r:None)
+        self.assertEqual([r["item"] for r in rows],["2","3","5"])
+        self.assertEqual([r["main_rank"] for r in rows],[1,2,3])
+        self.assertEqual([r["bsr_rank"] for r in rows],[1,2,3])
+        self.assertEqual((state["counts"]["excluded"],state["counts"]["duplicates"]),(1,1))
+        self.assertEqual(sum(c[0]=="pdf" for c in source.calls),1)
+        self.assertEqual([c[1] for c in source.calls if c[0]=="rating"],["2","3","5"])
+        compared=[v for c in source.calls if c[0]=="comparison" for v in c[1]]
+        self.assertEqual(compared,["v2","v3","v5"])
+        reasons=[v["reason"] for e,v in log.records if e=="classification" and not v["accepted"]]
         self.assertTrue(any("heated_drying_rack" in r for r in reasons))
 
 

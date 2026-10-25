@@ -3,7 +3,7 @@ import re
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
 from common.model_sku import clean_model
-from dry.config import CAPACITY_LABELS, TYPE_LABELS, CATEGORY_LABELS
+from dry.config import CAPACITY_LABELS, CATEGORY_LABELS
 
 
 def text(value):
@@ -37,7 +37,7 @@ EXCLUDED = (
 _SOLD_TYPES = (
     (r"\b(?:heizstab|heizregister|thermodetektor|temperaturfühler|stellfuß|stellfuss|vibrationsdämpfer|schwingungsdämpfer|schutzhülle|schützhülle)\b|\b(?:sensor|griff)\s+(?:wie|für|fuer)\b|\b(?:wäsche|waesche)trockner[- ]kondensator\b", "sold_accessory"),
     (r"\b(?:kompressor|schraubenkompressor)\b", "sold_compressor"),
-    (r"\b(?:filament|filatment|teppich|hundepflege|haustier)[- ]?trockner\b|\btrockner\s+(?:für|fuer)\s+(?:(?:den|die|das)\s+)?(?:helm(?:e)?|stiefel|filamente?|haustiere?|hunde|katzen|teppiche?)\b", "sold_non_clothing_dryer"),
+    (r"\b(?:filament|filatment|teppich|hundepflege|haustier)[- ]?trockner\b|\bfilament[- ]?dryer\b|\btrockner\s+(?:für|fuer)\s+(?:(?:den|die|das)\s+)?(?:helm(?:e)?|stiefel|filamente?|haustiere?|hunde|katzen|teppiche?)\b", "sold_non_clothing_dryer"),
     (r"\b(?:unterziehshirt|unterhemd|füllwatte|bastelfilz|standregal|dusch[- ]wc|hänge[- ]?wc|bidet|haargel|3d[- ]drucker|hundeschermaschine)\b", "sold_unrelated_product"),
     # A carpet air mover may put its purpose after speed/features in the title.
     (r"\b(?:elektro[- ]gebläse|air\s+mover)\b", "sold_non_clothing_dryer"),
@@ -186,60 +186,24 @@ def title_kind(value):
     return "ambiguous", "product_type_unconfirmed"
 
 
-def classification_evidence(name, chars=None, infos=None, selection_name=None):
-    chars, infos = chars or {}, infos or {}
-    sources = [("listing_title", name), ("search_title", selection_name),
-               ("comparison_title", chars.get("_name"))]
-    sources += [("comparison:" + k, chars.get(k)) for k in TYPE_LABELS]
-    sources += [("listing_spec:" + k, infos.get(k)) for k in TYPE_LABELS]
-    result = []
-    for source, raw in sources:
-        if not text(raw):
-            continue
-        decision, reason = title_kind(raw)
-        if source.endswith("Set-Bestandteile"):
-            if WASHER.search(text(raw)) and DRYER.search(text(raw)):
-                decision, reason = "exclude", "washer_dryer_bundle"
-            else:
-                decision, reason = "ambiguous", "included_components_not_product_type"
-        result.append(dict(source=source, raw=text(raw)[:500], decision=decision, reason=reason))
-    return result
+def classification_evidence(name, *, selection_name=None):
+    """One listing title only: prefer the original long search title."""
+    raw = text(selection_name) or text(name)
+    source = "search_title" if text(selection_name) else "listing_title"
+    decision, reason = title_kind(raw)
+    return [dict(source=source, raw=raw[:500], decision=decision, reason=reason)]
 
 
-def classify(name, chars=None, infos=None, selection_name=None):
-    chars, infos = chars or {}, infos or {}
-    evidence = classification_evidence(name, chars, infos, selection_name)
-    # An explicit sold type in a title beats a generic 'Wäschetrockner' label.
-    explicit = next((e for e in evidence if e["source"] in
-                     {"listing_title", "search_title", "comparison_title"}
-                     and e["reason"] in {"explicit_portable_dryer", "explicit_drying_rack_fan"}), None)
-    if explicit:
-        return False, explicit["source"] + ":" + explicit["reason"]
-    # Explicit sold composition is stronger than a title mentioning only one component.
-    bundle = next((e for e in evidence if e["source"].endswith("Set-Bestandteile")
-                   and e["decision"] == "exclude"), None)
-    if bundle:
-        return False, bundle["source"] + ":" + bundle["reason"]
-    if any(e["reason"] == "conflicting_product_types" for e in evidence):
-        return True, "ambiguous_included_conflicting_product_types"
-    if any(e["reason"] == "accessory_description" for e in evidence):
-        return True, "ambiguous_included_accessory_description"
-    positive = any(e["decision"] == "include" for e in evidence)
-    negative = next((e for e in evidence if e["decision"] == "exclude"), None)
-    if positive and negative:
-        specific_positive = any(e["decision"] == "include" and specific_appliance(e["raw"]) for e in evidence)
-        if specific_positive or negative["reason"] not in _SOLD_REASONS:
-            return True, "ambiguous_included_conflicting_product_types"
-    if negative:
-        return False, negative["source"] + ":" + negative["reason"]
-    if positive:
-        titles = [name, selection_name, chars.get("_name")]
-        machine_evidence = (any(specific_appliance(text(v)) for v in titles)
-                            or any(capacity(v) for v in titles)
-                            or bool(loading(chars.get("Beladung")))
-                            or any(capacity(v, labelled=True) for k, v in {**infos, **chars}.items() if capacity_label(k)))
-        return True, "standalone_dryer_evidence" if machine_evidence else "ambiguous_included_generic_dryer"
-    return True, "ambiguous_included_product_type"
+def classify(name, *, selection_name=None):
+    evidence = classification_evidence(name, selection_name=selection_name)[0]
+    decision, reason = evidence["decision"], evidence["reason"]
+    if decision == "exclude":
+        return False, evidence["source"] + ":" + reason
+    if decision == "ambiguous":
+        return True, "ambiguous_included_" + ("product_type" if reason == "product_type_unconfirmed" else reason)
+    raw = text(selection_name) or text(name)
+    machine_evidence = specific_appliance(raw) or capacity(raw)
+    return True, "standalone_dryer_evidence" if machine_evidence else "ambiguous_included_generic_dryer"
 
 
 def public_product_url(value, variation_id):
@@ -376,9 +340,9 @@ def candidates(target, chars, pdf=None):
     }
 
 
-def choose(target, chars, pdf=None, events=None):
+def choose(target, chars, pdf=None, events=None, *, options=None):
     result = {}
-    for field, choices in candidates(target, chars, pdf).items():
+    for field, choices in (candidates(target, chars, pdf) if options is None else options).items():
         winner = next(((source, raw, value) for source, raw, value in choices if value), None)
         result[field] = winner[2] if winner else None
         if events:

@@ -20,10 +20,8 @@ class SoldProductTests(base.Offline):
                         accepted, reason = fields.classify(name)
                         self.assertTrue(accepted)
                         self.assertTrue(reason.startswith("ambiguous"))
-                        self.assertTrue(fields.classify(name, {"Produkttyp": "Wärmepumpentrockner"})[0])
-                        self.assertTrue(fields.classify(name, {"_error": "comparison_timeout"})[0])
+                        self.assertTrue(fields.classify(name)[0])
                         self.assertTrue(fields.classify("Wäschetrockner", selection_name=name)[0])
-                        self.assertTrue(fields.classify("Wäschetrockner", {"_name": name})[0])
                         self.assertEqual(fields.classification_evidence(name)[0]["raw"], name)
 
     def test_cleanable_or_bundled_parts_still_are_sold_parts(self):
@@ -42,7 +40,6 @@ class SoldProductTests(base.Offline):
         ):
             with self.subTest(name=name):
                 self.assertFalse(fields.classify(name)[0])
-                self.assertFalse(fields.classify(name, {"Produkttyp": "Wäschetrockner"})[0])
         # Cleaning/delivery claims elsewhere must not rescue a sold filter.
         self.assertFalse(fields.classify("Trockner, Filter, Trommel leicht zu reinigen")[0])
         self.assertFalse(fields.classify("Trockner, Filter, Anleitung inklusive")[0])
@@ -69,7 +66,7 @@ class SoldProductTests(base.Offline):
             "Mini Portabler Wäschetrockner DR900", "Reisetrockner DR900", "Campingtrockner DR900",
         ):
             with self.subTest(name=name):
-                self.assertFalse(fields.classify(name, {"Produkttyp": "Wäschetrockner"})[0])
+                self.assertFalse(fields.classify(name)[0])
         for suffix in ("mobile Fernsteuerung", "tragbare Fernbedienung", "mit mobiler App",
                        "portable App-Steuerung", "mit tragbarem Lüfter", "kompatibel mit mobilen Geräten"):
             self.assertTrue(fields.classify("Wärmepumpen-Wäschetrockner DR900, " + suffix)[0])
@@ -77,7 +74,7 @@ class SoldProductTests(base.Offline):
     def test_same_title_conflict_is_not_discarded(self):
         name = "FELIXLEO Elektrischer Wäscheständer Ablufttrockner 2 5 kg mit Smart Modus 800 W Kompakttrockner mit"
         for chars in ({}, {"Produkttyp": "Wäscheständer"}, {"Produkttyp": "Ablufttrockner"}):
-            accepted, reason = fields.classify(name, chars)
+            accepted, reason = fields.classify(name)
             self.assertTrue(accepted)
             self.assertTrue(reason.startswith("ambiguous"))
         evidence = fields.classification_evidence(name)
@@ -104,8 +101,6 @@ class SoldProductTests(base.Offline):
         ):
             with self.subTest(name=name):
                 self.assertFalse(fields.classify(name)[0])
-                self.assertFalse(fields.classify(name, {"Produkttyp": "Wäschetrockner"})[0])
-                self.assertFalse(fields.classify("Wäschetrockner", {"_name": name})[0])
                 self.assertFalse(fields.classify("Wäschetrockner", selection_name=name)[0])
 
     def test_non_clothing_purpose_survives_fuer(self):
@@ -119,7 +114,7 @@ class SoldProductTests(base.Offline):
             "Teppich-Trockner Air Mover",
         ):
             with self.subTest(name=name):
-                self.assertFalse(fields.classify(name, {"Produkttyp": "Wäschetrockner"})[0])
+                self.assertFalse(fields.classify(name)[0])
 
     def test_features_accessories_and_compatibility_are_not_sold_parts(self):
         for suffix in (
@@ -140,12 +135,13 @@ class SoldProductTests(base.Offline):
                 self.assertTrue(accepted)
         self.assertEqual(fields.classify("Brand unbekannt"), (True, "ambiguous_included_product_type"))
 
-    def test_explicit_parts_conflicting_with_specific_appliance_stay_uncertain(self):
-        accepted, reason = fields.classify("Heizstab wie Brand DR900", {"_name": "Wärmepumpentrockner DR900"})
+    def test_title_conflicts_and_primary_title_precedence(self):
+        accepted,reason=fields.classify("Wäschetrockner DR900, Heizstab")
         self.assertTrue(accepted)
         self.assertTrue(reason.startswith("ambiguous"))
-        self.assertFalse(fields.classify("Wäscheständer Wäschetrockner", {"Produkttyp": "Wäschetrockner"})[0])
-        self.assertFalse(fields.classify("Lüfter für Wäscheständer", {"Produkttyp": "Wärmepumpentrockner"})[0])
+        self.assertFalse(fields.classify("Wärmepumpentrockner DR900",selection_name="Heizstab wie Brand DR900")[0])
+        self.assertFalse(fields.classify("Wäscheständer Wäschetrockner")[0])
+        self.assertFalse(fields.classify("Lüfter für Wäscheständer")[0])
 
 
 class SelectionFlowTests(base.Offline):
@@ -174,7 +170,7 @@ class SelectionFlowTests(base.Offline):
                 self.assertEqual(len(rows), 100)
                 self.assertEqual([r["main_rank"] for r in rows], list(range(1, 101)))
                 self.assertEqual([r["bsr_rank"] for r in rows], list(range(1, 101)))
-                self.assertEqual(state["counts"]["excluded"], 2)
+                self.assertEqual(state["counts"]["excluded"], 1)
                 self.assertEqual(state["counts"]["duplicates"], 1)
                 compared = [v for call in source.calls if call[0] == "comparison" for v in call[1]]
                 self.assertNotIn("v900", compared)
@@ -182,15 +178,15 @@ class SelectionFlowTests(base.Offline):
                 for vid in ("v1", "v2", "v3", "v901"):
                     self.assertEqual(compared.count(vid), 1)
                 self.assertEqual([c[1] for c in source.calls if c[0] == "rating"], [r["item"] for r in rows])
-                self.assertEqual([c[1] for c in source.calls if c[0] == "pdf"], [item["pdf_uri"] for item in items])
+                self.assertEqual([c[1] for c in source.calls if c[0] == "pdf"], [item["pdf_uri"] for item in items + [late]])
                 self.assertEqual({c[0] for c in source.calls}, {"page", "tiles", "comparison", "pdf", "rating"})
                 for product_id in ("1", "2", "3"):
                     decision = next(v for e, v in log.records if e == "classification" and v.get("item") == product_id)
                     self.assertTrue(decision["needs_review"])
-                    self.assertEqual(decision["evidence"][0]["source"], "listing_title")
+                    self.assertEqual(decision["evidence"][0]["source"], "search_title")
                     self.assertEqual(decision["evidence"][0]["raw"], titles[int(product_id)-1])
 
-    def test_two_pass_filtering_requests_ranks_and_refill(self):
+    def test_title_only_filtering_requests_ranks_and_refill(self):
         conflict = "Elektrischer Wäscheständer Ablufttrockner 2 5 kg mit Smart Modus"
         source = base.Source([
             [base.target(900, "Heizstab wie Brand 12345"), base.target(1, conflict),
@@ -203,10 +199,10 @@ class SelectionFlowTests(base.Offline):
         rows = pipeline.collect(source, log, state, lambda rows: None)
         self.assertEqual(len(rows), 100)
         self.assertEqual(rows[0]["item"], "1")
-        self.assertEqual(rows[1]["item"], "3")
+        self.assertEqual(rows[1]["item"], "2")
         self.assertEqual([r["main_rank"] for r in rows], list(range(1, 101)))
         self.assertEqual([r["bsr_rank"] for r in rows], list(range(1, 101)))
-        self.assertEqual(state["counts"]["excluded"], 2)
+        self.assertEqual(state["counts"]["excluded"], 1)
         self.assertEqual(state["counts"]["duplicates"], 1)
         compared = [v for call in source.calls if call[0] == "comparison" for v in call[1]]
         self.assertNotIn("v900", compared)
@@ -214,17 +210,17 @@ class SelectionFlowTests(base.Offline):
         self.assertEqual(compared.count("v2"), 1)
         self.assertEqual(len(compared), len(set(compared)))
         rated = [call[1] for call in source.calls if call[0] == "rating"]
-        self.assertNotIn("2", rated)
+        self.assertIn("2", rated)  # Detailed type cannot exclude a selected title.
         self.assertNotIn("900", rated)
         self.assertEqual(len(rated), 100)
-        # Only the unresolved included conflict needs PDF; no excluded item does.
-        self.assertEqual(sum(call[0] == "pdf" for call in source.calls), 1)
+        # Both uncertain selected items need PDF; no excluded title does.
+        self.assertEqual(sum(call[0] == "pdf" for call in source.calls), 2)
         decisions = [v for event, v in log.records if event == "classification" and v.get("item") == "1"]
         self.assertTrue(decisions[0]["needs_review"])
         self.assertEqual(decisions[0]["evidence"][0]["raw"], conflict)
         included = next(v for event, v in log.records if event == "classification" and v.get("item") == "3")
         self.assertTrue(included["accepted"])
-        self.assertEqual(included["evidence"][0]["source"], "listing_title")
+        self.assertEqual(included["evidence"][0]["source"], "search_title")
         self.assertEqual(included["evidence"][0]["raw"], "Mini Wäschetrockner DR900")
 
 

@@ -60,8 +60,8 @@ class LimitTests(base.Offline):
             self.assertEqual(connection.records[99][bsr_index], "100")
             self.assertTrue(all(r[bsr_index] is None for r in connection.records[100:]))
             self.assertEqual(len(connection.records), 300)
-            # No page beyond the reached target, duplicate comparison, PDF or extra endpoint.
-            self.assertEqual([c[1] for c in source.calls if c[0] == "page"], [1, 2, 3, 4, 5])
+            # All listing pages first; only selected targets get detail requests.
+            self.assertEqual([c[1] for c in source.calls if c[0] == "page"], [1, 2, 3, 4, 5, 6])
             for endpoint in ("tiles", "comparison"):
                 ids = [vid for kind, *args in source.calls if kind == endpoint for vid in args[0]]
                 self.assertEqual(ids, [f"v{i}" for i in range(1, 301)])
@@ -96,7 +96,8 @@ class LimitTests(base.Offline):
             self.assertEqual(sum(bool(r["bsr_rank"]) for r in rows), 100)
             log = [json.loads(line) for line in Path(state["log"]).read_text(encoding="utf-8").splitlines()]
             progress = [v for v in log if v["event"] == "product_end"][-1]
-            self.assertEqual((progress["number"], progress["remaining"], progress["percent"]), (290, 10, 96.7))
+            self.assertEqual((progress["number"], progress["remaining"], progress["percent"]), (290, 0, 100.0))
+            self.assertEqual(progress["goal"], 300)
             self.assertEqual(log[-1]["output_rows"], 290)
 
     def test_filters_duplicates_and_final_page_still_stop_at_300(self):
@@ -121,13 +122,13 @@ class LimitTests(base.Offline):
                 self.assertEqual(execute.call_args.kwargs["limit"], expected)
                 self.assertEqual(execute.call_args.kwargs["table"], config.DEFAULT_TABLE)
 
-    def test_explicit_100_stops_without_extra_page(self):
+    def test_explicit_100_only_details_100_after_listing_snapshot(self):
         source = source_with_count(360)
         state = dict(target=100, batch_id="fixture", calendar_week="w43", crawl_datetime="2026-10-24 12:00:00")
         rows = pipeline.collect(source, base.Log(), state, lambda r: None)
         self.assertEqual(len(rows), 100)
         self.assertEqual([r["bsr_rank"] for r in rows], list(range(1, 101)))
-        self.assertEqual([c[1] for c in source.calls if c[0] == "page"], [1, 2])
+        self.assertEqual([c[1] for c in source.calls if c[0] == "page"], [1, 2, 3, 4, 5, 6])
         self.assertEqual(sum(c[0] == "rating" for c in source.calls), 100)
 
     def test_invalid_limits_fail_before_site_database_or_artifacts(self):
@@ -174,11 +175,12 @@ class LimitTests(base.Offline):
             self.assertEqual(code, 3)
             self.assertEqual(state["collection_status"], "failed")
             self.assertNotIn("end_reason", state)
-            self.assertEqual(state["output_rows"], 101)
+            self.assertEqual(state["output_rows"], 0)
             self.assertEqual(db.call_count, 1)
             with Path(state["csv"]).open(encoding="utf-8-sig", newline="") as handle:
                 rows = list(csv.DictReader(handle))
-            self.assertEqual(rows[100]["bsr_rank"], "")
+            self.assertEqual(rows, [])
+            self.assertFalse(state["listing_complete"])
             with self.assertRaisesRegex(config.DryError, "output_not_completed"):
                 storage.read_output(state["csv"])
 
@@ -242,6 +244,7 @@ class RankStorageTests(base.Offline):
             rows, _ = storage.read_output(state["csv"])
             self.assertEqual(len(rows), 101)
             self.assertEqual(rows[100]["bsr_rank"], "")
+            self.assertTrue(state["listing_complete"])
             inserted_values = next(values for sql, values in connection.statements if sql.startswith("INSERT"))
             index = config.COLUMNS[1:].index("bsr_rank")
             self.assertEqual(inserted_values[99][index], 100)

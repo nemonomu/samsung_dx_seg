@@ -107,10 +107,13 @@ class ClassificationTests(Offline):
             with self.subTest(name=name):
                 self.assertFalse(fields.classify(name)[0])
 
-    def test_conflicting_structured_type_is_included_for_review(self):
-        self.assertEqual(fields.classify("Wärmepumpentrockner DR900", {"Produkttyp": "Waschtrockner"}),
-                         (True, "ambiguous_included_conflicting_product_types"))
-        self.assertTrue(fields.classify("Brand DR900", {"Produkttyp": "Wärmepumpentrockner"})[0])
+    def test_details_do_not_override_title_selection(self):
+        source=Source([[target(1,"Wärmepumpentrockner DR900")]],{"v1":{"Produkttyp":"Waschtrockner"}})
+        run=dict(target=1,batch_id="test",calendar_week="w43",crawl_datetime="2026-10-25 00:00:00")
+        rows=pipeline.collect(source,Log(),run,lambda r:None)
+        self.assertEqual([r["item"] for r in rows],["1"])
+        self.assertEqual(run["counts"]["excluded"],0)
+        self.assertEqual(fields.classify("Brand DR900"),(True,"ambiguous_included_product_type"))
 
     def test_unknown_is_reported_ambiguous(self):
         self.assertEqual(fields.classify("Brand 900"), (True, "ambiguous_included_product_type"))
@@ -119,17 +122,19 @@ class ClassificationTests(Offline):
         self.assertEqual(fields.classify("Wäschetrockner Modell 180, 18 m Leinenlänge"),
                          (True, "ambiguous_included_generic_dryer"))
         self.assertTrue(fields.classify("Wäschetrockner Modell 180")[0])
-        self.assertTrue(fields.classify("Wäschetrockner DR900", {"Nennkapazität": "9 kg"})[0])
-        self.assertTrue(fields.classify("Wäschetrockner DR900", {"Gewicht": "9 kg"})[0])
+        self.assertTrue(fields.classify("Wäschetrockner DR900")[0])
 
     def test_multiple_types_without_explicit_composition_are_included(self):
         self.assertTrue(fields.classify("Wärmepumpentrockner DR900, Waschmaschine vernetzbar")[0])
         self.assertTrue(fields.classify("Waschmaschine kompatibel Wärmepumpentrockner DR900")[0])
 
-    def test_included_accessories_are_not_a_dryer_exclusion(self):
-        name = "Wärmepumpentrockner DR900"
-        self.assertTrue(fields.classify(name, {"Set-Bestandteile": "Schlauch, Trockner DR900"})[0])
-        self.assertFalse(fields.classify(name, {"Set-Bestandteile": "Waschmaschine WA900, Trockner DR900"})[0])
+    def test_included_accessories_and_explicit_title_bundle(self):
+        self.assertTrue(fields.classify("Wärmepumpentrockner DR900 mit Schlauch")[0])
+        self.assertFalse(fields.classify("Waschmaschine WA900 + Trockner DR900 Set")[0])
+        source=Source([[target(1,"Wärmepumpentrockner DR900")]],
+                      {"v1":{"Set-Bestandteile":"Waschmaschine WA900, Trockner DR900"}})
+        run=dict(target=1,batch_id="test",calendar_week="w43",crawl_datetime="2026-10-25 00:00:00")
+        self.assertEqual(len(pipeline.collect(source,Log(),run,lambda r:None)),1)
 
     def test_loading_does_not_infer_installation_or_technology(self):
         for value in ("freistehend", "Wärmepumpentrockner", "Standgerät", "Einbau", "Frontlader und Toplader"):
@@ -329,15 +334,16 @@ class ClientTests(Offline):
         self.assertEqual(fetch.call_count, 3)
 
     def test_wrong_review_product_and_redirect_are_null(self):
-        c = client.Client(Log(), attempts=1)
         for body, response in (
             (rating_document() + b'<div class="js_cr_sidebar"><a href="/p/dryer-999/">x</a></div>', {"status": 200}),
             (rating_document(), {"status": 200, "final_url": "https://www.otto.de/login/"}),
         ):
-            with patch.object(c, "fetch", return_value=(body, response)):
+            c = client.Client(Log(), attempts=1)  # Independent failure cases must not hit the retry-budget memo.
+            with patch.object(c, "fetch", return_value=(body, response)) as fetch:
                 value = c.rating("100")
             self.assertIsNone(value["average_rating"])
             self.assertIsNone(value["rating_count"])
+            self.assertEqual(fetch.call_count, 1)
 
     def test_network_retries_bounded_and_no_raw_error(self):
         log = Log()
@@ -532,11 +538,12 @@ class PipelineTests(Offline):
             with self.assertRaises(client.RequestFailure):
                 self.collect(source, 100)
 
-    def test_comparison_exclusion_replenishes_target(self):
-        source = Source([[target(1, "Brand X900"), target(2), target(3)]], {"v1": {"Produkttyp": "Waschtrockner"}})
-        rows, state = self.collect(source, 2)
-        self.assertEqual([r["item"] for r in rows], ["2", "3"])
-        self.assertFalse(any(c == ("rating", "1") for c in source.calls))
+    def test_comparison_cannot_exclude_a_title_selected_item(self):
+        source=Source([[target(1,"Brand X900"),target(2),target(3)]],{"v1":{"Produkttyp":"Waschtrockner"}})
+        rows,run=self.collect(source,2)
+        self.assertEqual([r["item"] for r in rows],["1","2"])
+        self.assertEqual(run["counts"]["excluded"],0)
+        self.assertIn(("rating","1"),source.calls)
 
     def test_uncertain_item_is_collected_and_marked_for_review(self):
         source = Source([[target(1, "Brand DR900"), target(2, "Waschmaschine WA900"), target(3)]], {"v1": {}})
@@ -585,7 +592,7 @@ class PipelineTests(Offline):
             db = MagicMock(return_value={})
             code, state = pipeline.execute(limit=2, output_root=root, client_factory=lambda e: Source([[target(1)], [target(2)]], failure=2), database=db)
             self.assertEqual(code, 3)
-            self.assertEqual(state["output_rows"], 1)
+            self.assertEqual(state["output_rows"], 0)  # Listing failed before details began.
             self.assertEqual(db.call_count, 1)
             with self.assertRaisesRegex(config.DryError, "output_not_completed"):
                 storage.read_output(state["csv"])
@@ -640,7 +647,7 @@ class PipelineTests(Offline):
         def factory(events):
             real = client.Client(events)
             real.page, real.comparison, real.rating = source.page, source.comparison, source.rating
-            real.fetch = tile_fetch({"v2", "v4", "v6"})
+            real.fetch = tile_fetch({"v1", "v3", "v5"})
             return real
         with tempfile.TemporaryDirectory() as root, patch("sys.stdout", new=io.StringIO()), patch.object(listing, "CROCOTILE_SINGLETON_FAILURE_LIMIT", 3):
             db = MagicMock(return_value={})
@@ -652,7 +659,7 @@ class PipelineTests(Offline):
             self.assertEqual(saved["counts"]["tile_http_400_failures"], 3)
             self.assertNotIn("end_reason", saved)
             with Path(state["csv"]).open(encoding="utf-8-sig", newline="") as handle:
-                self.assertEqual([row["item"] for row in csv.DictReader(handle)], ["1"])
+                self.assertEqual(list(csv.DictReader(handle)), [])  # Cards fail before detail collection.
             self.assertEqual(db.call_count, 1)  # preflight only, no partial insert
             with self.assertRaisesRegex(config.DryError, "output_not_completed"):
                 storage.read_output(state["csv"])
@@ -843,21 +850,19 @@ class RevisionTests(Offline):
             with self.subTest(raw=raw):
                 self.assertEqual(client.minimal_tile({"saleTags": {"discount": raw}})["savings"], expected)
 
-    def test_confirmed_dryers_survive_conflicting_description(self):
-        for name, description in (
-            ("Hanseatic Wärmepumpentrockner HWT8EGT", "Filter und Schlauch für einfache Reinigung"),
-            ("Hanseatic Wärmepumpentrockner HWT8DGT", "Ersatzfilter und Zubehör"),
-            ("Sharp Wärmepumpentrockner KD-NHH9S8GW3-DE", "Waschtrockner sind nicht dasselbe"),
-            ("LG Wärmepumpentrockner Vivace RT90V9W", "Filter einfach reinigen"),
+    def test_confirmed_dryers_survive_title_feature_descriptions(self):
+        for name,description in (
+            ("Hanseatic Wärmepumpentrockner HWT8EGT","Filter und Schlauch für einfache Reinigung"),
+            ("Hanseatic Wärmepumpentrockner HWT8DGT","Ersatzfilter und Zubehör"),
+            ("Sharp Wärmepumpentrockner KD-NHH9S8GW3-DE","Waschtrockner sind nicht dasselbe"),
+            ("LG Wärmepumpentrockner Vivace RT90V9W","Filter einfach reinigen"),
         ):
             with self.subTest(name=name):
-                # Original excluded sentences were not captured. These reproduce the
-                # documented comparison:accessory/washer_dryer failure paths, not quotations.
-                accepted, reason = fields.classify(name, {"_name": description})
-                self.assertTrue(accepted)
-                self.assertTrue(reason.startswith("ambiguous"))
-                evidence = fields.classification_evidence(name, {"_name": description})
-                self.assertEqual(evidence[-1]["raw"], description)
+                title=name+", "+description
+                self.assertTrue(fields.classify(name,selection_name=title)[0])
+                evidence=fields.classification_evidence(name,selection_name=title)
+                self.assertEqual(len(evidence),1)
+                self.assertEqual(evidence[0]["raw"],title)
 
     def test_certain_non_dryers_and_conflicting_listing_titles(self):
         for name in (
@@ -869,7 +874,7 @@ class RevisionTests(Offline):
         ):
             self.assertFalse(fields.classify(name)[0], name)
         self.assertEqual(fields.classify("Filter für Trockner", selection_name="Wärmepumpentrockner DR900"),
-                         (True, "ambiguous_included_conflicting_product_types"))
+                         (True, "standalone_dryer_evidence"))
 
     def test_semantic_comparison_title_ignores_long_feature_and_wrong_option(self):
         from bs4 import BeautifulSoup

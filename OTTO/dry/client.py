@@ -3,6 +3,7 @@ import io
 import json
 import re
 import time
+from copy import deepcopy
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -10,9 +11,11 @@ from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup
 
 from common import compare, datasheet, listing, review_rating
-from dry.config import CATEGORY_LABELS, COMPARE_LABELS, SEARCH_TERM, SEARCH_URL, TYPE_LABELS, DryError, PDF_PARSE_TIMEOUT, PDF_MAX_ATTEMPTS
+from dry.config import CATEGORY_LABELS, COMPARE_LABELS, SEARCH_TERM, SEARCH_URL, DryError, PDF_PARSE_TIMEOUT, PDF_MAX_ATTEMPTS
 from dry.fields import capacity, capacity_candidate, capacity_label, public_product_url, text, loading, savings, DRYER, valid_sku, sku_rejection
 from dry.pdf_process import pdf_attempt
+
+MAX_PDF_BYTES = 20_000_000  # Existing download bound; at most one cached document.
 
 
 class RequestFailure(DryError):
@@ -25,6 +28,11 @@ class Client:
     def __init__(self, events, timeout=30, attempts=3, pause=0.25, pdf_timeout=PDF_PARSE_TIMEOUT):
         self.events, self.timeout, self.attempts, self.pause = events, timeout, attempts, pause
         self.compare_cache = {}
+        self.tile_cache = {}
+        self.rating_cache = {}
+        self.rating_failures = {}
+        self._pdf_uri, self._pdf_body = None, None
+        self.last_page_meta = {}
         self.pdf_timeout = pdf_timeout
         self.tile_http_400_failures = 0  # Run total for diagnostics, never the abort counter.
 
@@ -45,7 +53,7 @@ class Client:
                         if status != 200:
                             raise RequestFailure("unexpected_http_status", status)
                         body = bytearray()
-                        max_bytes = 20_000_000 if kind == "pdf" else 8_000_000
+                        max_bytes = MAX_PDF_BYTES if kind == "pdf" else 8_000_000
                         while True:
                             if time.monotonic() - started > self.timeout:
                                 raise RequestFailure("response_deadline", status)
@@ -88,8 +96,9 @@ class Client:
         if not products and count is not None and offset < count:
             raise RequestFailure("listing_empty_before_reported_end")
         # Pure LDY slot composition; immediately discard unrelated output fields.
+        composed = listing.compose_rows(page, offset, data)
         rows = [{k: row.get(k) for k in ("product_id", "variation_id", "product_url", "retailer_sku_name")}
-                for row in listing.compose_rows(page, offset, data)]
+                for row in composed]
         for row in rows:
             if any(not re.fullmatch(r"[A-Za-z0-9_-]+", str(row.get(k) or "")) for k in ("product_id", "variation_id")):
                 raise RequestFailure("listing_identifier_missing_or_invalid")
@@ -98,45 +107,64 @@ class Client:
         sponsored = listing.products_for_intent(data, "sponsored")
         consumed = min(len(products), listing.LISTING_POSITIONS_PER_PAGE - min(len(sponsored), len(listing.SPONSORED_SLOT_POSITIONS)))
         end = not products or (count is not None and offset + consumed >= count)
+        display_count = ranked[0].get("displayCount")
+        self.last_page_meta = dict(count=count,
+            display_count=display_count if type(display_count) is int and display_count >= 0 else None,
+            organic_occurrences=sum(r["exposure_type"] == "organic" for r in composed),
+            sponsored_occurrences=sum(r["exposure_type"] == "sponsored" for r in composed))
         fingerprint = tuple(str(p["id"]) + ":" + str(p.get("bestVariationId")) for p in products)
         return rows, consumed, end, fingerprint
 
     def tiles(self, ids, _state=None):
         if not ids:
             return {}
+        ids = list(dict.fromkeys(ids))
+        needed = [vid for vid in ids if vid not in self.tile_cache]
+        if len(needed) < len(ids):
+            self.events.emit("cache_hit", endpoint="tiles", count=len(ids)-len(needed), status="confirmed")
+        if not needed:
+            return {vid: deepcopy(self.tile_cache[vid]) for vid in ids}
         # LDY scope: a new top-level batch starts fresh; recursive splits share state.
         state = _state if _state is not None else {"bad_ids": 0}
-        self.events.emit("tile_targets", variation_ids=ids)
+        self.events.emit("tile_targets", variation_ids=needed)
         try:
-            data, _ = self.fetch(listing.CROCOTILE_URL + "?variationIds=" + ",".join(quote(v, safe="") for v in ids),
+            data, _ = self.fetch(listing.CROCOTILE_URL + "?variationIds=" + ",".join(quote(v, safe="") for v in needed),
                                  "tiles", kind="json", headers=listing.CROCOTILE_HEADERS)
         except RequestFailure as exc:
             if exc.status != 400:
                 raise
-            if len(ids) > 1:
-                mid = len(ids) // 2
-                return {**self.tiles(ids[:mid], state), **self.tiles(ids[mid:], state)}
+            if len(needed) > 1:
+                mid = len(needed) // 2
+                fresh = {**self.tiles(needed[:mid], state), **self.tiles(needed[mid:], state)}
+                return {**{vid: deepcopy(self.tile_cache[vid]) for vid in ids if vid not in needed}, **fresh}
             state["bad_ids"] += 1
             self.tile_http_400_failures += 1
             limit = listing.CROCOTILE_SINGLETON_FAILURE_LIMIT
             abort = state["bad_ids"] >= limit
-            self.events.emit("failure", stage="listing", variation_id=ids[0], reason="tile_id_rejected",
+            self.events.emit("failure", stage="listing", variation_id=needed[0], reason="tile_id_rejected",
                              status=400, batch_failures=state["bad_ids"], total_failures=self.tile_http_400_failures,
                              failure_limit=limit, outcome="aborted_systemic_400" if abort else "skipped_id")
             if abort:
                 raise RequestFailure("systemic_tile_rejection", 400) from None
-            return {}
+            return {vid: deepcopy(self.tile_cache[vid]) for vid in ids if vid not in needed}
         if not isinstance(data, list) or any(not isinstance(t, dict) for t in data):
             raise RequestFailure("tile_contract_changed")
-        result = {}
         for tile in data:
             vid = str(tile.get("variationId") or "")
-            if vid in ids:
-                result[vid] = minimal_tile(tile)
-        return result
+            if vid in needed:
+                self.tile_cache[vid] = minimal_tile(tile)
+                self.events.emit("parsed", endpoint="tiles", count=1)
+        return {vid: deepcopy(self.tile_cache[vid]) for vid in ids if vid in self.tile_cache}
 
     def comparison(self, ids):
+        ids = list(dict.fromkeys(ids))
         needed = [v for v in dict.fromkeys(ids) if v not in self.compare_cache]
+        hits = [v for v in ids if v not in needed]
+        for failed in (False, True):
+            count = sum(bool(self.compare_cache[v].get("_error")) == failed for v in hits)
+            if count:
+                self.events.emit("failure_reused" if failed else "cache_hit", endpoint="comparison", count=count,
+                                 status="failed" if failed else "confirmed_response")
         if needed:
             self.events.emit("comparison_targets", variation_ids=needed)
             url = compare.VERGLEICH_URL + "?" + urlencode({"variationIds": ",".join(needed)})
@@ -145,6 +173,7 @@ class Client:
                 if review_rating.response_problem(response, url):
                     raise RequestFailure("comparison_redirect")
                 soup = BeautifulSoup(body, "lxml")
+                self.events.emit("parsed", endpoint="comparison", count=1)
                 names = comparison_names(soup, set(needed))
                 values = {label: compare._row_values(soup, label) for label in COMPARE_LABELS}
                 for vid in needed:
@@ -159,7 +188,7 @@ class Client:
             except RequestFailure as exc:
                 for vid in needed:
                     self.compare_cache[vid] = {"_error": str(exc), "_error_kind": "request"}
-        return {v: self.compare_cache[v] for v in ids}
+        return {v: deepcopy(self.compare_cache[v]) for v in ids}
 
     def pdf(self, uri, *, need_sku, need_capacity, need_loading=False):
         needed = dict(sku=need_sku, capacity=need_capacity, loading_type=need_loading)
@@ -173,7 +202,12 @@ class Client:
             return {"_error": "own_pdf_link_invalid", "_error_kind": "extraction"}
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
             return {"_error": "own_pdf_link_invalid", "_error_kind": "extraction"}
-        retained, body, last = {}, None, {}
+        if uri != self._pdf_uri:
+            self._pdf_uri, self._pdf_body = None, None
+        body = self._pdf_body
+        if body is not None:
+            self.events.emit("cache_hit", endpoint="product_pdf", count=1, status="document_bytes")
+        retained, last, opened = {}, {}, False
         attempts = min(PDF_MAX_ATTEMPTS, max(1, self.attempts))
         for attempt in range(1, attempts + 1):
             remaining = {k: v and not retained.get(k) for k, v in needed.items()}
@@ -181,6 +215,9 @@ class Client:
                              needed=[k for k, v in remaining.items() if v], cached_document=body is not None,
                              request_timeout=self.timeout, parse_timeout=self.pdf_timeout)
             def progress(event, **values):
+                nonlocal opened
+                if event == "pdf_opened":
+                    opened = True
                 self.events.emit(event, **{**values, "attempt": attempt, "max_attempts": attempts})
             with self.events.activity("pdf", attempt=attempt):
                 last, body = pdf_attempt(uri, body, remaining, self.timeout, self.pdf_timeout, progress)
@@ -201,9 +238,26 @@ class Client:
         missing = [k for k, v in needed.items() if v and not retained.get(k)]
         if missing:
             result["_missing"] = missing
+        # Reuse only bounded, opened bytes. Parse requested fields again: a shared
+        # PDF URI alone never proves another option has the same model/capacity.
+        if opened and body is not None and len(body) <= MAX_PDF_BYTES:
+            self._pdf_uri, self._pdf_body = uri, body
+        elif body is None:
+            self._pdf_uri, self._pdf_body = None, None
         return result
 
     def rating(self, product_id):
+        if product_id in self.rating_cache:
+            self.events.emit("cache_hit", endpoint="rating", count=1, status="confirmed")
+            result = deepcopy(self.rating_cache[product_id])
+            self.events.emit("rating", item=product_id, reused=True, **result)
+            return result
+        if product_id in self.rating_failures:
+            # An exhausted retry budget stays failed, including partial values.
+            result = deepcopy(self.rating_failures[product_id])
+            self.events.emit("failure_reused", endpoint="rating", count=1, status="failed")
+            self.events.emit("rating", item=product_id, reused=True, **result)
+            return result
         url = f"https://www.otto.de/kundenbewertungen/{quote(product_id, safe='')}/"
         retained = {"average_rating": None, "rating_count": None, "rating_state": "failed"}
         for attempt in range(1, self.attempts + 1):
@@ -212,6 +266,7 @@ class Client:
                 problem = review_rating.response_problem(response, url)
                 if not problem:
                     soup = BeautifulSoup(body, "lxml")
+                    self.events.emit("parsed", endpoint="rating", count=1)
                     problem = review_rating.product_problem({"review_product_ids": review_rating.review_product_ids(soup)}, url)
                 if problem:
                     raise RequestFailure(problem)
@@ -234,7 +289,8 @@ class Client:
                 break
             if attempt < self.attempts:
                 time.sleep(min(attempt, 3))
-        return retained
+        (self.rating_failures if retained["rating_state"] == "failed" else self.rating_cache)[product_id] = deepcopy(retained)
+        return deepcopy(retained)
 
 
 def comparison_names(soup, wanted):
@@ -277,7 +333,7 @@ def minimal_tile(tile):
         name = brand + " " + name
     infos = {i["label"]: i.get("value") for i in tile.get("topInfos") or []
              if isinstance(i, dict) and i.get("label") and
-             (capacity_label(i["label"]) or i["label"] in (*TYPE_LABELS, *CATEGORY_LABELS))}
+             (capacity_label(i["label"]) or i["label"] in CATEGORY_LABELS)}
     energies = tile.get("energyLabels") or []
     pdf_uri = energies[0].get("datasheetUri") if energies and isinstance(energies[0], dict) else None
     euro = lambda value: (text(value) if "€" in text(value) or "EUR" in text(value) else text(value) + " €") if text(value) else None

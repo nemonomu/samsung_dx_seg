@@ -28,10 +28,9 @@ CAPACITY_LABELS = (
     "Kapazität Trocknen", "Trockenkapazität", "Beladungsmenge", "Füllmenge",
     "Fassungsvermögen", "Nennkapazität", "Ladevolumen in kg",
 )
-TYPE_LABELS = ("Produkttyp", "Geräteart", "Produktart", "Set-Bestandteile")
 CATEGORY_LABELS = ("Kategorie", "Produktkategorie")
 COMPARE_LABELS = ("Modellbezeichnung", "Beladung", "Bauart", *CAPACITY_LABELS,
-                  *TYPE_LABELS, *CATEGORY_LABELS)
+                  *CATEGORY_LABELS)
 
 
 class DryError(Exception):
