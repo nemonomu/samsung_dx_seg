@@ -248,17 +248,18 @@ class ListingPhaseTests(unittest.TestCase):
             self.assertFalse((root / "output/mmkt_dry_output.csv").exists())
 
     def test_detail_checkpoint_failure_preserves_prior_detail_and_candidate_files(self):
-        original = checkpoint.write_manifest
-        def fail(path, value):
-            if value.get("phase") == "detail" and len(value["detail_results"]) == 2:
+        original = checkpoint.IntermediateJournal._write_line
+        def fail(journal, line):
+            value = json.loads(line)
+            if value['kind']=='detail' and value['result']['item']=='2':
                 raise OSError("SYNTHETIC_SAVE_FAILURE")
-            original(path, value)
-        with tempfile.TemporaryDirectory() as directory, patch.object(checkpoint, "write_manifest", side_effect=fail):
+            original(journal, line)
+        with tempfile.TemporaryDirectory() as directory, patch.object(checkpoint.IntermediateJournal, "_write_line", fail):
             code, manifest, db, _, _ = self.execute(Path(directory), self.browser())
             self.assertEqual((1, "INTERMEDIATE_SAVE_FAILED", 2),
                              (code, manifest["error"], manifest["main"]["rows"]))
-            saved = json.loads(Path(manifest["intermediate"]["last_path"]).read_text(encoding="utf-8"))
-            self.assertEqual(["1"], [row["item"] for row in saved["rows"]])
+            saved = checkpoint.read_journal(manifest['intermediate_journals']['main']['path'])['records']
+            self.assertEqual(["1"], [r['result']['item'] for r in saved if r['kind']=='detail'])
             self.assertTrue(Path(manifest["main"]["candidate_path"]).exists())
             self.assertEqual("not_started", manifest["bsr"]["state"])
             db.assert_not_called()

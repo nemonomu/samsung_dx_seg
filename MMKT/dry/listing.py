@@ -339,7 +339,8 @@ class TailConfirmation:
 
 
 def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
-                  eligibility, on_page=None, probe_page=None, on_probe=None):
+                  eligibility, on_page=None, probe_page=None, on_probe=None,
+                  candidates_sufficient=None):
     """Existing listing protocol, isolated to DRY, with progress checkpoints.
 
     on_page receives regular attempts and separate confirmation decisions.
@@ -347,6 +348,10 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
     each extra read without changing the normal collection cursor or rows.
     target=None captures the complete candidate listing without a numeric cap.
     Its eligibility callback must be listing-only, never a detail/API callback.
+    candidates_sufficient is a pure cache-only check of an incoming block (or
+    an empty block after commit). It may finish candidate capture at a target
+    without claiming the category ended. Structural/first-page/repeat failures
+    still fail; end-counter disagreements are irrelevant once enough is proven.
     A checkpoint error must never authorize DB insertion.
     """
     seen, fingerprints, page_log = {}, set(), []
@@ -361,6 +366,7 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
             view = {"listing_valid": False, "last_page": False, "has_next": None,
                     "shown": None, "total": None}
             decision = {"end_basis": None, "end_candidate": False}
+            candidate_ready = False
             error, elapsed, extra_wait, status = None, 0, 0, None
             interrupted = None
             try:
@@ -387,13 +393,19 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
                 elif expected_next is not None and view["signature"] != expected_next:
                     error = "confirmed_following_products_changed"
                 else:
+                    candidate_ready = bool(target is None and not repeated and candidates_sufficient
+                                           and candidates_sufficient(rows))
                     decision = ledger.assess(page, html, view, repeated)
                     if repeated and not decision["end_basis"]:
                         error = "repeated_page"
                     elif decision.get("pagination_error"):
                         # This one historical-total error can be resolved by a
                         # separate fresh boundary proof, after normal rows save.
-                        if not (confirmation and page >= 2 and not repeated
+                        target_only = candidate_ready and decision["pagination_error"] in {
+                            "counter_slot_mismatch", "counter_next_control_conflict", "total_changed_at_end"}
+                        if target_only:
+                            decision["unused_end_check"] = decision.pop("pagination_error")
+                        if not target_only and not (confirmation and page >= 2 and not repeated
                                 and decision["pagination_error"] == "total_changed_at_end"
                                 and (view.get("total") or 0) > 0 and view["state_coherent"]):
                             error = decision["pagination_error"]
@@ -434,11 +446,14 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
                             if target is not None and len(seen) >= target:
                                 break
                     ledger.commit(page, view, decision)
+                    candidate_ready = bool(target is None and candidates_sufficient
+                                           and candidates_sufficient(()))
             except BaseException as exc:
                 interrupted = exc
                 error = str(exc) if isinstance(exc, CollectionError) else type(exc).__name__
             deferred_end = not error and decision.get("pagination_error") == "total_changed_at_end"
             stop = (error if interrupted or (error and attempt == retries + 1) else
+                    "confirmed_candidates" if not error and candidate_ready else
                     "target_reached" if target is not None and not error and len(seen) >= target and not deferred_end else
                     "last_page" if not error and decision["end_basis"] else None)
             entry = {"page": page, "attempt": attempt, "status": status, "parsed": len(rows),

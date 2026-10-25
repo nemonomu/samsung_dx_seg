@@ -219,27 +219,29 @@ class TailPipelineTests(unittest.TestCase):
             root = Path(directory)
             _, manifest, _, _, events = self.execute(root, self.short_browser())
             folder = root / "output/intermediate" / manifest["batch_id"]
-            self.assertEqual(16, len(list(folder.glob("*.json"))))
-            regular = json.loads((folder / "main_candidates_0003_attempt_01.json").read_text(encoding="utf-8"))
-            self.assertEqual((5, "collecting"), (len(regular["candidates"]), regular["progress"]["main"]["state"]))
-            self.assertEqual([], regular["rows"])
-            reads = [json.loads(path.read_text(encoding="utf-8")) for path in folder.glob("main_tail_read_*.json")]
+            self.assertEqual(4, len(list(folder.glob("*.json"))))
+            journal = checkpoint.read_journal(folder / "main_journal.jsonl")
+            self.assertTrue(journal['complete'])
+            regular = [r for r in journal['records'] if r['kind']=='listing']
+            self.assertEqual(['1','2','3','4','5'],
+                             [r['sku_id'] for rec in regular for r in rec['candidates']])
+            reads = [r['evidence'] for r in journal['records'] if r['kind']=='tail_read']
             self.assertEqual(4, len(reads))
-            self.assertTrue(all(len(value["candidates"]) == 5 and not value["loadable"] for value in reads))
-            self.assertTrue(all(value["rows"] == [] and value["progress"]["api_calls"] == 0 for value in reads))
-            self.assertTrue(all(tuple(row) == config.COLUMNS for value in reads for row in value["rows"]))
+            self.assertTrue(all('candidates' not in value and 'rows' not in value for value in reads))
+            self.assertTrue(all(not r['loadable'] for r in journal['records']))
             screen_reads = [e for e in events if e["event"] == "tail_confirmation_read"]
             self.assertEqual([2, 3, 4, 2], [e["page"] for e in screen_reads])
             log_events = [json.loads(line) for line in next((root / "logs").glob("*.log")).read_text(encoding="utf-8").splitlines()]
             self.assertEqual(screen_reads, [e for e in log_events if e["event"] == "tail_confirmation_read"])
 
     def test_probe_checkpoint_failure_preserves_rows_and_never_loads(self):
-        original = checkpoint.write_manifest
-        def save(path, value):
-            if "_tail_read_02_" in path.name:
+        original = checkpoint.IntermediateJournal._write_line
+        def save(journal, line):
+            value = json.loads(line)
+            if value['kind']=='tail_read' and value['evidence']['queries']==2:
                 raise OSError("RAW_CHECKPOINT_MUST_NOT_PRINT")
-            return original(path, value)
-        with patch.object(checkpoint, "write_manifest", side_effect=save):
+            return original(journal, line)
+        with patch.object(checkpoint.IntermediateJournal, "_write_line", save):
             manifest, events = self.assert_failure(self.short_browser())
         self.assertEqual("INTERMEDIATE_SAVE_FAILED", manifest["error"])
         self.assertEqual("failed", manifest["main"]["tail_confirmation"]["state"])

@@ -29,6 +29,7 @@ def send_error_code(error) -> str:
 
 
 _REASONS_KO = {"last_page": "마지막 목록 확인", "target_reached": "목표 수량 도달",
+               "confirmed_candidates": "Main 상세 결과로 BSR 목표 확보 가능",
                "first_page_inconsistent": "첫 상품 묶음 불일치 (재조회 소진)",
                "washer_dryer": "세탁건조 일체형", "washing_machine": "세탁기",
                "set_or_combo": "세트·콤보", "advertisement": "별도 광고 배너",
@@ -44,6 +45,7 @@ _ERRORS_KO = {"UNCONFIRMED_PRODUCT_TYPE": "상품 종류를 확인하지 못함"
               "DB_COMMITTED_MANIFEST_SAVE_FAILED": "DB 반영 후 결과 기록 실패",
               "INTERMEDIATE_SAVE_FAILED": "중간 결과 저장 실패",
               "FINAL_CSV_SAVE_FAILED": "최종 CSV 저장 실패",
+              "CONFIRMED_CANDIDATES_INSUFFICIENT": "사전 확인한 후보 수와 실제 적격 수 불일치",
               "FINAL_MANIFEST_SAVE_FAILED": "수집 결과 기록 실패"}
 
 _TAIL_REASONS_KO = {
@@ -106,6 +108,12 @@ def _korean_summary(manifest, table, *, error, elapsed_s):
             times = listing.get("timing") or {}
             lines.append(f"  목록 소요시간: {_duration_ko(times.get('listing_elapsed_s'))}; "
                          f"상세 소요시간: {_duration_ko(times.get('detail_elapsed_s'))}")
+            if "cached_eligible_candidates" in listing:
+                lines.append(f"  캐시로 적격 확인 {listing['cached_eligible_candidates']}개; "
+                             f"미확인 후보 {listing.get('unconfirmed_candidates', 0)}개; "
+                             f"목록 종료: {_REASONS_KO.get(listing.get('listing_stop_reason'), '미완료')}; "
+                             f"상세 캐시 재사용 {listing.get('cache_hits', 0)}건; "
+                             f"신규 API {listing.get('new_api_calls', 0)}회")
         if listing.get("last_requested_page") is not None:
             lines.append(f"  마지막 정상 묶음: {listing.get('last_successful_page')}; 마지막 요청 묶음: {listing['last_requested_page']}")
         boundary = listing.get("tail_confirmation")

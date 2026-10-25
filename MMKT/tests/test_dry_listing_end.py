@@ -216,8 +216,12 @@ class ProgressPreservationTests(unittest.TestCase):
             self.assertEqual(20, len(browser.calls))
             self.assertEqual([(str(i), str(i)) for i in range(1, 11)], [(row["main_rank"], row["bsr_rank"]) for row in rows])
             paths = sorted((root / "output/intermediate" / manifest["batch_id"]).glob("*.json"))
-            self.assertEqual(5, len([path for path in paths if "_candidates_" in path.name]))
-            self.assertEqual(20, len([path for path in paths if "_detail_" in path.name]))
+            self.assertEqual(2, len([path for path in paths if "_candidates_" in path.name]))
+            self.assertEqual(2, len([path for path in paths if "_detail_" in path.name]))
+            journals = list(paths[0].parent.glob("*.jsonl"))
+            self.assertEqual(2, len(journals))
+            self.assertEqual(20, sum(record['kind']=='detail' for path in journals
+                for record in checkpoint.read_journal(path)['records']))
             for path in paths:
                 saved = json.loads(path.read_text(encoding="utf-8"))
                 self.assertFalse(saved["success"])
@@ -331,20 +335,22 @@ class ProgressPreservationTests(unittest.TestCase):
             db.assert_not_called(); uc.assert_not_called()
 
     def test_checkpoint_save_failure_keeps_prior_snapshot_and_reports_actual_counts(self):
-        original = checkpoint.write_manifest
-        def save(path, payload):
-            if path.name.startswith("main_candidates_0002"):
+        original = checkpoint.IntermediateJournal._write_line
+        def save(journal, line):
+            payload = json.loads(line)
+            if payload['kind']=='listing' and payload.get('page')==2:
                 raise OSError("RAW_CHECKPOINT_ERROR_MUST_NOT_PRINT")
-            return original(path, payload)
-        with tempfile.TemporaryDirectory() as directory, patch.object(checkpoint, "write_manifest", side_effect=save):
+            return original(journal, line)
+        with tempfile.TemporaryDirectory() as directory, patch.object(checkpoint.IntermediateJournal, "_write_line", save):
             code, db, _, manifest, screen = self.execute(Path(directory), self.short_browser())
             self.assertEqual((1, 0, "INTERMEDIATE_SAVE_FAILED"), (code, manifest["main"]["rows"], manifest["error"]))
             self.assertEqual(8, manifest["main"]["candidate_count"])
             db.assert_not_called()
             self.assertEqual("failed", manifest["intermediate"]["state"])
-            saved = json.loads(Path(manifest["intermediate"]["last_path"]).read_text(encoding="utf-8"))
-            self.assertEqual(4, len(saved["candidates"]))
-            self.assertEqual([], saved["rows"])
+            saved = checkpoint.read_journal(manifest['intermediate_journals']['main']['path'])['records']
+            self.assertEqual(4, len(saved[0]["candidates"]))
+            self.assertEqual(1, len(saved))
+            self.assertEqual('failed', manifest['intermediate_journals']['main']['state'])
             self.assertNotIn("RAW_CHECKPOINT_ERROR", screen + json.dumps(manifest))
 
     def test_final_csv_and_manifest_failure_keep_intermediate_and_never_load(self):

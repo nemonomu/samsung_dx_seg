@@ -13,7 +13,7 @@ from datetime import datetime
 from common.config import page_url
 from common.parsers import extract_listing_pagination, extract_sponsored_diagnostics, parse_listing_html
 from dry import config
-from dry.checkpoint import save_checkpoint
+from dry.checkpoint import IntermediateJournal, save_checkpoint
 from dry.database import DatabaseError, file_digest, inspect_or_insert, load_validated_output
 from dry.detail import CollectionError, CommonAPIError, DetailCollector
 from dry.output import canonical_product_url, default_missing_ratings, merge_rows, run_metadata, write_output
@@ -118,6 +118,19 @@ def initial_manifest(args, meta):
             "database": {"state": "not_started", "table": ".".join(table), "db_written": False}}
 
 
+def cached_candidate_state(cache, row):
+    """No API work: presence alone is not proof of an eligible detail result."""
+    detail = cache.get(str(row.get("sku_id") or ""))
+    if not isinstance(detail, dict) or not isinstance(detail.get("_features"), dict):
+        return "unconfirmed"
+    reason = exclusion_reason(row, features=detail["_features"], detail_name=detail.get("_detail_name"))
+    if reason:
+        return "unconfirmed" if reason == "unconfirmed_product_type" else "excluded"
+    if not {"count_of_reviews", "star_rating", "count_of_star_ratings"}.issubset(detail):
+        return "unconfirmed"
+    return "eligible"
+
+
 def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
     meta = meta or run_metadata()
     manifest = manifest if manifest is not None else initial_manifest(args, meta)
@@ -128,6 +141,9 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
     candidates, exclusions, detail_results = [], [], []
     candidate_ids, accepted, failed_items = set(), set(), set()
     early_counts, detail_counts = {}, {}
+    confirmed_ids, cached_excluded_ids = set(), set()
+    candidate_cursor = exclusion_cursor = 0
+    journal = None
     sort, target, current_page = "main", args.target, 1
     phase_started = time.monotonic()
 
@@ -139,6 +155,9 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
 
     def progress_state():
         return {"candidates": len(candidate_ids), "accepted": len(accepted), "target": target,
+                "cached_eligible_candidates": len(confirmed_ids),
+                "cached_excluded_candidates": len(cached_excluded_ids),
+                "unconfirmed_candidates": len(candidate_ids) - len(confirmed_ids) - len(cached_excluded_ids),
                 "excluded_count": sum(v for k, v in early_counts.items() if k != "duplicate") + sum(detail_counts.values()),
                 "duplicates": early_counts.get("duplicate", 0), "failed_products": len(failed_items)}
 
@@ -170,10 +189,27 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
         row["sku_id"] = item
         row["product_url"] = canonical_product_url(row.get("product_url"), item)
         candidate_ids.add(item)
+        if sort == "bsr":
+            state = cached_candidate_state(collector.cache, row)
+            if state == "eligible":
+                confirmed_ids.add(item)
+            elif state == "excluded":
+                cached_excluded_ids.add(item)
         return None
 
+    def candidates_sufficient(incoming):
+        # Pure preview for the incoming block; repeat/invalid pages never use it.
+        # Unknown candidates stay in order and are NOT counted toward the proof.
+        eligible = set(confirmed_ids)
+        for row in incoming:
+            item = str(row.get("sku_id") or "").strip()
+            if (item and item not in candidate_ids and not exclusion_reason(row, require_evidence=False)
+                    and cached_candidate_state(collector.cache, row) == "eligible"):
+                eligible.add(item)
+        return len(eligible) >= target
+
     def checkpoint(rows, pages, stop):
-        nonlocal candidates
+        nonlocal candidates, candidate_cursor, exclusion_cursor
         candidates = list(rows)
         entry = pages[-1]
         listing = manifest[sort]
@@ -181,7 +217,12 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
                        excluded=dict(early_counts), duplicates=early_counts.get("duplicate", 0),
                        last_requested_page=entry["page"], end_basis=entry.get("end_basis"),
                        category_slots_read=entry.get("category_slots_read", 0),
-                       listing_stop_reason=stop, listing_state="failed" if stop and stop != "last_page" else "collecting")
+                       listing_stop_reason=stop, listing_state="complete" if stop in {"last_page", "confirmed_candidates"}
+                       else "failed" if stop else "collecting",
+                       cached_eligible_candidates=len(confirmed_ids), cached_excluded_candidates=len(cached_excluded_ids),
+                       unconfirmed_candidates=len(candidate_ids) - len(confirmed_ids) - len(cached_excluded_ids))
+        entry.update({key: listing[key] for key in (
+            "cached_eligible_candidates", "cached_excluded_candidates", "unconfirmed_candidates")})
         options = {"page": entry["page"], "attempt": entry["attempt"], "phase": "candidates"}
         if entry.get("phase") == "tail_confirmation":
             confirmation = entry["confirmation"]
@@ -193,10 +234,19 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
         manifest["pages"][sort] = list(pages)
         emit("page_summary", sort=sort, **entry)
         context("intermediate_save", phase="listing", sort=sort, page=entry["page"], batch_id=meta["batch_id"])
-        path = snapshot(candidates=candidates, exclusions=exclusions, **options)
-        listing["candidate_path"] = str(path)
-        if stop == "last_page":
-            listing["listing_state"] = "complete"
+        refresh()
+        journal.append("listing", page=entry["page"], attempt=entry["attempt"], summary=entry,
+                       candidates=candidates[candidate_cursor:], exclusions=exclusions[exclusion_cursor:],
+                       counts=progress_state(), stop_reason=stop)
+        candidate_cursor, exclusion_cursor = len(candidates), len(exclusions)
+        if stop in {"last_page", "confirmed_candidates"}:
+            try:
+                journal.verify()
+                path = snapshot(candidates=candidates, exclusions=exclusions, **options)
+            except Exception:
+                listing["listing_state"] = "failed"
+                raise
+            listing["candidate_path"] = str(path)
 
     def probe_checkpoint(record):
         status = manifest[sort].setdefault("tail_confirmation", {"reads": []})
@@ -207,8 +257,8 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
         status.setdefault("reads", []).append(dict(record))
         context("intermediate_save", phase="tail_confirmation", sort=sort, page=record["page"])
         try:
-            snapshot(page=record["page"], attempt=0, phase="tail_read", sequence=record["queries"],
-                     candidates=candidates, exclusions=exclusions)
+            refresh()
+            journal.append("tail_read", page=record["page"], evidence=record, counts=progress_state())
         except Exception:
             status.update(state="failed", reason="probe_checkpoint_failed")
             raise
@@ -218,6 +268,7 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
         listing = manifest[sort]
         phase_started = time.monotonic()
         listing.update(detail_state="running", detail_processed=0)
+        api_before, cache_hits = collector.api_calls, 0
         listing.setdefault("timing", {})["detail_started_at"] = datetime.now().isoformat(timespec="seconds")
         context("detail_phase", phase="detail", sort=sort, **progress_state())
         emit("detail_phase_start", sort=sort, candidate_count=len(candidates), target=target)
@@ -227,11 +278,13 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
             item, page = row["sku_id"], row["page"]
             context("detail", phase="detail", sort=sort, page=page, item=item,
                     detail_processed=index - 1, **progress_state())
-            emit("detail_start", cached=item in collector.cache, detail_products=len(collector.cache))
+            cached = item in collector.cache
+            emit("detail_start", cached=cached, detail_products=len(collector.cache))
             record = {"item": item, "page": page, "listing_order": row["listing_order"]}
             fatal = None
             try:
                 detail = collector.get(item, row)
+                cache_hits += int(cached)
                 reason = exclusion_reason(row, features=detail["_features"], detail_name=detail["_detail_name"])
                 if reason == "unconfirmed_product_type":
                     raise CollectionError("UNCONFIRMED_PRODUCT_TYPE")
@@ -250,6 +303,8 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
                               values={key: detail.get(key) for key in
                                       ("sku", "capacity", "loading_type", "count_of_reviews",
                                        "count_of_star_ratings", "star_rating")})
+                if detail.get("_purchase_status") is not None:
+                    record["values"]["_purchase_status"] = detail["_purchase_status"]
                 if reason:
                     detail_counts[reason] = detail_counts.get(reason, 0) + 1
                     emit("product_excluded", phase="detail", item=item, reason=reason,
@@ -265,24 +320,35 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
             for reason, count in detail_counts.items():
                 combined[reason] = combined.get(reason, 0) + count
             listing.update(rows=len(accepted), detail_processed=index, failed_products=len(failed_items),
-                           detail_excluded=dict(detail_counts), excluded=combined)
+                           detail_excluded=dict(detail_counts), excluded=combined,
+                           cache_hits=cache_hits, new_api_calls=collector.api_calls - api_before)
             listing["timing"]["detail_elapsed_s"] = round(time.monotonic() - phase_started, 1)
             if fatal:
                 listing.update(detail_state="failed", stop_reason=str(fatal))
             context("intermediate_save", phase="detail", sort=sort, page=page, item=item)
-            snapshot(page=page, attempt=1, phase="detail", sequence=index, detail_results=detail_results)
+            refresh()
+            journal.append("detail", page=page, result=record, cached=cached, counts=progress_state(),
+                           api_calls=collector.api_calls)
             if fatal:
                 raise fatal
+        if len(accepted) < target and listing.get("listing_stop_reason") != "last_page":
+            raise CollectionError("CONFIRMED_CANDIDATES_INSUFFICIENT")
         reason = "target_reached" if len(accepted) >= target else "last_page"
         listing.update(state="complete", detail_state="complete", rows=len(accepted), stop_reason=reason)
         listing["timing"].update(detail_completed_at=datetime.now().isoformat(timespec="seconds"),
                                 detail_elapsed_s=round(time.monotonic() - phase_started, 1))
-        snapshot(page=listing.get("last_successful_page", 1), attempt=1, phase="detail",
-                 sequence=len(detail_results), detail_results=detail_results)
+        try:
+            journal.verify()
+            snapshot(page=listing.get("last_successful_page", 1), attempt=1, phase="detail",
+                     sequence=len(detail_results), detail_results=detail_results)
+        except Exception:
+            listing.update(state="failed", detail_state="failed", stop_reason="INTERMEDIATE_SAVE_FAILED")
+            raise
         context("detail_complete", phase="detail", sort=sort, **progress_state())
         emit("detail_phase_complete", sort=sort, accepted=len(accepted), target=target,
              candidate_count=len(candidates), processed=len(detail_results), stop_reason=reason,
-             failed_products=len(failed_items), **listing["timing"])
+             failed_products=len(failed_items), cache_hits=cache_hits,
+             new_api_calls=collector.api_calls - api_before, **listing["timing"])
 
     try:
         for sort, url, target in (("main", config.LISTING_URL, args.target),
@@ -290,6 +356,9 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
             candidates, exclusions, detail_results = [], [], []
             candidate_ids, accepted, failed_items = set(), set(), set()
             early_counts, detail_counts = {}, {}
+            confirmed_ids, cached_excluded_ids = set(), set()
+            candidate_cursor = exclusion_cursor = 0
+            journal = IntermediateJournal(args.output_dir, manifest, sort)
             listing = manifest[sort]
             phase_started = time.monotonic()
             listing.update(state="collecting", rows=0, candidate_count=0,
@@ -305,9 +374,10 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
                 return fetch(page)
             rows, pages, reason = collect_pages(fetch_page, product="dry", target=None,
                 retries=args.page_retries, sleep_s=args.sleep, eligibility=early_eligibility, on_page=checkpoint,
-                probe_page=probe, on_probe=probe_checkpoint)
+                probe_page=probe, on_probe=probe_checkpoint,
+                candidates_sufficient=candidates_sufficient if sort == "bsr" else None)
             listing["timing"]["listing_elapsed_s"] = round(time.monotonic() - phase_started, 1)
-            if reason != "last_page":
+            if reason not in {"last_page", "confirmed_candidates"}:
                 raise CollectionError("LISTING_FAILED:" + sort + ":" + reason)
             listing["timing"]["listing_completed_at"] = datetime.now().isoformat(timespec="seconds")
             context("listing_complete", phase="listing", sort=sort, page=current_page, **progress_state())
@@ -354,6 +424,17 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
         listing.setdefault("timing", {})["phase_stopped_at"] = datetime.now().isoformat(timespec="seconds")
         manifest.update(success=False, state="failed", collection_status="failed", error=error)
         manifest["timing"]["collection_stopped_at"] = datetime.now().isoformat(timespec="seconds")
+        try:
+            if journal is not None and not journal.failed:
+                journal.append("failure", page=current_page, error=error, counts=progress_state())
+            snapshot(page=current_page, attempt=1, phase="failure", candidates=candidates,
+                     exclusions=exclusions, detail_results=detail_results)
+            if error == "INTERMEDIATE_SAVE_FAILED":
+                manifest["intermediate"].update(state="failed", failure_snapshot_saved=True)
+        except Exception as save_exc:
+            manifest["intermediate_failure"] = {"error": "INTERMEDIATE_SAVE_FAILED",
+                                                 "error_type": type(save_exc).__name__}
+            failure(save_exc, code="INTERMEDIATE_SAVE_FAILED")
         exc.collection_manifest = manifest
         raise
 
