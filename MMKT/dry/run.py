@@ -15,7 +15,7 @@ from common.parsers import extract_listing_pagination, extract_sponsored_diagnos
 from dry import config
 from dry.checkpoint import save_checkpoint
 from dry.database import DatabaseError, file_digest, inspect_or_insert, load_validated_output
-from dry.detail import CollectionError, DetailCollector
+from dry.detail import CollectionError, CommonAPIError, DetailCollector
 from dry.output import canonical_product_url, default_missing_ratings, merge_rows, run_metadata, write_output
 from dry.output import write_manifest as write_json
 from dry.notify import notify_run
@@ -109,8 +109,10 @@ def initial_manifest(args, meta):
     return {"artifact_kind": "final", "success": False, "state": "running", **meta,
             "collection_status": "running", "output_rows": 0,
             "targets": {"main": args.target, "bsr": args.bsr_target},
-            "main": {"state": "not_started", "rows": None, "stop_reason": None},
-            "bsr": {"state": "not_started", "rows": None, "stop_reason": None},
+            "main": {"state": "not_started", "rows": None, "stop_reason": None,
+                     "listing_state": "not_started", "detail_state": "not_started", "candidate_count": 0},
+            "bsr": {"state": "not_started", "rows": None, "stop_reason": None,
+                    "listing_state": "not_started", "detail_state": "not_started", "candidate_count": 0},
             "pages": {"main": [], "bsr": []}, "product_failure_count": 0, "product_failures": [],
             "csv": {"state": "not_created", "path": str(args.output_dir / "mmkt_dry_output.csv")},
             "database": {"state": "not_started", "table": ".".join(table), "db_written": False}}
@@ -122,140 +124,198 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
     started = time.monotonic() if started is None else started
     collector = DetailCollector(session, retries=args.page_retries, sleep_s=args.sleep)
     product_failures = []
-    failed_items = set()
-    accepted = set()
-    counters = {}
-    sort = "main"
-    target = args.target
-    current_page = 1
-
-    def progress_state():
-        return {"accepted": len(accepted), "target": target,
-                "excluded_count": sum(count for reason, count in counters.items() if reason != "duplicate"),
-                "duplicates": counters.get("duplicate", 0), "failed_products": len(failed_items)}
-
-    def eligibility(row):
-        sku_id = str(row.get("sku_id") or "").strip()
-        # The listing collector attaches row['page'] AFTER calling eligibility.
-        # Track the fetcher's page locally; leave the shared collector untouched.
-        context("listing_product", sort=sort, page=current_page, item=sku_id, **progress_state())
-        early = exclusion_reason(row, require_evidence=False)
-        if early:
-            counters[early] = counters.get(early, 0) + 1
-            emit("product_excluded", item=row.get("sku_id"), reason=early, excluded=counters,
-                 evidence=washer_dryer_evidence(row) if early == "washer_dryer" else None)
-            return early
-        if sku_id in accepted or sku_id in failed_items:
-            counters["duplicate"] = counters.get("duplicate", 0) + 1
-            emit("product_duplicate", item=sku_id, duplicates=counters["duplicate"])
-            return "duplicate"
-        # Do not cache banner decisions by ID: a standard occurrence is valid.
-        context("detail", sort=sort, page=current_page, item=sku_id, **progress_state())
-        emit("detail_start", cached=sku_id in collector.cache, detail_products=len(collector.cache))
-        try:
-            if not sku_id:
-                raise CollectionError("MISSING_PRODUCT_ID")
-            canonical_product_url(row.get("product_url"), sku_id)
-            detail = collector.get(sku_id, row)
-            reason = exclusion_reason(row, features=detail["_features"], detail_name=detail["_detail_name"])
-            if reason == "unconfirmed_product_type":
-                raise CollectionError("UNCONFIRMED_PRODUCT_TYPE")
-        except Exception as exc:
-            # Only individual product work is recoverable. Listing navigation,
-            # parsing, CSV/DB failures and user interrupts retain their own paths.
-            error = str(exc) if isinstance(exc, CollectionError) else "PRODUCT_PROCESSING_FAILED"
-            failure(exc, code=error)
-            failed_items.add(sku_id)
-            record = {"sort": sort, "page": current_page, "item": sku_id,
-                      "error": error, "error_type": type(exc).__name__}
-            product_failures.append(record)
-            emit("product_failed", **record, action="skip_and_continue", **progress_state())
-            return "product_failed"
-        if reason:
-            counters[reason] = counters.get(reason, 0) + 1
-            emit("product_excluded", item=sku_id, reason=reason, excluded=counters,
-                 evidence=washer_dryer_evidence(row, features=detail["_features"],
-                                              detail_name=detail["_detail_name"]) if reason == "washer_dryer" else None)
-        else:
-            accepted.add(sku_id)
-            emit("product_accepted", item=sku_id, accepted=len(accepted), target=target,
-                 detail_products=len(collector.cache), api_calls=collector.api_calls)
-        return reason
-
-    listing_results = {"main": [], "bsr": []}
+    listing_results = {"main": [], "bsr": []}  # Only final eligible rows.
+    candidates, exclusions, detail_results = [], [], []
+    candidate_ids, accepted, failed_items = set(), set(), set()
+    early_counts, detail_counts = {}, {}
+    sort, target, current_page = "main", args.target, 1
+    phase_started = time.monotonic()
 
     def refresh():
-        manifest.update(output_rows=len({row["sku_id"] for values in listing_results.values() for row in values}),
+        manifest.update(output_rows=len({r["sku_id"] for values in listing_results.values() for r in values}),
                         api_calls=collector.api_calls, unique_detail_products=len(collector.cache),
                         product_failure_count=len(product_failures), product_failures=list(product_failures))
         manifest.setdefault("timing", {})["collection_elapsed_s"] = round(time.monotonic() - started, 1)
 
+    def progress_state():
+        return {"candidates": len(candidate_ids), "accepted": len(accepted), "target": target,
+                "excluded_count": sum(v for k, v in early_counts.items() if k != "duplicate") + sum(detail_counts.values()),
+                "duplicates": early_counts.get("duplicate", 0), "failed_products": len(failed_items)}
+
+    def snapshot(**options):
+        refresh()
+        # Candidate rows have no detail contract. Never feed them to merge_rows.
+        rows = merge_rows(listing_results["main"], listing_results["bsr"], collector.cache, meta,
+                          log_defaults=False)
+        return save_checkpoint(args.output_dir, manifest, rows, sort=sort, **options)
+
+    def early_eligibility(row):
+        item = str(row.get("sku_id") or "").strip()
+        row["listing_sort"] = sort
+        context("listing_product", phase="listing", sort=sort, page=current_page, item=item, **progress_state())
+        reason = exclusion_reason(row, require_evidence=False)
+        if not reason and item in candidate_ids:
+            reason = "duplicate"
+        if reason:
+            early_counts[reason] = early_counts.get(reason, 0) + 1
+            record = {"item": item, "title": row.get("retailer_sku_name"),
+                      "page": row.get("page"), "listing_order": row.get("listing_order"), "reason": reason}
+            exclusions.append(record)
+            emit("product_duplicate" if reason == "duplicate" else "product_excluded",
+                 phase="listing", reason=reason, evidence=washer_dryer_evidence(row) if reason == "washer_dryer" else None,
+                 **{key: value for key, value in record.items() if key != "reason"}, **progress_state())
+            return reason
+        if not item:
+            raise CollectionError("MISSING_PRODUCT_ID")
+        row["sku_id"] = item
+        row["product_url"] = canonical_product_url(row.get("product_url"), item)
+        candidate_ids.add(item)
+        return None
+
     def checkpoint(rows, pages, stop):
-        listing_results[sort] = rows
+        nonlocal candidates
+        candidates = list(rows)
         entry = pages[-1]
         listing = manifest[sort]
-        complete = stop in {"target_reached", "last_page"}
-        listing.update(rows=len(rows), state="complete" if complete else "failed" if stop else "collecting",
-                       stop_reason=stop, failed_products=len(failed_items),
-                       excluded=dict(counters), duplicates=counters.get("duplicate", 0),
-                       last_requested_page=entry["page"], end_basis=entry.get("end_basis"))
-        phase_options = {}
+        listing.update(candidate_count=len(candidates), early_excluded=dict(early_counts),
+                       excluded=dict(early_counts), duplicates=early_counts.get("duplicate", 0),
+                       last_requested_page=entry["page"], end_basis=entry.get("end_basis"),
+                       category_slots_read=entry.get("category_slots_read", 0),
+                       listing_stop_reason=stop, listing_state="failed" if stop and stop != "last_page" else "collecting")
+        options = {"page": entry["page"], "attempt": entry["attempt"], "phase": "candidates"}
         if entry.get("phase") == "tail_confirmation":
-            confirmed = entry["confirmation"]
-            listing.setdefault("tail_confirmation", {}).update(confirmed,
-                state={"complete": "confirmed", "continue": "more_products", "failed": "failed"}[confirmed["action"]])
-            phase_options = {"phase": "tail_result", "sequence": confirmed["confirmation_cycle"]}
+            confirmation = entry["confirmation"]
+            listing.setdefault("tail_confirmation", {}).update(confirmation,
+                state={"complete": "confirmed", "continue": "more_products", "failed": "failed"}[confirmation["action"]])
+            options.update(phase="tail_result", sequence=confirmation["confirmation_cycle"])
         if not entry["error"]:
             listing["last_successful_page"] = entry.get("end_for_page", entry["page"])
         manifest["pages"][sort] = list(pages)
-        refresh()
         emit("page_summary", sort=sort, **entry)
-        context("intermediate_save", sort=sort, page=entry["page"], batch_id=meta["batch_id"])
-        snapshot_rows = merge_rows(listing_results["main"], listing_results["bsr"], collector.cache, meta,
-                                   log_defaults=False)
-        save_checkpoint(args.output_dir, manifest, snapshot_rows, sort=sort,
-                        page=entry["page"], attempt=entry["attempt"], **phase_options)
+        context("intermediate_save", phase="listing", sort=sort, page=entry["page"], batch_id=meta["batch_id"])
+        path = snapshot(candidates=candidates, exclusions=exclusions, **options)
+        listing["candidate_path"] = str(path)
+        if stop == "last_page":
+            listing["listing_state"] = "complete"
 
     def probe_checkpoint(record):
-        # Listing rows/pages and current_page belong exclusively to regular
-        # collection. A probe persists progress without changing that cursor.
         status = manifest[sort].setdefault("tail_confirmation", {"reads": []})
         if status.get("confirmation_cycle") != record["confirmation_cycle"]:
             status.update(confirmation_cycle=record["confirmation_cycle"], reason=None, latest_total=None)
         status.update(state="checking", queries=record["queries"], query_limit=record["query_limit"],
                       remaining=record["remaining"], last_probe_page=record["page"])
         status.setdefault("reads", []).append(dict(record))
-        refresh()
-        snapshot_rows = merge_rows(listing_results["main"], listing_results["bsr"], collector.cache, meta,
-                                   log_defaults=False)
+        context("intermediate_save", phase="tail_confirmation", sort=sort, page=record["page"])
         try:
-            save_checkpoint(args.output_dir, manifest, snapshot_rows, sort=sort,
-                            page=record["page"], attempt=0, phase="tail_read", sequence=record["queries"])
+            snapshot(page=record["page"], attempt=0, phase="tail_read", sequence=record["queries"],
+                     candidates=candidates, exclusions=exclusions)
         except Exception:
             status.update(state="failed", reason="probe_checkpoint_failed")
             raise
 
+    def process_details():
+        nonlocal phase_started
+        listing = manifest[sort]
+        phase_started = time.monotonic()
+        listing.update(detail_state="running", detail_processed=0)
+        listing.setdefault("timing", {})["detail_started_at"] = datetime.now().isoformat(timespec="seconds")
+        context("detail_phase", phase="detail", sort=sort, **progress_state())
+        emit("detail_phase_start", sort=sort, candidate_count=len(candidates), target=target)
+        for index, row in enumerate(candidates, 1):
+            if len(accepted) >= target:
+                break
+            item, page = row["sku_id"], row["page"]
+            context("detail", phase="detail", sort=sort, page=page, item=item,
+                    detail_processed=index - 1, **progress_state())
+            emit("detail_start", cached=item in collector.cache, detail_products=len(collector.cache))
+            record = {"item": item, "page": page, "listing_order": row["listing_order"]}
+            fatal = None
+            try:
+                detail = collector.get(item, row)
+                reason = exclusion_reason(row, features=detail["_features"], detail_name=detail["_detail_name"])
+                if reason == "unconfirmed_product_type":
+                    raise CollectionError("UNCONFIRMED_PRODUCT_TYPE")
+            except Exception as exc:
+                error = str(exc) if isinstance(exc, CollectionError) else "PRODUCT_PROCESSING_FAILED"
+                failure(exc, code=error)
+                failed_items.add(item)
+                product_failures.append({"sort": sort, "page": page, "item": item,
+                                         "error": error, "error_type": type(exc).__name__})
+                record.update(state="failed", error=error)
+                fatal = exc if isinstance(exc, CommonAPIError) else None
+                emit("product_failed", sort=sort, page=page, item=item, error=error,
+                     action="stop_common_failure" if fatal else "skip_and_continue", **progress_state())
+            else:
+                record.update(state="excluded" if reason else "accepted", reason=reason,
+                              values={key: detail.get(key) for key in
+                                      ("sku", "capacity", "loading_type", "count_of_reviews",
+                                       "count_of_star_ratings", "star_rating")})
+                if reason:
+                    detail_counts[reason] = detail_counts.get(reason, 0) + 1
+                    emit("product_excluded", phase="detail", item=item, reason=reason,
+                         evidence=washer_dryer_evidence(row, features=detail["_features"],
+                             detail_name=detail["_detail_name"]) if reason == "washer_dryer" else None)
+                else:
+                    accepted.add(item)
+                    listing_results[sort].append(row)
+                    emit("product_accepted", item=item, accepted=len(accepted), target=target,
+                         detail_products=len(collector.cache), api_calls=collector.api_calls)
+            detail_results.append(record)
+            combined = dict(early_counts)
+            for reason, count in detail_counts.items():
+                combined[reason] = combined.get(reason, 0) + count
+            listing.update(rows=len(accepted), detail_processed=index, failed_products=len(failed_items),
+                           detail_excluded=dict(detail_counts), excluded=combined)
+            listing["timing"]["detail_elapsed_s"] = round(time.monotonic() - phase_started, 1)
+            if fatal:
+                listing.update(detail_state="failed", stop_reason=str(fatal))
+            context("intermediate_save", phase="detail", sort=sort, page=page, item=item)
+            snapshot(page=page, attempt=1, phase="detail", sequence=index, detail_results=detail_results)
+            if fatal:
+                raise fatal
+        reason = "target_reached" if len(accepted) >= target else "last_page"
+        listing.update(state="complete", detail_state="complete", rows=len(accepted), stop_reason=reason)
+        listing["timing"].update(detail_completed_at=datetime.now().isoformat(timespec="seconds"),
+                                detail_elapsed_s=round(time.monotonic() - phase_started, 1))
+        snapshot(page=listing.get("last_successful_page", 1), attempt=1, phase="detail",
+                 sequence=len(detail_results), detail_results=detail_results)
+        context("detail_complete", phase="detail", sort=sort, **progress_state())
+        emit("detail_phase_complete", sort=sort, accepted=len(accepted), target=target,
+             candidate_count=len(candidates), processed=len(detail_results), stop_reason=reason,
+             failed_products=len(failed_items), **listing["timing"])
+
     try:
-        for sort, url, target in (("main", config.LISTING_URL, args.target), ("bsr", config.BSR_URL, args.bsr_target)):
-            accepted, failed_items, counters = set(), set(), {}
-            manifest[sort].update(state="collecting", rows=0)
-            context("listing", sort=sort, target=target)
-            emit("listing_start", accepted=0, target=target)
+        for sort, url, target in (("main", config.LISTING_URL, args.target),
+                                  ("bsr", config.BSR_URL, args.bsr_target)):
+            candidates, exclusions, detail_results = [], [], []
+            candidate_ids, accepted, failed_items = set(), set(), set()
+            early_counts, detail_counts = {}, {}
+            listing = manifest[sort]
+            phase_started = time.monotonic()
+            listing.update(state="collecting", rows=0, candidate_count=0,
+                           listing_state="running", detail_state="not_started")
+            listing["timing"] = {"listing_started_at": datetime.now().isoformat(timespec="seconds")}
+            context("listing", phase="listing", sort=sort, target=target)
+            emit("listing_start", accepted=0, candidates=0, target=target)
             fetch = make_fetcher(session, url, args, sort, progress_state=progress_state)
             probe = make_fetcher(session, url, args, sort, progress_state=progress_state, phase="tail_confirmation")
             def fetch_page(page):
                 nonlocal current_page
                 current_page = page
                 return fetch(page)
-            rows, pages, reason = collect_pages(fetch_page, product="dry", target=target,
-                retries=args.page_retries, sleep_s=args.sleep, eligibility=eligibility, on_page=checkpoint,
+            rows, pages, reason = collect_pages(fetch_page, product="dry", target=None,
+                retries=args.page_retries, sleep_s=args.sleep, eligibility=early_eligibility, on_page=checkpoint,
                 probe_page=probe, on_probe=probe_checkpoint)
-            context("listing", sort=sort, page=current_page, **progress_state())
-            emit("listing_complete", sort=sort, accepted=len(rows), target=target, stop_reason=reason,
-                 pages=len(pages), excluded=counters, failed_products=len(failed_items),
-                 end_basis=manifest[sort].get("end_basis"))
-            if reason not in {"target_reached", "last_page"}:
+            listing["timing"]["listing_elapsed_s"] = round(time.monotonic() - phase_started, 1)
+            if reason != "last_page":
                 raise CollectionError("LISTING_FAILED:" + sort + ":" + reason)
+            listing["timing"]["listing_completed_at"] = datetime.now().isoformat(timespec="seconds")
+            context("listing_complete", phase="listing", sort=sort, page=current_page, **progress_state())
+            emit("listing_complete", sort=sort, candidate_count=len(rows), accepted=0,
+                 target=target, stop_reason=reason, end_basis=listing.get("end_basis"), **listing["timing"])
+            # The checkpoint callback has saved, read back and validated all
+            # candidates before this transition. Do not navigate during details.
+            process_details()
         rows = merge_rows(listing_results["main"], listing_results["bsr"], collector.cache, meta)
         path = args.output_dir / "mmkt_dry_output.csv"
         context("csv_save", batch_id=meta["batch_id"])
@@ -280,10 +340,20 @@ def crawl(args, session, meta=None, *, manifest=None, started=None) -> dict:
     except BaseException as exc:
         refresh()
         error = str(exc) if isinstance(exc, CollectionError) else type(exc).__name__
+        listing = manifest[sort]
+        if listing.get("listing_state") != "complete":
+            listing["state"] = "failed"
+            listing["listing_state"] = "failed"
+            listing["stop_reason"] = listing.get("listing_stop_reason") or error
+            listing.setdefault("timing", {})["listing_elapsed_s"] = round(time.monotonic() - phase_started, 1)
+        elif listing.get("detail_state") != "complete":
+            listing["state"] = "failed"
+            listing["detail_state"] = "failed"
+            listing["stop_reason"] = error
+            listing.setdefault("timing", {})["detail_elapsed_s"] = round(time.monotonic() - phase_started, 1)
+        listing.setdefault("timing", {})["phase_stopped_at"] = datetime.now().isoformat(timespec="seconds")
         manifest.update(success=False, state="failed", collection_status="failed", error=error)
         manifest["timing"]["collection_stopped_at"] = datetime.now().isoformat(timespec="seconds")
-        if manifest[sort]["state"] == "collecting":
-            manifest[sort].update(state="failed", stop_reason=error)
         exc.collection_manifest = manifest
         raise
 
@@ -302,6 +372,13 @@ def load_output(args, table):
         manifest["database"] = {"table": ".".join(table), "state": "running", "db_written": None}
         if not rows and manifest.get("product_failure_count", 0):
             raise DatabaseError("NO_VALID_PRODUCTS", db_written=False)
+        if not rows:
+            result = {"inserted": 0, "already_loaded": False,
+                      "backfilled": {"sku": 0, "loading_type": 0, "capacity": 0}}
+            manifest["database"].update(state="skipped_empty", db_written=False, **result)
+            write_json(manifest_path, manifest)
+            emit("db_skipped", reason="confirmed_empty_result", rows=0)
+            return manifest, result
         try:
             write_json(manifest_path, manifest)
         except Exception:
@@ -399,7 +476,7 @@ def main(argv=None) -> int:
                 manifest, result = load_output(args, table)
                 artifact_ready = True
                 collection_success = not manifest.get("product_failure_count", 0)
-                db_written = True
+                db_written = manifest["database"].get("db_written") is True
             else:
                 result = {}
             error = "PARTIAL_PRODUCT_FAILURES" if not collection_success else None

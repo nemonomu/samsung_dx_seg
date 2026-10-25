@@ -24,6 +24,10 @@ class CollectionError(RuntimeError):
     """Only static codes, never raw HTTP/driver/DB exception messages."""
 
 
+class CommonAPIError(CollectionError):
+    """Exhausted retries with evidence of an operation-wide failure."""
+
+
 def normalized_capacity(raw: Any) -> str | None:
     candidate = capacity_candidate(raw)
     return candidate["value"] if candidate else None
@@ -178,6 +182,7 @@ class DetailCollector:
         self.sleep_s = sleep_s
         self.cache: dict[str, dict] = {}
         self.api_calls = 0
+        self.operation_failures = {}
 
     def query(self, operation: str, variables: dict) -> dict:
         item = str(variables.get("ref") or variables.get("id") or "")
@@ -196,18 +201,40 @@ class DetailCollector:
             status = response.get("status")
             payload = response.get("data")
             errors = payload.get("errors") if isinstance(payload, dict) else None
-            api_error = ("ACCESS_DENIED" if status == 403 else "RATE_LIMITED" if status == 429 else
+            api_error = ("AUTH_REQUIRED" if status == 401 else "ACCESS_DENIED" if status == 403 else "RATE_LIMITED" if status == 429 else
                          "HTTP_OR_TRANSPORT_FAILED" if status != 200 else "GRAPHQL_ERROR" if errors else
                          "INVALID_JSON" if not isinstance(payload, dict) else
                          "GRAPHQL_DATA_MISSING" if not isinstance(payload.get("data"), dict) else None)
             emit("api_result", item=item, operation=operation, http=status,
                  graphql_errors=bool(errors), attempt=attempt + 1, error_code=api_error)
             if status == 200 and isinstance(payload, dict) and not errors and isinstance(payload.get("data"), dict):
+                self.operation_failures.pop(operation, None)
                 return payload
             if attempt < self.retries:
                 emit("api_retry", item=item, operation=operation, next_attempt=attempt + 2, wait_s=self.sleep_s)
                 time.sleep(self.sleep_s)
         emit("api_failed", item=item, operation=operation, attempts=self.retries + 1)
+        codes = {entry.get("extensions", {}).get("code") for entry in errors
+                 if isinstance(entry, dict) and isinstance(entry.get("extensions"), dict)
+                 and isinstance(entry["extensions"].get("code"), str)} if isinstance(errors, list) else set()
+        structural = bool(codes & {"GRAPHQL_VALIDATION_FAILED", "PERSISTED_QUERY_NOT_FOUND", "UNAUTHENTICATED"})
+        shared = (api_error if api_error in {"AUTH_REQUIRED", "ACCESS_DENIED", "RATE_LIMITED", "INVALID_JSON", "GRAPHQL_DATA_MISSING"}
+                  else "SERVER_OR_TRANSPORT_FAILED" if status is None or isinstance(status, int) and status >= 500 else None)
+        if shared:
+            old_code, items = self.operation_failures.get(operation, (None, set()))
+            items = items | {item} if old_code == shared else {item}
+            self.operation_failures[operation] = (shared, items)
+        else:
+            self.operation_failures.pop(operation, None)
+            items = set()
+        # One product's 403 is still isolated. Identical exhausted failures on
+        # two distinct products, or explicit query-validation/auth codes, stop
+        # the operation instead of silently skipping the whole catalog.
+        if structural or shared and item and len(items) >= 2:
+            emit("api_common_failure", operation=operation, item=item, http=status,
+                 reason="query_structure_or_auth" if structural else shared,
+                 distinct_products=len(items), attempts=self.retries + 1)
+            raise CommonAPIError("DETAIL_API_COMMON_FAILURE")
         raise CollectionError("DETAIL_API_FAILED")
 
     def get(self, sku_id: str, row: dict | None = None) -> dict:

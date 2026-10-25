@@ -169,7 +169,7 @@ class ResilienceTests(unittest.TestCase):
         self.assertEqual(1, sum(op == "GetProductReviews" and v["id"] == "1" for op, v in browser.calls))
         self.assertEqual(1, end["product_failure_count"])
 
-    def test_all_product_failures_preserve_diagnostic_csv_but_never_connect_db(self):
+    def test_common_transport_failure_stops_and_preserves_intermediate_without_db(self):
         browser = self.browser()
         browser.gql = Mock(side_effect=RuntimeError("RAW_PRODUCT_ERROR_MUST_NOT_PRINT"))
         with tempfile.TemporaryDirectory() as directory:
@@ -178,10 +178,13 @@ class ResilienceTests(unittest.TestCase):
             path, manifest = self.saved(root)
             self.assertEqual(1, code)
             db.assert_not_called()
-            self.assertEqual([], database.load_validated_output(path))
-            self.assertEqual(4, manifest["product_failure_count"])
-            self.assertEqual("NO_VALID_PRODUCTS", end["error"])
-            self.assertTrue(end["csv_preserved"])
+            self.assertFalse(path.exists())
+            self.assertEqual(2, manifest["product_failure_count"])
+            self.assertEqual("DETAIL_API_COMMON_FAILURE", end["error"])
+            self.assertFalse(end["csv_preserved"])
+            saved = json.loads(Path(manifest["intermediate"]["last_path"]).read_text(encoding="utf-8"))
+            self.assertEqual(2, len(saved["detail_results"]))
+            self.assertFalse(saved["loadable"])
             self.assertFalse(manifest["notification"]["success_report"])
             self.assertNotIn("RAW_PRODUCT_ERROR_MUST_NOT_PRINT", screen + json.dumps(manifest))
             code, db, uc, end, _ = self.execute(root, options=("--write-db",))

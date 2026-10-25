@@ -35,6 +35,7 @@ _REASONS_KO = {"last_page": "마지막 목록 확인", "target_reached": "목표
                "portabel_title": "제목 Portabel", "accessory": "부속품",
                "other_appliance": "다른 종류의 제품", "duplicate": "중복"}
 _ERRORS_KO = {"UNCONFIRMED_PRODUCT_TYPE": "상품 종류를 확인하지 못함",
+              "DETAIL_API_COMMON_FAILURE": "여러 상품에 공통인 API 장애로 중단",
               "PARTIAL_PRODUCT_FAILURES": "일부 상품 처리 실패",
               "DETAIL_API_FAILED": "상세 API 호출 실패", "DETAIL_AVAILABILITY_INVALID": "구매 상태 응답 형식 오류",
               "REVIEW_DISTRIBUTION_INVALID": "별점 통계 응답 형식 오류",
@@ -95,6 +96,16 @@ def _korean_summary(manifest, table, *, error, elapsed_s):
         target = (manifest.get("targets") or {}).get(sort, "확인 불가")
         reason = _REASONS_KO.get(listing.get("stop_reason"), "종료 근거 미확정")
         lines.append(f"{sort.upper()}: {count} / 목표 {target}개 — {states.get(state, '확인 필요')} ({reason})")
+        if "listing_state" in listing:
+            phase_names = {**states, "collecting": "진행 중"}
+            lines.append(f"  목록 확보: {phase_names.get(listing['listing_state'], '확인 필요')}; "
+                         f"후보 {listing.get('candidate_count', 0)}개; "
+                         f"필터 전 목록 위치 {listing.get('category_slots_read', 0)}; "
+                         f"상세: {phase_names.get(listing.get('detail_state'), '미실행')}; "
+                         f"처리 {listing.get('detail_processed', 0)}개")
+            times = listing.get("timing") or {}
+            lines.append(f"  목록 소요시간: {_duration_ko(times.get('listing_elapsed_s'))}; "
+                         f"상세 소요시간: {_duration_ko(times.get('detail_elapsed_s'))}")
         if listing.get("last_requested_page") is not None:
             lines.append(f"  마지막 정상 묶음: {listing.get('last_successful_page')}; 마지막 요청 묶음: {listing['last_requested_page']}")
         boundary = listing.get("tail_confirmation")
@@ -121,6 +132,8 @@ def _korean_summary(manifest, table, *, error, elapsed_s):
         db_result = "확인 필요 (대상 테이블 불일치)"
     elif written is True:
         db_result = "반영 확인됨" + (" (후속 기록 오류 확인 필요)" if db_state != "success" else "")
+    elif db_state == "skipped_empty":
+        db_result = "미실행 (확인된 적격 상품 0건)"
     elif not db or db_state == "not_started":
         db_result = "미실행"
     elif written is None:
@@ -147,6 +160,9 @@ def build_report(manifest, table, *, success, error=None, elapsed_s=None):
     if not success and manifest.get("product_failure_count", 0):
         english_subject = "[CHECK] [SEG] MediaMarkt DRY partial collection"
         subject = "[CHECK] [SEG] MediaMarkt DRY 일부 상품 실패 / partial collection"
+    elif not success and (manifest.get("database") or {}).get("state") == "skipped_empty":
+        english_subject = "[CHECK] [SEG] MediaMarkt DRY no eligible products"
+        subject = "[CHECK] [SEG] MediaMarkt DRY 적격 상품 0건 / no eligible products"
     lines = [subject, "", *_korean_summary(manifest, table, error=error, elapsed_s=elapsed_s),
              "", "English details", english_subject, "", f"Batch: {manifest.get('batch_id') or 'not completed'}",
              f"Table: {'.'.join(table)}", f"Collected unique products: {manifest.get('output_rows', 0)}"]
@@ -157,6 +173,11 @@ def build_report(manifest, table, *, success, error=None, elapsed_s=None):
         count = "not started" if state == "not_started" else listing.get("rows", 0)
         lines.append(f"{sort}: {count}/{(manifest.get('targets') or {}).get(sort, '?')}"
                      f" ({listing.get('stop_reason') or 'not completed'}) state={state}")
+        if "listing_state" in listing:
+            lines.append(f"{sort} listing={listing['listing_state']}; candidates={listing.get('candidate_count', 0)}; "
+                         f"category slots={listing.get('category_slots_read', 0)}; "
+                         f"detail={listing.get('detail_state')}; processed={listing.get('detail_processed', 0)}; "
+                         f"phase timing={listing.get('timing', {})}")
         if listing.get("last_requested_page") is not None:
             lines.append(f"{sort} last successful group: {listing.get('last_successful_page')};"
                          f" last requested group: {listing['last_requested_page']}; end basis: {listing.get('end_basis')}")

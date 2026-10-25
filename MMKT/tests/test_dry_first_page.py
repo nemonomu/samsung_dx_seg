@@ -226,13 +226,13 @@ class FirstPagePipelineTests(unittest.TestCase):
             self.assertEqual(["1", "2"], [row["item"] for row in saved["rows"]])
             self.assertTrue(all(row["bsr_rank"] is None and tuple(row) == config.COLUMNS for row in saved["rows"]))
             self.assertFalse(saved["loadable"])
-            self.assertTrue(Path(manifest["intermediate"]["last_path"]).with_name("main_0001_attempt_01.json").exists())
+            self.assertTrue(Path(manifest["main"]["candidate_path"]).exists())
             self.assertFalse((root / "output/mmkt_dry_output.csv").exists())
 
     def test_both_gates_recover_then_short_main_merges_loads_and_reports_success(self):
         first = block(total=3)
         tail = block(("3",), total=None, shown=None, more=False)
-        bsr = block(("2", "1"), total=3)
+        bsr = block(("2", "1"), total=2, shown=2, more=False)
         browser = Browser({("main", 1): first, ("main", 2): tail, ("main", 3): tail,
                            ("bsr", 1): bsr})
         navigate = browser.navigate

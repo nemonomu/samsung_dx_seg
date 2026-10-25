@@ -133,9 +133,10 @@ class TailPipelineTests(unittest.TestCase):
                 browser = self.short_browser()
                 browser.pages["main", 2] = [block((3, 4), 6, more=True), block((3, 4), total, more=True)]
                 manifest, _ = self.assert_failure(browser, options=("--page-retries", "20"))
-                self.assertEqual((5, "not_started"), (manifest["main"]["rows"], manifest["bsr"]["state"]))
+                self.assertEqual((0, "not_started"), (manifest["main"]["rows"], manifest["bsr"]["state"]))
+                self.assertEqual(5, manifest["main"]["candidate_count"])
                 self.assertEqual(3, manifest["main"]["last_successful_page"])
-                self.assertEqual(10, len(browser.calls))
+                self.assertEqual(0, len(browser.calls))
 
     def test_unstable_reference_uses_at_most_eight_probes(self):
         browser = self.short_browser()
@@ -208,8 +209,9 @@ class TailPipelineTests(unittest.TestCase):
                               ("bsr", 2): block((3, 4), 6, more=True),
                               ("bsr", 3): block((5,)), ("bsr", 4): block((5,))})
         manifest, _ = self.assert_failure(browser)
-        self.assertEqual(("complete", 5, "failed", 5),
+        self.assertEqual(("complete", 5, "failed", 0),
             (manifest["main"]["state"], manifest["main"]["rows"], manifest["bsr"]["state"], manifest["bsr"]["rows"]))
+        self.assertEqual(5, manifest["bsr"]["candidate_count"])
         self.assertEqual(10, len(browser.calls))
 
     def test_probe_snapshots_do_not_overwrite_regular_files(self):
@@ -217,12 +219,14 @@ class TailPipelineTests(unittest.TestCase):
             root = Path(directory)
             _, manifest, _, _, events = self.execute(root, self.short_browser())
             folder = root / "output/intermediate" / manifest["batch_id"]
-            self.assertEqual(9, len(list(folder.glob("*.json"))))
-            regular = json.loads((folder / "main_0003_attempt_01.json").read_text(encoding="utf-8"))
-            self.assertEqual((5, "collecting"), (len(regular["rows"]), regular["progress"]["main"]["state"]))
+            self.assertEqual(16, len(list(folder.glob("*.json"))))
+            regular = json.loads((folder / "main_candidates_0003_attempt_01.json").read_text(encoding="utf-8"))
+            self.assertEqual((5, "collecting"), (len(regular["candidates"]), regular["progress"]["main"]["state"]))
+            self.assertEqual([], regular["rows"])
             reads = [json.loads(path.read_text(encoding="utf-8")) for path in folder.glob("main_tail_read_*.json")]
             self.assertEqual(4, len(reads))
-            self.assertTrue(all(len(value["rows"]) == 5 and not value["loadable"] for value in reads))
+            self.assertTrue(all(len(value["candidates"]) == 5 and not value["loadable"] for value in reads))
+            self.assertTrue(all(value["rows"] == [] and value["progress"]["api_calls"] == 0 for value in reads))
             self.assertTrue(all(tuple(row) == config.COLUMNS for value in reads for row in value["rows"]))
             screen_reads = [e for e in events if e["event"] == "tail_confirmation_read"]
             self.assertEqual([2, 3, 4, 2], [e["page"] for e in screen_reads])
@@ -309,9 +313,10 @@ class TailPipelineTests(unittest.TestCase):
             ("main", 4): [block((7, 8)), block((9, 10))],
         })
         manifest, _ = self.assert_failure(browser)
-        self.assertEqual((6, "confirmed_following_products_changed"),
+        self.assertEqual((0, "confirmed_following_products_changed"),
                          (manifest["main"]["rows"], manifest["main"]["stop_reason"]))
-        self.assertEqual(12, len(browser.calls))
+        self.assertEqual(6, manifest["main"]["candidate_count"])
+        self.assertEqual(0, len(browser.calls))
 
     def test_middle_repeat_and_nonuniform_prefix_are_not_short_category_success(self):
         for second in (block((1, 2), 6, more=True), block((3,), 6, more=True)):
@@ -390,7 +395,8 @@ class TailPipelineTests(unittest.TestCase):
         state = manifest["main"]["tail_confirmation"]
         self.assertEqual((8, 0, "confirmation_budget_exhausted"),
                          (state["queries"], state["remaining"], state["reason"]))
-        self.assertEqual((10, 20), (manifest["main"]["rows"], len(browser.calls)))
+        self.assertEqual((0, 0), (manifest["main"]["rows"], len(browser.calls)))
+        self.assertEqual(10, manifest["main"]["candidate_count"])
         self.assertEqual(8, sum(e["event"] == "tail_confirmation_read" for e in events))
 
     def test_confirmation_result_save_failure_keeps_regular_and_probe_rows(self):
@@ -401,8 +407,9 @@ class TailPipelineTests(unittest.TestCase):
             return original(path, value)
         with patch.object(checkpoint, "write_manifest", side_effect=save):
             manifest, _ = self.assert_failure(self.short_browser())
-        self.assertEqual(("INTERMEDIATE_SAVE_FAILED", "not_started", 5),
+        self.assertEqual(("INTERMEDIATE_SAVE_FAILED", "not_started", 0),
             (manifest["error"], manifest["bsr"]["state"], manifest["main"]["rows"]))
+        self.assertEqual(5, manifest["main"]["candidate_count"])
 
     def test_individual_api_failure_remains_check_after_confirmed_tail_and_insert(self):
         browser = self.short_browser()

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import time
+from datetime import datetime
 
 from bs4 import BeautifulSoup
 
@@ -344,6 +345,8 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
     on_page receives regular attempts and separate confirmation decisions.
     probe_page must be an independent read-only fetcher; on_probe checkpoints
     each extra read without changing the normal collection cursor or rows.
+    target=None captures the complete candidate listing without a numeric cap.
+    Its eligibility callback must be listing-only, never a detail/API callback.
     A checkpoint error must never authorize DB insertion.
     """
     seen, fingerprints, page_log = {}, set(), []
@@ -402,16 +405,23 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
                     # Reuse this attempt loop; do not nest another retry loop.
                     first_validation = {**first_page_evidence(rows, view),
                         "passed": not bool(error), "reason": error,
-                        "action": "start_detail_collection" if not error else
+                        "action": ("start_candidate_collection" if target is None else
+                                   "start_detail_collection") if not error else
                                   "retry_first_page" if attempt <= retries else "stop_listing",
-                        "details_allowed": not bool(error),
+                        "details_allowed": target is not None and not bool(error),
                         "retry_wait_s": sleep_s if error and attempt <= retries else 0}
                     emit("first_page_validation", stage="first_page_validation", page=page,
                          attempt=attempt, max_attempts=retries + 1, **first_validation)
                 if not error and not repeated:
                     expected_next = None
                     fingerprints.add(signature)
-                    for row in rows:
+                    observed_at = datetime.now().isoformat(timespec="seconds")
+                    for position, row in enumerate(rows, 1):
+                        if target is None:
+                            # Public occurrence order, independent of category slots
+                            # and final eligible ranks. Preserve every parser field.
+                            row = dict(row, page=page, page_position=position,
+                                       listing_order=[page, position], observed_at=observed_at)
                         reason = eligibility(row)
                         if reason:
                             excluded[reason] = excluded.get(reason, 0) + 1
@@ -421,7 +431,7 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
                             row.update(sku_id=item, page=page)
                             seen[item] = row
                             new += 1
-                            if len(seen) >= target:
+                            if target is not None and len(seen) >= target:
                                 break
                     ledger.commit(page, view, decision)
             except BaseException as exc:
@@ -429,11 +439,13 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
                 error = str(exc) if isinstance(exc, CollectionError) else type(exc).__name__
             deferred_end = not error and decision.get("pagination_error") == "total_changed_at_end"
             stop = (error if interrupted or (error and attempt == retries + 1) else
-                    "target_reached" if not error and len(seen) >= target and not deferred_end else
+                    "target_reached" if target is not None and not error and len(seen) >= target and not deferred_end else
                     "last_page" if not error and decision["end_basis"] else None)
             entry = {"page": page, "attempt": attempt, "status": status, "parsed": len(rows),
                      "phase": "listing",
-                     "new_unique": new, "accepted": len(seen), "elapsed": elapsed,
+                     "new_unique": new, "accepted": len(seen) if target is not None else 0,
+                     "count_kind": "eligible" if target is not None else "candidate",
+                     "candidate_count": len(seen) if target is None else None, "elapsed": elapsed,
                      "sponsored_extra_wait": extra_wait, "error": error, "excluded": excluded,
                      **diagnostics, **{key: value for key, value in view.items()
                                       if key not in {"state_ids", "signature"}}, **decision,
@@ -443,7 +455,9 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
             if first_validation is not None:
                 entry["first_page_validation"] = first_validation
             page_log.append(entry)
-            emit("pagination_decision", page=page, attempt=attempt, accepted=len(seen),
+            emit("pagination_decision", page=page, attempt=attempt,
+                 accepted=len(seen) if target is not None else 0,
+                 candidate_count=len(seen) if target is None else None,
                  error=error, last_page=bool(decision["end_basis"]),
                  raw_last_page=view["last_page"], **decision)
             if on_page is not None:
@@ -474,7 +488,7 @@ def collect_pages(fetch_page, *, product="dry", target, retries=2, sleep_s=0,
                     summary["initial_pagination_error"] = summary.pop("pagination_error")
                 stop = ("last_page" if verdict["action"] == "complete" else
                         summary["error"] if verdict["action"] == "failed" else
-                        "target_reached" if len(seen) >= target else None)
+                         "target_reached" if target is not None and len(seen) >= target else None)
                 page_log.append(summary)
                 emit("tail_confirmation_result", page=page, attempt=attempt, accepted=len(seen), **verdict)
                 if on_page is not None:
