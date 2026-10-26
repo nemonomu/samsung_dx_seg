@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from dry import config, storage
-from dry.client import Client, RequestFailure
+from dry.client import Client, RequestFailure, COMPARISON_FIELD_LABELS
 from dry.events import Events
 from dry.fields import candidates, choose, classify, name_key, classification_evidence, text
 
@@ -28,8 +28,11 @@ def product_outcome(target, chars, pdf, rating, row, *, options=None):
         issues.append(dict(source="price", kind="warning", reason="prices_present_savings_missing"))
     sources = {field: next((source for source, _, value in values if value), None)
                for field, values in (candidates(target, chars, pdf) if options is None else options).items()}
-    supplemented = any(v == "product_pdf" for v in sources.values()) or sources["sku"] == "listing_title"
+    comparison_fields = [field for field, source in sources.items() if row.get(field)
+                         and source in chars.get("_supplemented_sources", {}).get(field, [])]
+    supplemented = bool(comparison_fields) or any(v == "product_pdf" for v in sources.values()) or sources["sku"] == "listing_title"
     return dict(status="supplemented" if supplemented else "collected", missing_fields=missing, issues=issues,
+                comparison_supplemented_fields=comparison_fields,
                 supplemented_items=supplemented, incomplete_items=bool(missing),
                 request_error_items=any(i["kind"] == "request" for i in issues),
                 extraction_error_items=any(i["kind"] == "extraction" for i in issues), price_warning_items=price_warning)
@@ -142,6 +145,50 @@ def select_targets(client, events, state, listing_rows):
     return selected
 
 
+def supplement_comparisons(client, events, chunk, chars_by_id, options, references):
+    """Recover proven row omissions, never every NULL or another option's value."""
+    for target in chunk:
+        vid = target["variation_id"]
+        chars = chars_by_id.get(vid, {})
+        if "_present_labels" not in chars or chars.get("_error"):
+            continue
+        for field, labels in COMPARISON_FIELD_LABELS.items():
+            if field not in references and any(value and (
+                    source == "comparison_model" or source in labels
+                    or source.startswith("comparison_spec:"))
+                    for source, _, value in options[vid][field]):
+                references[field] = vid
+    groups = {}
+    for target in chunk:
+        vid = target["variation_id"]
+        chars = chars_by_id.get(vid, {})
+        if "_present_labels" not in chars or chars.get("_error"):
+            continue  # No successful response/presence evidence: use existing PDF path.
+        for field, labels in COMPARISON_FIELD_LABELS.items():
+            if (any(value for _, _, value in options[vid][field])
+                    or any(label in chars["_present_labels"] for label in labels)):
+                continue
+            reference = references.get(field)
+            if reference:
+                groups.setdefault(reference, {}).setdefault(vid, []).append(field)
+            else:
+                events.emit("comparison_supplement_skipped", variation_id=vid, field=field,
+                            reason="reference_unavailable_use_existing_fallback")
+    for reference, pending in groups.items():
+        ids = list(pending)
+        for start in range(0, len(ids), 4):
+            batch = ids[start:start+4]
+            fresh = client.comparison([reference, *batch], supplement={vid: pending[vid] for vid in batch})
+            for vid in batch:
+                before, after = chars_by_id.get(vid, {}), fresh.get(vid, {})
+                chars_by_id[vid] = after
+                # Recompute candidates only when field evidence actually changed.
+                if any(before.get(label) != after.get(label)
+                       for field in pending[vid] for label in COMPARISON_FIELD_LABELS[field]):
+                    target = next(t for t in chunk if t["variation_id"] == vid)
+                    options[vid] = candidates(target, after)
+
+
 def collect(client, events, state, save):
     rows = []
     stats = state["counts"] = dict(reviewed=0, excluded=0, duplicates=0, ambiguous=0, selected=0,
@@ -151,10 +198,13 @@ def collect(client, events, state, save):
     targets = select_targets(client, events, state, listing_rows)
     del listing_rows
     total, started = len(targets), time.monotonic()
+    references = {}
     with events.stage("사양·평점 수집"):
         for position in range(0, total, 5):
             chunk = targets[position:position+5]
             chars_by_id = client.comparison([t["variation_id"] for t in chunk])
+            options_by_id = {t["variation_id"]: candidates(t, chars_by_id.get(t["variation_id"], {})) for t in chunk}
+            supplement_comparisons(client, events, chunk, chars_by_id, options_by_id, references)
             for target in chunk:
                 item_started = time.monotonic()
                 number = len(rows) + 1
@@ -163,7 +213,7 @@ def collect(client, events, state, save):
                             item=target["product_id"], name=target["retailer_sku_name"], product_url=target["product_url"])
                 chars = chars_by_id.get(target["variation_id"], {})
                 # Title-only selection is final. Comparison/PDF fields cannot exclude rows.
-                options = candidates(target, chars)
+                options = options_by_id[target["variation_id"]]
                 need_sku = not options["sku"][0][2]
                 need_capacity = not any(v for _, _, v in options["capacity"])
                 need_loading = not any(v for _, _, v in options["loading_type"])

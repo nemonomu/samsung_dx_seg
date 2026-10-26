@@ -106,9 +106,19 @@ def explicit_product_exclusion(value):
     fan = re.search(r"\b(?:lüfter|luefter|ventilator|gebläse|geblaese)\s+(?:für|fuer)\s+(?:den\s+|einen\s+)?(?:wäscheständer|waeschestaender)\b", head, re.I)
     if fan and not re.search(r"\b(?:nicht|kein\w*)\s*$", head[:fan.start()], re.I):
         return "explicit_drying_rack_fan"
-    head = re.split(r"\bfür\b", head, maxsplit=1, flags=re.I)[0]
+    head = re.split(r"\b(?:für|fuer|wie)\b", head, maxsplit=1, flags=re.I)[0]
     if portable_appliance(head) or re.search(_TRAVEL_DRYER, head, re.I):
         return "explicit_portable_dryer"
+    # A later independent product phrase may follow features ('mit Timer, ...').
+    # Keep compatibility/delivery lists protected across comma-separated clauses.
+    protected = False
+    for clause in re.split(r"[,;|]", value):
+        head = re.split(r"\b(?:für|fuer|wie)\b", product_phrase(clause), maxsplit=1, flags=re.I)[0]
+        if not protected and (portable_appliance(head) or re.search(_TRAVEL_DRYER, head, re.I)):
+            return "explicit_portable_dryer"
+        protected = protected or bool(re.search(
+            r"\b(?:für|fuer|wie|passend|geeignet|kompatibel|inklusive|inbegriffen|beiliegend\w*)\b|\binkl\.",
+            clause, re.I))
     return None
 
 
@@ -221,14 +231,21 @@ def capacity_candidate(raw, *, labelled=False):
         return None, "no_valid_capacity"
     if labelled and re.fullmatch(r"[\d.,]+(?:\s+[\d.,]+)+", value):
         return None, "ambiguous_numeric_capacity"
+    if labelled and re.fullmatch(r"\d[\d.,]*(?:\s*kg)?(?:\s*(?:[-–—~/]|\bbis\b|\bto\b)\s*\d[\d.,]*(?:\s*kg)?)+", value, re.I):
+        return None, "ambiguous_numeric_capacity"
     candidates = []
     ambiguous = False
     for match in re.finditer(r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*kg\b", value, re.I):
         prefix = value[max(0, match.start() - 40):match.start()]
         suffix = value[match.end():match.end()+30]
         preceding_number = re.search(r"(?<![\w.,])(?=\d)[\d.,]+\s+$", prefix)
-        model_number = (re.search(r"\b(?:Serie|Series|Modell(?:bezeichnung)?|Model(?: identifier)?)\s+\S+\s+$", prefix, re.I)
-                        or re.search(r"\b[A-Z]{1,6}\s+\d{2,5}[,;]?\s+$", prefix))
+        model_number = (re.search(r"\b(?:Serie|Series|Modell(?:bezeichnung)?|Model(?: identifier)?)\s+\S+\s*(?:[-–—]\s*)?$", prefix, re.I)
+                        or re.search(r"\b[A-Z]{1,6}\s+\d{2,5}[,;]?\s*(?:[-–—]\s*)?$", prefix))
+        range_before = re.search(r"\b\d[\d.,]*(?:\s*kg)?\s*(?:[-–—~/]|\bbis\b|\bto\b)\s*$", prefix, re.I)
+        range_after = re.match(r"\s*(?:[-–—~/]|\bbis\b|\bto\b)\s*\d", suffix, re.I)
+        if (range_before and not model_number) or range_after:
+            ambiguous = True
+            continue
         if preceding_number and not model_number:
             ambiguous = True
             continue
@@ -258,8 +275,8 @@ def capacity_label(label):
 
 def loading(raw):
     value = text(raw).casefold()
-    front = bool(re.search(r"frontlader|frontbeladung|front[- ]?loading|von vorne", value))
-    top = bool(re.search(r"toplader|topbeladung|top[- ]?loading|von oben", value))
+    front = bool(re.search(r"frontlader|frontbeladung|front[- ]?(?:loading|loaded)|von vorne", value))
+    top = bool(re.search(r"toplader|topbeladung|top[- ]?(?:loading|loaded)|von oben", value))
     return ("Front loader" if front else "Top-loading") if front != top else None
 
 

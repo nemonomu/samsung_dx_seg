@@ -11,11 +11,13 @@ from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup
 
 from common import compare, datasheet, listing, review_rating
-from dry.config import CATEGORY_LABELS, COMPARE_LABELS, SEARCH_TERM, SEARCH_URL, DryError, PDF_PARSE_TIMEOUT, PDF_MAX_ATTEMPTS
+from dry.config import CAPACITY_LABELS, CATEGORY_LABELS, COMPARE_LABELS, SEARCH_TERM, SEARCH_URL, DryError, PDF_PARSE_TIMEOUT, PDF_MAX_ATTEMPTS
 from dry.fields import capacity, capacity_candidate, capacity_label, public_product_url, text, loading, savings, DRYER, valid_sku, sku_rejection
 from dry.pdf_process import pdf_attempt
 
 MAX_PDF_BYTES = 20_000_000  # Existing download bound; at most one cached document.
+COMPARISON_FIELD_LABELS = {"sku": ("Modellbezeichnung",), "capacity": CAPACITY_LABELS,
+                           "loading_type": ("Beladung", "Bauart")}
 
 
 class RequestFailure(DryError):
@@ -28,6 +30,7 @@ class Client:
     def __init__(self, events, timeout=30, attempts=3, pause=0.25, pdf_timeout=PDF_PARSE_TIMEOUT):
         self.events, self.timeout, self.attempts, self.pause = events, timeout, attempts, pause
         self.compare_cache = {}
+        self.compare_supplemented = set()  # One bounded supplement per option/field/run.
         self.tile_cache = {}
         self.rating_cache = {}
         self.rating_failures = {}
@@ -156,8 +159,34 @@ class Client:
                 self.events.emit("parsed", endpoint="tiles", count=1)
         return {vid: deepcopy(self.tile_cache[vid]) for vid in ids if vid in self.tile_cache}
 
-    def comparison(self, ids):
+    def _comparison_response(self, ids, *, labels=COMPARE_LABELS, include_names=True):
+        self.events.emit("comparison_targets", variation_ids=ids)
+        url = compare.VERGLEICH_URL + "?" + urlencode({"variationIds": ",".join(ids)})
+        body, response = self.fetch(url, "comparison")
+        if review_rating.response_problem(response, url):
+            raise RequestFailure("comparison_redirect")
+        soup = BeautifulSoup(body, "lxml")
+        self.events.emit("parsed", endpoint="comparison", count=1)
+        names = comparison_names(soup, set(ids)) if include_names else {}
+        values = {label: compare._row_values(soup, label) for label in labels}
+        result = {}
+        for vid in ids:
+            chars = {label: vals[vid] for label, vals in values.items() if vals.get(vid)}
+            if names.get(vid):
+                chars["_name"] = names[vid]
+            if not chars:
+                chars["_unavailable"] = "comparison_option_missing"
+            if include_names and not names.get(vid):
+                chars["_title_reason"] = "comparison_product_title_unavailable"
+            # Empty cells and '-' are present; absent rows/cells are different.
+            chars["_present_labels"] = [label for label, vals in values.items() if vid in vals]
+            result[vid] = chars
+        return result
+
+    def comparison(self, ids, *, supplement=None):
         ids = list(dict.fromkeys(ids))
+        if supplement:
+            return self._supplement_comparison(ids, supplement)
         needed = [v for v in dict.fromkeys(ids) if v not in self.compare_cache]
         hits = [v for v in ids if v not in needed]
         for failed in (False, True):
@@ -166,29 +195,66 @@ class Client:
                 self.events.emit("failure_reused" if failed else "cache_hit", endpoint="comparison", count=count,
                                  status="failed" if failed else "confirmed_response")
         if needed:
-            self.events.emit("comparison_targets", variation_ids=needed)
-            url = compare.VERGLEICH_URL + "?" + urlencode({"variationIds": ",".join(needed)})
             try:
-                body, response = self.fetch(url, "comparison")
-                if review_rating.response_problem(response, url):
-                    raise RequestFailure("comparison_redirect")
-                soup = BeautifulSoup(body, "lxml")
-                self.events.emit("parsed", endpoint="comparison", count=1)
-                names = comparison_names(soup, set(needed))
-                values = {label: compare._row_values(soup, label) for label in COMPARE_LABELS}
-                for vid in needed:
-                    chars = {label: vals[vid] for label, vals in values.items() if vals.get(vid)}
-                    if names.get(vid):
-                        chars["_name"] = names[vid]
-                    if not chars:
-                        chars["_unavailable"] = "comparison_option_missing"
-                    if not names.get(vid):
-                        chars["_title_reason"] = "comparison_product_title_unavailable"
-                    self.compare_cache[vid] = chars
+                self.compare_cache.update(self._comparison_response(needed))
             except RequestFailure as exc:
                 for vid in needed:
                     self.compare_cache[vid] = {"_error": str(exc), "_error_kind": "request"}
         return {v: deepcopy(self.compare_cache[v]) for v in ids}
+
+    def _supplement_comparison(self, ids, requested):
+        pending = {vid: [field for field in fields if field in COMPARISON_FIELD_LABELS
+                        and (vid, field) not in self.compare_supplemented]
+                   for vid, fields in requested.items() if vid in ids and vid != ids[0]}
+        pending = {vid: fields for vid, fields in pending.items() if fields}
+        if not pending:
+            self.events.emit("comparison_supplement_skipped", reason="already_attempted", count=len(requested))
+            return {vid: deepcopy(self.compare_cache.get(vid, {})) for vid in ids}
+        sent = [ids[0], *pending]  # Include cached reference in the actual HTTP request.
+        self.compare_supplemented.update((vid, field) for vid, fields in pending.items() for field in fields)
+        self.events.emit("comparison_supplement_start", reference=ids[0], targets=pending,
+                         reason="missing_characteristic_rows", max_attempts=self.attempts)
+        needed_labels = tuple(dict.fromkeys(label for fields in pending.values()
+                              for field in fields for label in COMPARISON_FIELD_LABELS[field]))
+        try:
+            fresh = self._comparison_response(sent, labels=needed_labels, include_names=False)
+        except RequestFailure as exc:
+            for vid in pending:
+                self.compare_cache.setdefault(vid, {}).update(_error=str(exc), _error_kind="request")
+            self.events.emit("comparison_supplement_end", status="failed", reason=str(exc), count=len(pending))
+        else:
+            for vid, fields in pending.items():
+                old = self.compare_cache.setdefault(vid, {})
+                own = fresh.get(vid, {})
+                labels = {label for field in fields for label in COMPARISON_FIELD_LABELS[field]}
+                added = []
+                for label in labels:
+                    if not compare._present(old.get(label)) and compare._present(own.get(label)):
+                        old[label] = own[label]
+                        added.append(label)
+                old["_present_labels"] = list(dict.fromkeys(old.get("_present_labels", []) +
+                    [label for label in own.get("_present_labels", []) if label in labels]))
+                if added:
+                    old.pop("_unavailable", None)
+                normalizers = {"sku": valid_sku, "capacity": lambda value: capacity(value, labelled=True),
+                               "loading_type": loading}
+                confirmed = []
+                for field in fields:
+                    sources = [("comparison_model" if field == "sku" else "comparison_spec:" + label
+                                if field == "capacity" else label)
+                               for label in COMPARISON_FIELD_LABELS[field]
+                               if label in added and normalizers[field](old.get(label))]
+                    if sources:
+                        confirmed.append(field)
+                        old.setdefault("_supplemented_sources", {}).setdefault(field, []).extend(sources)
+                present = any(label in old["_present_labels"] for label in labels)
+                self.events.emit("comparison_supplement_result", variation_id=vid, fields=fields,
+                                 added_labels=added, confirmed_fields=confirmed,
+                                 status="confirmed" if confirmed else "field_present_without_new_valid_value"
+                                 if present else "field_rows_unavailable",
+                                 reason=own.get("_unavailable"))
+            self.events.emit("comparison_supplement_end", status="read", count=len(pending))
+        return {vid: deepcopy(self.compare_cache.get(vid, {})) for vid in ids}
 
     def pdf(self, uri, *, need_sku, need_capacity, need_loading=False):
         needed = dict(sku=need_sku, capacity=need_capacity, loading_type=need_loading)
@@ -343,14 +409,28 @@ def minimal_tile(tile):
                 savings=savings(sale.get("discount")))
 
 
+_PDF_LOADING_TOKEN = r"(?:Frontlader|Toplader|Frontbeladung|Topbeladung|front[- ]loading|top[- ]loading)"
+_PDF_LOADING_LABEL = re.compile(
+    r"\s*(?:Bauart|Beladung|Beladungsart|Gerätetyp|Produkttyp|Typ|Form)\s*[:=]?\s*"
+    + _PDF_LOADING_TOKEN + r"\b(?:\s+(?:und|oder)\s*" + _PDF_LOADING_TOKEN + r"\b)?", re.I)
+_PDF_CAPACITY = re.compile(
+    r"\b(?:Nennkapazit[äa]t|Rated capacity|Trockenkapazit[äa]t)"
+    r"(?:\s+Baumwoll(?:w(?:ä|ae)sche|e))?(?:\s*\([a-z]\))?"
+    r"\s*(?:(?:in\s+)?\(?kg\)?)?\s*[:=]?\s*"
+    r"(?P<number>\d[\d.,]*(?:[ \t]+[\d.,]+|(?:[ \t]*kg\b)?[ \t]*"
+    r"(?:[-–—~/]|\bbis\b|\bto\b)[ \t]*[\d.,]+)*)"
+    r"(?:[ \t]*kg\b)?", re.I)
+
+
 def explicit_pdf_loading_line(line):
-    token = r"(?:Frontlader|Toplader|Frontbeladung|Topbeladung|front[- ]loading|top[- ]loading)"
-    if not re.search(r"\b" + token + r"\b", line, re.I):
+    token = _PDF_LOADING_TOKEN
+    heading = re.fullmatch(r"\s*(?:front|top)[- ]loaded\s+(?:TD|tumble dryer)\s*", line, re.I)
+    if not heading and not re.search(r"\b" + token + r"\b", line, re.I):
         return False
-    if re.search(r"\b(?:nicht|kein\w*|waschmaschine\w*|waschvollautomat\w*)\b|geeignet für|kompatibel", line, re.I):
+    if re.search(r"\b(?:nicht|kein\w*|not|no|waschmaschine\w*|waschvollautomat\w*)\b|geeignet für|kompatibel|compatible", line, re.I):
         return False
-    return bool(DRYER.search(line)
-                or re.match(r"\s*(?:Bauart|Beladung|Beladungsart|Gerätetyp|Produkttyp|Typ)\s*[:=]?\s*" + token, line, re.I)
+    return bool(heading or DRYER.search(line)
+                or _PDF_LOADING_LABEL.match(line)
                 or re.fullmatch(r"\s*" + token + r"(?:\s+(?:und|oder)\s*" + token + r")?\s*", line, re.I))
 
 
@@ -400,9 +480,11 @@ def parse_pdf(body, *, need_sku, need_capacity, need_loading=False, progress=Non
                     for line in content.splitlines():
                         if re.search(r"wasch|gewicht|weight", line, re.I):
                             continue
-                        for match in re.finditer(r"(?:Nennkapazit[äa]t|Rated capacity|Trockenkapazit[äa]t)(?:\s*\([a-z]\))?\s*(?:\(?(?:kg)\)?)?\s*[:=]?\s*(\d[\d.,]*(?:[ \t]+[\d.,]+)*)", line, re.I):
-                            raw = match[1].rstrip(".,")
+                        for match in _PDF_CAPACITY.finditer(line):
+                            raw = match["number"].rstrip(".,")
                             normalized, reason = capacity_candidate(raw, labelled=True)
+                            if re.match(r"\s*(?:kwh|wh|kw|w|db)\b", line[match.end():], re.I):
+                                normalized, reason = None, "non_capacity_unit"
                             emit("pdf_capacity_candidate", page=number, raw=match[0][:500],
                                  normalized=normalized, reason=reason)
                             if normalized:
@@ -412,11 +494,21 @@ def parse_pdf(body, *, need_sku, need_capacity, need_loading=False, progress=Non
                             break
                 if need_loading and not result.get("loading_type"):
                     # Explicit labels only, never door instructions or generic front/top words.
-                    lines = [line for line in content.splitlines()
-                             if explicit_pdf_loading_line(line)]
+                    lines = []
+                    for line in content.splitlines():
+                        if explicit_pdf_loading_line(line):
+                            labelled = _PDF_LOADING_LABEL.match(line)
+                            if labelled:
+                                tail = line[labelled.end():]
+                                next_field = re.search(r"(?:\s+|[,;]\s*)(?=[^\W\d_][\w-]*(?:\s*\([^)]{0,40}\))?\s*[:=])", tail)
+                                line = line[:labelled.end() + next_field.start()] if next_field else line
+                            lines.append(line.strip(" ,;"))
                     raw = text(" ".join(lines))
                     if raw:
-                        result["loading_type"] = loading(raw)
+                        normalized = loading(raw)
+                        emit("pdf_loading_candidate", page=number, raw=raw[:500], normalized=normalized,
+                             reason=None if normalized else "conflicting_loading_types")
+                        result["loading_type"] = normalized
                         result["loading_type_raw"] = raw[:500]
                 emit("pdf_progress", page=number, result=dict(result), confirmed=[k for k in needed if result.get(k)])
                 if all(not needed or result.get(field) for field, needed in (

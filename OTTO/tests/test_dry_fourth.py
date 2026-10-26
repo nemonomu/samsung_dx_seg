@@ -186,11 +186,13 @@ class FourthSelectionTests(base.Offline):
             "Wärmepumpentrockner DR900 Heiztrockner mit Flügeln",
             "Wäschetrockner DR900 mit Flügeln", "Heiztrockner DR900",
             "Wäschetrockner DR900, Filter leicht zu reinigen", "Wäschetrockner DR900, Trocknerbälle inklusive",
-            "Wärmepumpentrockner DR900, mobile Fernsteuerung", AIMAX_TITLE,
+            "Wärmepumpentrockner DR900, mobile Fernsteuerung",
         )
         for name in titles:
             with self.subTest(name=name):
                 self.assertTrue(fields.classify(name)[0])
+        # Revised policy: the long title explicitly names a portable appliance.
+        self.assertFalse(fields.classify(AIMAX_TITLE)[0])
 
     def test_title_only_selection_keeps_details_and_refills_duplicates(self):
         source=base.Source([[base.target(1,RACK_TITLE),base.target(2,"Unknown item"),base.target(3),
