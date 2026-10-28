@@ -358,7 +358,10 @@ class RatingFallbackTests(unittest.TestCase):
                 }
             ],
         }
-        with patch("common.notify._read_json", side_effect=[step02, {}, {}]):
+        # Report also reads both listing manifests and the full-output manifest.
+        # Route by filename so adding a report source cannot shift this fixture.
+        with patch("common.notify._read_json", side_effect=lambda path:
+                   step02 if path.name == "mmkt_step02_pdp_detail_manifest.json" else {}):
             subject, report = build_report(cfg, rows)
         self.assertTrue(subject.startswith("[CHECK]"))
         self.assertIn("partial - 1/1", report)

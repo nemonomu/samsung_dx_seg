@@ -1,0 +1,131 @@
+"""Exactly twenty output columns; listing provenance follows LDY."""
+from __future__ import annotations
+
+import csv
+import os
+import re
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
+
+from common.config import write_json as _write_json
+from dry import config
+from dry.detail import CollectionError
+from dry.events import emit
+
+UNAVAILABLE_PRICE = "Artikel ist derzeit nicht verfügbar"
+
+
+def canonical_product_url(value: str, item: str) -> str:
+    parsed = urlsplit(value or "")
+    if (parsed.hostname not in {"www.mediamarkt.de", "mediamarkt.de"}
+            or parsed.username is not None or parsed.password is not None
+            or not re.fullmatch(r"\d+", item)
+            or not parsed.path.startswith("/de/product/")
+            or not parsed.path.endswith("-" + item + ".html")):
+        raise CollectionError("PRODUCT_URL_INVALID")
+    # Keep the real product path; don't persist optional tracking/session query.
+    return urlunsplit(("https", parsed.hostname, parsed.path, "", ""))
+
+
+def run_metadata(now: datetime | None = None) -> dict:
+    now = now or datetime.now()  # same server-local clock as LDY
+    return {"calendar_week": "w" + str(now.isocalendar().week),
+            "crawl_datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "batch_id": "m_" + now.strftime("%Y%m%d_%H%M%S")}
+
+
+def positive_savings(value) -> str | None:
+    match = re.fullmatch(r"\s*[-+−]?\s*(\d+(?:[.,]\d+)?)\s*%\s*", str(value or ""))
+    return match.group(1) + "%" if match else None
+
+
+def present(*values):
+    return next((value for value in values if value is not None and value != ""), None)
+
+
+def default_missing_ratings(row: dict, *, source: str, log_defaults: bool = True) -> dict:
+    """Only call after successful detail collection or CSV/manifest validation.
+
+    Leave the source CSV intact on reload. These two fields alone use zero for
+    absence; review count and the three historical backfill fields are separate.
+    """
+    result = dict(row)
+    for field in ("star_rating", "count_of_star_ratings"):
+        if result.get(field) is None or str(result.get(field)).strip() == "":
+            result[field] = 0
+            if log_defaults:
+                emit("rating_defaulted", item=row.get("item"), field=field, source=source,
+                     raw_value=None, value=0, reason="missing_after_success")
+    return result
+
+
+def selected_price(primary: dict, secondary: dict, detail: dict, *, item: str, log: bool):
+    price = present(primary.get("final_sku_price"), secondary.get("final_sku_price"))
+    if price is not None:
+        return price
+    state = detail.get("_purchase_status") or {}
+    if state.get("unavailable") is True:
+        if log:
+            emit("field_selected", item=item, field="final_sku_price", source="API_status",
+                 value=UNAVAILABLE_PRICE, derived=True, reason="price_missing_and_purchase_unavailable",
+                 available_and_buyable=state.get("available_and_buyable"),
+                 delivery_status=state.get("delivery_status"), pickup_status=state.get("pickup_status"))
+        return UNAVAILABLE_PRICE
+    if log:
+        emit("price_missing", item=item, reason="purchase_unavailability_not_confirmed")
+    return None
+
+
+def merge_rows(main: list[dict], bsr: list[dict], details: dict[str, dict], meta: dict,
+               *, log_defaults: bool = True) -> list[dict]:
+    def ranked(rows):
+        # Occurrence-level banner/type filtering has ALREADY happened.
+        result = {}
+        for row in rows:
+            key = str(row["sku_id"])
+            if key not in result:
+                result[key] = (row, len(result) + 1)
+        return result
+    m, b = ranked(main), ranked(bsr)
+    result = []
+    for item in [*m, *(key for key in b if key not in m)]:
+        primary = (m.get(item) or b[item])[0]
+        secondary = b[item][0] if item in b else {}
+        detail = details[item]  # missing/failed API must not become an empty row
+        star = present(detail.get("star_rating"),
+                       None if detail.get("count_of_star_ratings") == 0 else
+                       present(primary.get("star_rating"), secondary.get("star_rating")))
+        row = dict.fromkeys(config.COLUMNS)
+        row.update(country=config.COUNTRY, account_name=config.ACCOUNT_NAME, item=item,
+                   sku=detail.get("sku"), retailer_sku_name=primary.get("retailer_sku_name"),
+                   product_url=canonical_product_url(primary.get("product_url"), item),
+                   count_of_reviews=detail.get("count_of_reviews"),
+                   star_rating=star,
+                   count_of_star_ratings=present(detail.get("count_of_star_ratings"),
+                                                primary.get("count_of_reviews"), secondary.get("count_of_reviews")),
+                   final_sku_price=selected_price(primary, secondary, detail, item=item, log=log_defaults),
+                   original_sku_price=primary.get("original_sku_price"),
+                   savings=positive_savings(primary.get("savings")),
+                   main_rank=m[item][1] if item in m else None,
+                   bsr_rank=b[item][1] if item in b else None,
+                   loading_type=detail.get("loading_type"), capacity=detail.get("capacity"), **meta)
+        result.append(default_missing_ratings(row, source="collected_fields", log_defaults=log_defaults))
+    return result
+
+
+def write_output(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".csv.tmp")
+    with temporary.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=config.COLUMNS, extrasaction="raise")
+        writer.writeheader()
+        writer.writerows(rows)
+    os.replace(temporary, path)
+
+
+def write_manifest(path: Path, data: dict) -> None:
+    """A failed state/mail write must leave the last valid manifest readable."""
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    _write_json(temporary, data)
+    os.replace(temporary, path)

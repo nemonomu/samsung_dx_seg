@@ -7,6 +7,7 @@ PDP-only fields (cfg.PDP_SUPPLEMENT_FIELDS, e.g. LDY Bauart) via a ZenRows brows
 from __future__ import annotations
 
 import csv
+import json
 import random
 import re
 import time
@@ -19,7 +20,8 @@ from urllib.request import Request, urlopen
 from common import datasheet, raw_html
 from common.discount_stickers import refresh_sticker_fields, sticker_diagnostics
 from common.io_util import category_output_root
-from common.parsers import REVIEW_SUMMARY_ENABLED, ensure_variation_query, format_detailed_review_content, parse_review_html
+from common.parsers import REVIEW_SUMMARY_ENABLED, ensure_variation_query, format_detailed_review_content, parse_review_document
+from common.review_rating import product_problem, response_problem
 from common.ref_type_policy import apply_ref_type_policy
 
 REVIEW_DETAIL_LIMIT = 20  # detailed_review_content collects up to this many written reviews
@@ -86,13 +88,13 @@ def fetch_html(url: str, timeout: int = 45, retries: int = 1) -> dict[str, Any]:
     for attempt in range(retries + 1):
         try:
             with urlopen(Request(url, headers=REVIEW_HEADERS, method="GET"), timeout=timeout) as r:
-                return {"status": r.status, "body": r.read(), "error": None}
+                return {"status": r.status, "body": r.read(), "error": None, "final_url": r.geturl()}
         except HTTPError as exc:
-            last = {"status": exc.code, "body": exc.read(), "error": repr(exc)}
+            last = {"status": exc.code, "body": exc.read(), "error": type(exc).__name__}
             if exc.code not in (429, 503):
                 return last
         except URLError as exc:
-            last = {"status": None, "body": b"", "error": repr(exc)}
+            last = {"status": None, "body": b"", "error": type(exc).__name__}
         if attempt < retries:
             time.sleep(2)
     return last
@@ -153,40 +155,76 @@ def pdp_supplement_plan(spec: dict[str, Any], cfg, pdp_supplement: str,
 
 def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int = 45,
                    require_summary: bool = False,
-                   summary_attempts: int = SUMMARY_CONTENT_ATTEMPTS) -> dict[str, Any]:
+                   summary_attempts: int = SUMMARY_CONTENT_ATTEMPTS,
+                   product: str = "unknown") -> dict[str, Any]:
     """Fetch the review page and follow ?page=N until REVIEW_DETAIL_LIMIT written reviews
     are gathered (OTTO paginates reviews). Rating summary / recommendation come from page 1.
     Returns the page-1 parse dict with reviews/detailed_review_content spanning all pages."""
-    if not base_url:
-        return {}
-    rp = out / "_tmp_review.html"
-
-    def _parse(body: bytes) -> dict[str, Any]:
-        rp.write_bytes(body)
-        try:
-            return parse_review_html(rp)
-        finally:
-            try:
-                rp.unlink()
-            except OSError:
-                pass
-
     require_summary = REVIEW_SUMMARY_ENABLED and require_summary
     max_summary_attempts = max(1, summary_attempts) if require_summary else 1
+    max_rating_attempts = 3 if base_url else 0
     page1: dict[str, Any] | None = None
+    best_rating: dict[str, Any] = {"average_rating": None, "rating_count": None,
+                                  "rating_state": "failed", "rating_reason": "missing_review_url"}
+    rating_history = []
     resp: dict[str, Any] = {"status": None, "body": b"", "error": "not_requested"}
     summary_eligible = False
     summary_container_present = False
     attempts_made = 0
-    for attempt in range(1, max_summary_attempts + 1):
+    for attempt in range(1, max(max_rating_attempts, max_summary_attempts) + 1) if base_url else ():
         attempts_made = attempt
-        resp = fetch_html(base_url, timeout=timeout, retries=3 if attempt == 1 else 1)
-        if resp.get("status") != 200:
-            break
-        body = resp.get("body", b"")
-        raw_html.save(f"review_{save_pid}_summary_a{attempt}", body)
-        parsed = _parse(body)
-        page1 = parsed
+        parsed = None
+        stage = "request"
+        try:
+            # One HTTP request per attempt: valid ratings cost no extra requests.
+            resp = fetch_html(base_url, timeout=timeout, retries=0)
+            stage = "parse"
+            reason = response_problem(resp, base_url)
+            if reason is None:
+                parsed = parse_review_document(resp.get("body", b""))
+                reason = product_problem(parsed, base_url)
+                if reason:
+                    parsed = None
+                else:
+                    reason = parsed.get("rating_reason")
+        except Exception as exc:
+            if stage == "request":
+                resp = {"status": None, "error": type(exc).__name__}
+            parsed = None
+            reason = stage + "_exception:" + type(exc).__name__
+        candidate = ({k: parsed.get(k) for k in best_rating} if parsed else {
+            "average_rating": None, "rating_count": None, "rating_state": "failed", "rating_reason": reason})
+        # Preserve independently valid fields and useful review text if a retry fails.
+        if candidate["rating_state"] in ("rated", "unrated"):
+            best_rating = candidate.copy()
+        elif best_rating["rating_state"] == "failed":
+            kept = candidate.copy()
+            for field in ("average_rating", "rating_count"):
+                if kept[field] is None:
+                    kept[field] = best_rating[field]
+            if kept["average_rating"] is not None and kept["rating_count"] == 0:
+                kept["rating_count"] = None
+            # Remains failed until one response has an internally consistent pair.
+            best_rating = kept
+        if parsed:
+            previous = page1 or {}
+            if page1 is None or parsed.get("review_text_rows", 0) > previous.get("review_text_rows", 0):
+                page1 = parsed
+            # Rating retries must not discard previously extracted independent fields.
+            for key in ("recommendation_intent", "summarized_review_content"):
+                page1[key] = previous.get(key) or parsed.get(key)
+            if parsed.get("rating_state") in ("rated", "unrated") or parsed.get("reviews"):
+                page1["last_page"] = max(page1.get("last_page") or 1, parsed.get("last_page") or 1)
+        if parsed and parsed.get("summary_rendered") and page1 is not parsed:
+            for key in ("summarized_review_content", "summary_rendered", "summary_item_count"):
+                page1[key] = parsed[key]
+        entry = {"attempt": attempt, "http": resp.get("status"), **candidate}
+        if resp.get("error") in {"HTTPError", "URLError"}:
+            entry["request_error_type"] = resp["error"]
+        rating_history.append(entry)
+        print(json.dumps({"event": "review_rating", "product": product, "item": save_pid,
+                          **entry}, ensure_ascii=False), flush=True)
+        parsed = parsed or {}
         summary_container_present = summary_container_present or bool(
             parsed.get("summary_container_present")
         )
@@ -195,33 +233,20 @@ def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int 
             or parsed.get("summary_container_present")
             or parsed.get("summary_rendered")
         )
-        if parsed.get("summary_rendered"):
+        rating_done = best_rating["rating_state"] in ("rated", "unrated") or attempt >= max_rating_attempts
+        summary_done = (not require_summary or parsed.get("summary_rendered")
+                        or attempt >= max_summary_attempts
+                        or (not summary_eligible and attempt >= min(
+                            SUMMARY_NO_SOURCE_CONFIRM_ATTEMPTS, max_summary_attempts)))
+        if rating_done and summary_done:
             break
-        if not require_summary:
-            break
-        if not summary_eligible and attempt >= min(
-            SUMMARY_NO_SOURCE_CONFIRM_ATTEMPTS, max_summary_attempts
-        ):
-            break
-        if attempt < max_summary_attempts:
+        if attempt < max(max_rating_attempts, max_summary_attempts):
             time.sleep(random.uniform(*SUMMARY_RETRY_SLEEP_RANGE_SECONDS))
 
-    if page1 is None:
-        return {
-            "_review_status": resp.get("status"),
-            "_summary_required": require_summary,
-            "_summary_attempts": attempts_made,
-            "_summary_eligible": False,
-            "_summary_rendered": False,
-            "_summary_container_present": False,
-            "_summary_item_count": 0,
-            "_summary_failure_reason": (
-                f"http_status={resp.get('status')}" if resp.get("status") is not None
-                else resp.get("error") or "request_failed"
-            ),
-        }
-
-    raw_html.save(f"review_{save_pid}", resp.get("body", b""))
+    page1 = page1 or {}
+    page1.update(best_rating)
+    page1["_rating_attempts"] = attempts_made
+    page1["_rating_history"] = rating_history
     summary_rendered = bool(page1.get("summary_rendered"))
     if summary_rendered:
         summary_failure_reason = None
@@ -238,21 +263,28 @@ def collect_review(base_url: str | None, out: Path, save_pid: str, timeout: int 
     page1["_summary_rendered"] = summary_rendered
     page1["_summary_container_present"] = summary_container_present
     page1["_summary_item_count"] = page1.get("summary_item_count") or 0
-    page1["_summary_failure_reason"] = summary_failure_reason
+    page1["_summary_failure_reason"] = (summary_failure_reason if resp.get("status") == 200 else
+        f"http_status={resp.get('status')}" if resp.get("status") is not None else "request_failed")
 
     reviews = list(page1.get("reviews") or [])
     last_page = page1.get("last_page") or 1
     seen = {r.get("review_id") for r in reviews if r.get("review_id")}
     written = lambda: sum(1 for r in reviews if r.get("review_text"))
     page = 1
-    sep = "&" if "?" in base_url else "?"
+    sep = "&" if "?" in (base_url or "") else "?"
     while written() < REVIEW_DETAIL_LIMIT and page < last_page:
         page += 1
-        nxt = fetch_html(f"{base_url}{sep}page={page}", timeout=timeout, retries=2)
-        if nxt.get("status") != 200:
+        next_url = f"{base_url}{sep}page={page}"
+        try:
+            nxt = fetch_html(next_url, timeout=timeout, retries=2)
+            if response_problem(nxt, next_url):
+                break
+            next_page = parse_review_document(nxt.get("body", b""))
+            if product_problem(next_page, next_url):
+                break
+            more = next_page.get("reviews") or []
+        except Exception:
             break
-        raw_html.save(f"review_{save_pid}_p{page}", nxt.get("body", b""))
-        more = _parse(nxt.get("body", b"")).get("reviews") or []
         added = 0
         for r in more:
             rid = r.get("review_id")
@@ -364,6 +396,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             review = collect_review(
                 review_url_for(target), out, pid, timeout=timeout,
                 require_summary=summary_required,
+                product=cfg.PRODUCT,
             )
             review_resp = {"status": review.get("_review_status") if review else None}
 
@@ -435,9 +468,15 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             # star rating: per-variation, from the review page ONLY (Kasada-free, matches
             # the actual product page). The crocotile listing aggregate over-counts (it is a
             # model-level number projected onto every variation tile), so it is NOT used.
-            # No rating block on the page (or a failed fetch) -> 0 / 0.0.
-            count_reviews = review.get("rating_count") or 0
-            star_rating = review.get("average_rating") or "0.0"
+            # Missing/failed fields remain NULL. Only proven unrated pages yield 0.
+            count_reviews = review.get("rating_count")
+            star_rating = review.get("average_rating")
+            print(json.dumps({"event": "review_rating_final", "product": cfg.PRODUCT,
+                              "item": pid, "http": review_resp["status"],
+                              "average_rating": star_rating, "rating_count": count_reviews,
+                              "state": review.get("rating_state", "failed"),
+                              "attempts": review.get("_rating_attempts", 0),
+                              "reason": review.get("rating_reason")}, ensure_ascii=False), flush=True)
             row = {
                 "account_name": cfg.ACCOUNT_NAME, "product": cfg.PRODUCT, "country": cfg.COUNTRY,
                 "page_type": target.get("page_type") or "main",
@@ -464,6 +503,11 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                              "sku_failure_reason": None if has_value(sku) else "no_model_in_option_sources",
                              "product_url": target.get("product_url"), "datasheet_status": ds_status,
                              "reco": reco.get("similar_count"), "review_status": review_resp.get("status"),
+                              "rating_state": review.get("rating_state", "failed"),
+                              "rating_reason": review.get("rating_reason"),
+                              "average_rating": star_rating, "rating_count": count_reviews,
+                              "rating_attempts": review.get("_rating_attempts", 0),
+                              "rating_history": review.get("_rating_history", []),
                              "summary_required": review.get("_summary_required", summary_required),
                              "summary_attempts": review.get("_summary_attempts", 0),
                              "summary_eligible": review.get("_summary_eligible", False),
@@ -512,6 +556,14 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
               ", ".join(f"{f}={fill_rate[f]:.1%}" for f in low) +
               " - check /vergleich/, EPREL, PDP fallback or category throttling before trusting this batch", flush=True)
     missing_spec_counts = {f: sum(1 for r in rows if not has_value(r.get(f))) for f in cfg.SPEC_FIELDS}
+    rating_qa = {"checked": len(attempts),
+                 **{state: sum(a["rating_state"] == state for a in attempts)
+                    for state in ("rated", "unrated", "failed")},
+                 "contradictions": sum(any("zero_average_with_ratings" in str(h.get("rating_reason"))
+                                            for h in a.get("rating_history", [])) for a in attempts)}
+    print(f"[full/{cfg.PRODUCT}][rating-QA] {rating_qa}", flush=True)
+    if rating_qa["failed"] or rating_qa["contradictions"]:
+        print(f"[full/{cfg.PRODUCT}][WARN] review rating failures remain NULL; check rating_history in manifest", flush=True)
     rows_with_missing_specs = sum(
         1 for r in rows if any(not has_value(r.get(f)) for f in cfg.SPEC_FIELDS)
     )
@@ -579,6 +631,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
         "batch_id": run_meta["batch_id"],
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "summary_qa": summary_qa,
+        "rating_qa": rating_qa,
         "anomalies": summary_anomalies,
     })
 
@@ -591,6 +644,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
         "fill_rate": fill_rate,
         "missing_spec_counts": missing_spec_counts,
         "rows_with_missing_specs": rows_with_missing_specs,
+        "rating_qa": rating_qa,
         "summary_qa": summary_qa,
         "summary_anomaly_output": str(summary_anomaly_output),
         "discount_stickers": discount_stickers,

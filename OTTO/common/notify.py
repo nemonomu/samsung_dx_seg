@@ -65,6 +65,17 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     null_fields = [f for f in null_fields_check if not any((r.get(f) or "").strip() for r in rows)]
 
     issues = []
+    rating_qa = (full.get("rating_qa") or {}) if current_full else {}
+    rating_failed = int(rating_qa.get("failed") or 0)
+    if rating_failed:
+        issues.append(f"별점 요청·추출 실패 {rating_failed}/{total} (확인된 값 유지, 실패 필드 NULL)")
+    contradictions = sum(
+        1 for row in rows
+        if str(row.get("star_rating") or "").strip() in {"0", "0.0"}
+        and str(row.get("count_of_star_ratings") or "").strip() not in {"", "0", "0.0"}
+    )
+    if contradictions:
+        issues.append(f"평가가 있는데 평균 별점이 0인 모순 {contradictions}/{total}")
     # A mapping can be updated and full output regenerated from saved targets.
     # Do not revive resolved warnings from the original listing manifest.
     unknown_images = [s for s in stickers.get("unknown_images") or []
@@ -141,6 +152,10 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     lines = [
         subject, "",
         f"총 수집: {total}개 SKU", "",
+        *(["별점 수집 현황",
+           f"  정상 추출 - {rating_qa.get('rated', 0)}",
+           f"  확인된 무평가 - {rating_qa.get('unrated', 0)}",
+           f"  요청·추출 실패 - {rating_failed}", ""] if rating_qa else []),
         "순위 수집 현황",
         f"  main_rank - {main_present}/{main_expected}",
         f"  bsr_rank - {bsr_present}/{bsr_expected}", "",

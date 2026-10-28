@@ -90,14 +90,29 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
     try:
         with conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT column_name FROM information_schema.columns WHERE table_schema=%s AND table_name=%s ORDER BY ordinal_position", (schema, table))
-                existing = [r[0] for r in cur.fetchall()]
+                cur.execute("SELECT column_name, is_nullable FROM information_schema.columns WHERE table_schema=%s AND table_name=%s ORDER BY ordinal_position", (schema, table))
+                columns = cur.fetchall()
+                existing = [r[0] for r in columns]
                 if not existing:
                     # table not created yet (REF/LDY) -> graceful skip
                     manifest.update(success=True, dry_run=True, skipped=True, reason=f"table {schema}.{table} not found")
                     write_json(out / "step14_db_save_manifest.json", manifest)
                     print(f"[db/{cfg.PRODUCT}] table {schema}.{table} not found -> skipped (dry-run)")
                     return manifest
+                rating_fields = {"star_rating", "count_of_star_ratings", "count_of_reviews"}
+                null_rating_fields = {field for field in rating_fields
+                                      if any(_empty_to_none(row.get(field), field) is None for row in rows)}
+                nullable = {r[0]: r[1] for r in columns}
+                blocked = sorted(field for field in null_rating_fields
+                                 if field not in nullable or nullable[field] != "YES")
+                manifest["rating_null_columns"] = sorted(null_rating_fields)
+                if blocked:
+                    # Check before any insert. Never fabricate zero to bypass a constraint.
+                    reason = "rating_null_not_supported:" + ",".join(blocked)
+                    manifest.update(success=False, inserted=0, reason=reason,
+                                    blocked_reason=reason, rating_null_blocked_columns=blocked)
+                    write_json(out / "step14_db_save_manifest.json", manifest)
+                    raise RuntimeError(reason)
                 last_known = safe_backfill_from_retail_history(
                     conn,
                     schema=schema,

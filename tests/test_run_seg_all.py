@@ -52,7 +52,7 @@ class SegLogTests(unittest.TestCase):
         steps = seg.default_steps(ROOT, python_executable="PYTHON")
 
         self.assertEqual(
-            ["MMKT TV", "OTTO TV", "MMKT REF", "OTTO REF", "MMKT LDY", "OTTO LDY"],
+            ["MMKT TV", "OTTO TV", "MMKT REF", "OTTO REF", "MMKT LDY", "OTTO LDY", "MMKT DRY"],
             [step.name for step in steps],
         )
         self.assertEqual(("PYTHON", "run.py", "--product", "tv", "--concurrency", "1"), steps[0].command)
@@ -61,6 +61,44 @@ class SegLogTests(unittest.TestCase):
         self.assertEqual(("PYTHON", "ref\\run.py"), steps[3].command)
         self.assertEqual(("PYTHON", "run.py", "--product", "ldy", "--concurrency", "1"), steps[4].command)
         self.assertEqual(("PYTHON", "ldy\\run.py"), steps[5].command)
+        self.assertEqual(("PYTHON", "-B", "-X", "utf8", "-u", "-m", "dry.run"), steps[6].command)
+        self.assertEqual([ROOT / "MMKT", ROOT / "OTTO"] * 3 + [ROOT / "MMKT"], [s.cwd for s in steps])
+
+    def test_seven_steps_wait_for_each_child_and_dry_failure_reaches_summary(self):
+        from types import SimpleNamespace
+        steps = seg.default_steps(ROOT, python_executable="PYTHON")
+        calls = []
+        def launch(command, **kwargs):
+            index = len([c for c in calls if c[0] == "launch"])
+            if index:
+                self.assertEqual(("wait", index - 1), calls[-1])
+            calls.append(("launch", index))
+            def wait():
+                calls.append(("wait", index))
+                return 3 if index == 6 else 0
+            return SimpleNamespace(stdout=io.StringIO("mock progress\n"), wait=wait)
+        log = io.StringIO()
+        with patch.object(seg.subprocess, "Popen", side_effect=launch), patch("sys.stdout", new=io.StringIO()):
+            result = seg.run_all(steps, log)
+        self.assertEqual(1, result)
+        self.assertEqual([pair for i in range(7) for pair in (("launch", i), ("wait", i))], calls)
+        self.assertIn("SEG RUN FAILED: MMKT DRY(3)", log.getvalue())
+
+    def test_seven_steps_continue_to_dry_after_an_earlier_failure(self):
+        steps = seg.default_steps(ROOT, python_executable="PYTHON")
+        with patch.object(seg, "run_step", side_effect=[1, 0, 0, 0, 0, 0, 0]) as runner, \
+                patch("sys.stdout", new=io.StringIO()):
+            result = seg.run_all(steps, io.StringIO())
+        self.assertEqual(1, result)
+        self.assertEqual(list(steps), [call.args[0] for call in runner.call_args_list])
+
+    def test_seven_successes_report_integrated_success(self):
+        log = io.StringIO()
+        with patch.object(seg, "run_step", return_value=0) as runner, patch("sys.stdout", new=io.StringIO()):
+            code = seg.run_all(seg.default_steps(ROOT), log)
+        self.assertEqual(0, code)
+        self.assertEqual(7, runner.call_count)
+        self.assertIn("SEG RUN SUCCESS", log.getvalue())
 
     def test_run_step_streams_output_and_returns_child_code(self):
         step = seg.Step(
@@ -143,6 +181,21 @@ class SegLogTests(unittest.TestCase):
             )
 
         self.assertEqual(7, result.returncode)
+
+    @unittest.skipUnless(os.name == "nt", "Windows batch behavior")
+    def test_dry_batch_preserves_arguments_working_directory_and_error_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_python = Path(tmp) / "python.cmd"
+            fake_python.write_text('@echo off\r\necho cwd=%CD%\r\necho args=%*\r\nexit /b 7\r\n', encoding="ascii")
+            env = os.environ.copy()
+            env["PATH"] = tmp
+            result = subprocess.run(
+                [os.environ.get("ComSpec", "cmd.exe"), "/d", "/c",
+                 str(ROOT / "MMKT" / "run_dry.bat"), "--collect-only", "--table", "test"],
+                env=env, capture_output=True, text=True, check=False)
+        self.assertEqual(7, result.returncode)
+        self.assertIn(str(ROOT / "MMKT"), result.stdout)
+        self.assertIn("-m dry.run --collect-only --table test", result.stdout)
 
 
 if __name__ == "__main__":
