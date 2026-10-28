@@ -49,12 +49,12 @@ Set-Location 'C:\samsung_dx_seg'
 ## 수집 흐름
 
 1. 기존 UcSession으로 Chrome 실행 → MediaMarkt 홈 준비 → 쿠키 처리.
-2. Main과 BSR 목록을 각각 렌더링한다. 목록 API는 호출하지 않는다.
-3. 별도 배너/캐러셀과 명백한 부적합 상품을 먼저 제외한다. 일반 목록의 Sponsored 카드는 포함한다.
+2. Main의 실제 마지막까지 후보 목록을 렌더링·저장한다. 이 단계에서 상세 API는 호출하지 않는다.
+3. 각 묶음의 기존 카드 필드·원래 순서를 읽고 별도 배너/캐러셀과 명백한 부적합 상품을 먼저 제외한다. 일반 목록의 Sponsored 카드는 포함한다.
    제목에 `Portabel`이 포함되면 대소문자와 관계없이 제외한다. `Portable`·`Tragbar`·미니 건조기 전체로 조건을 확대하지 않는다.
-4. 후보 상품의 상세 사양 API를 조회하고 제품명·제품유형으로 건조기 단품을 다시 확인한다.
-5. 적격 상품의 리뷰 통계 API를 한 페이지만 조회한다. Main/BSR 중복 상품의 API 결과는 메모리에서 재사용한다.
-6. 적격 고유 상품 수가 목표에 도달하거나 실제 마지막 페이지가 확인될 때까지 계속한다.
+4. 후보 파일의 배치·정렬·순서·상품 식별값과 저장 내용을 검증한 뒤, 저장 순서대로 Main 상세 사양 API로 건조기 단품을 다시 확인한다.
+5. 적격 상품의 리뷰 통계 API를 한 페이지만 조회한다. Main 적격 고유 상품이 목표에 도달하거나 저장 후보가 소진되면 상세를 마친다.
+6. BSR 후보를 확보하면서 같은 배치 Main의 성공 상세 캐시로 적격 고유 상품 수를 확인한다. 최종 목표를 보장하는 묶음에서 목록을 마치고 저장 순서대로 상세 선별한다. 캐시만으로 부족하면 실제 마지막까지 읽는다. 목록 중 신규 상세 API는 호출하지 않는다.
 7. 제외·중복 제거 후 목록별 순위를 1부터 부여하고 상품번호 기준으로 합친다.
 8. 정확히 20컬럼 CSV와 성공 여부·상태 코드·누락 수 등 요약 manifest를 작성한다.
 9. 기본 실행은 같은 대상 테이블에서 `sku`, `loading_type`, `capacity` 결측을 보완한 뒤 적재한다. `--collect-only`는 8단계에서 끝난다.
@@ -79,11 +79,25 @@ Set-Location 'C:\samsung_dx_seg'
 목록 접속 차단, 끝으로 확인되지 않은 반복 페이지, 불완전한 광고 카드와 목록 파싱 실패는 전체 수집 실패로 처리한다.
 이 경우 manifest를 실패로 바꿔 이전 CSV가 잘못 적재되지 않게 한다.
 개별 상품의 상세 API·파싱·제품유형 확인 실패는 상품번호·목록·묶음 번호·원인을 남기고 다음 상품으로 진행한다.
-실패 상품은 목표 수량·순위에서 제외하고 다음 목록으로 보충한다. 같은 목록에서 실패한 상품은 반복 호출하지 않으며,
+실패 상품은 목표 수량·순위에서 제외하고 저장한 다음 후보로 보충한다. 상세 처리 중 뒤늦게 새 목록을 조회하지 않는다. 같은 목록에서 실패한 상품은 반복 호출하지 않으며,
 BSR에서는 다시 시도할 수 있다. 정상 상품의 Main/BSR 상세 캐시는 유지한다.
 성공한 상품은 CSV 저장·적재하되, 실패가 하나라도 있었으면 `collection_status=partial`과 실패 내역을 기록한다.
 이때 종료 코드 1은 **일부 상품 확인 필요**를 뜻하며, 수집 중간에 멈췄거나 정상 상품 적재까지 실패했다는 뜻은 아니다.
-`collection_completed`, `product_failure_count`, `db_written`을 함께 확인한다. 모두 실패한 경우 빈 진단 CSV는 보존하지만 DB는 호출하지 않는다.
+`collection_completed`, `product_failure_count`, `db_written`을 함께 확인한다. 개별 상품 오류로 모두 실패한 경우 빈 진단 CSV는 보존하지만 DB는 호출하지 않는다.
+동일 API 작업의 인증(401)·차단(403)·제한(429)·서버/전송·JSON/최상위 data 오류가 제한 재시도 후 서로 다른 두 상품에서 연속 확인되면
+`DETAIL_API_COMMON_FAILURE`로 중단한다. 성공하면 해당 작업의 연속 실패 기록은 초기화한다. 한 상품의 403만으로 공통 장애를 확정하지 않는다.
+명시적인 GraphQL 검증·persisted query 누락·미인증 오류 코드는 재시도 소진 후 바로 공통 장애로 처리한다.
+공통 장애 때는 중간 자료와 이미 확보한 적격 결과만 보존하고 최종 CSV·DB·성공 메일로 진행하지 않는다.
+실제 정상 끝까지 확인한 적격 0건은 `database.state=skipped_empty`, `db_written=false`로 DB에 접속하지 않는다.
+수집 자체는 정상 완료할 수 있지만 DB 삽입 성공 메일로 표현하지 않으며 CHECK 보고서에 적격 0건·DB 미실행을 표시한다.
+
+Main 목록 후보에는 수량 상한을 두지 않는다. `--target`·`--bsr-target`은 **상세 선별의 최종 적격 목표**다.
+BSR은 `cached_eligible_candidates`가 목표 이상이면 `listing_stop_reason=confirmed_candidates`로 목록 확보를 마친다.
+캐시의 존재만으로 세지 않고 현재 카드와 기존 선별 정책, 성공한 리뷰 통계 처리 여부를 확인한다. 제외·중복·미확인 후보는 확정 수에 넣지 않는다.
+앞선 미확인 후보도 순서대로 저장·상세 처리하므로 나중에 확인된 캐시 상품만 앞으로 끌어오거나 순위를 확정하지 않는다.
+목록 조기 종료는 마지막 목록 확인이 아니다. 최종 적격 수가 예상보다 부족하면 `CONFIRMED_CANDIDATES_INSUFFICIENT`로 구분하고 DB 적재를 막는다.
+`--target 1 --bsr-target 1`도 Main 목록은 끝까지 조회하므로 짧은 목록 점검 명령이 아니다.
+목록의 가격·원가·할인·평가와 광고 구분 등 기존 필드를 보존하며, 가격 결측만으로 후보를 제외하지 않는다.
 
 상품 식별은 LDY와 같은 `sku_id`이며 최종 `item`으로 이동한다.
 Main/BSR 중복은 한 행으로 합친다. Main의 상품명·가격·URL이 우선이며 BSR에만 있으면 BSR 값을 사용한다.
@@ -111,14 +125,26 @@ DRY는 `dry/listing.py`의 전용 수집 루프를 사용한다. 기존 여섯 �
   `page_ready`는 빠른 관측값만 기록하며 최종 묶음 판정은 뒤의 `pagination_decision`·`page_summary`를 확인한다.
   `observed_totals`, `category_slots_read`, `observed_block_size`, `state_page_objects`, `tail_dom_verified`도 요약 로그에 남긴다.
 
-매 묶음·재시도 뒤 배치별 JSON 중간 파일에 **20컬럼 상품 필드와 안전한 진행 요약만** 저장한다.
-원문 HTML·요청/응답·상세 캐시는 저장하지 않는다. `artifact_kind=intermediate`, `success=false`, `loadable=false`이며
+매 묶음·재시도 뒤 배치별 `main_journal.jsonl`·`bsr_journal.jsonl`에 **신규 후보·신규 제외·이번 진행 요약만** 추가한다.
+후보에는 기존 공개 카드 필드와 `listing_sort`, `page`, `page_position`, `listing_order`, `observed_at`이 포함된다.
+`listing_order`는 파싱된 카드의 원래 묶음·위치이며 카테고리 자리 수나 최종 순위와 다르다.
+상세 단계에는 이번 상품의 상태·사유·필요한 모델/용량/로딩타입/별점 값과 정규화한 구매 상태만 한 줄씩 추가한다.
+목록 확정 시 후보 전체 파일을 한 번 작성·재검증한 뒤 상세 API를 시작한다. 상세 완료·오류 시에는 전체 상태를 별도 JSON으로 저장한다.
+따라서 매 상품마다 전체 병합·manifest 복사·전체 파일 작성을 반복하지 않는다. 후보와 최종 CSV의 필수 검증은 유지한다.
+원문 HTML·요청/응답·전체 상세 캐시는 저장하지 않는다. `artifact_kind=intermediate`, `success=false`, `loadable=false`이며
 최종 CSV와 별개다. 자동 재개 기능은 제공하지 않고 `--write-db`도 중간 파일을 적재하지 않는다.
 중간 저장 실패는 `INTERMEDIATE_SAVE_FAILED`, 최종 CSV 실패는 `FINAL_CSV_SAVE_FAILED`,
 최종 검증 요약 저장 실패는 `FINAL_MANIFEST_SAVE_FAILED`로 기록하고 DB를 호출하지 않는다.
 파일 교체는 임시 파일 작성 후 원자적으로 수행하며, 저장 실패 시 앞서 저장한 중간 파일은 보존한다.
+새 실행이 같은 배치의 중간 파일을 덮어쓰거나 기존 journal에 이어 쓰지 않는다.
+완료된 journal 줄은 다음 상품 전까지 파일에 기록한다. `dry.checkpoint.read_journal`은 줄바꿈이 없는 마지막 기록을 미완성으로 표시하고 앞선 완료 기록만 반환한다.
+깨진 중간 기록을 건너뛰어 정상으로 간주하지 않으며 단계 경계에서 전체 journal의 순서·배치·완결성을 확인한다. 디스크·전원 장애에 대한 무손실 보장은 아니다.
 
 실제 목록 오류의 실패 manifest·보고서에도 확보 수량·개별 실패·마지막 정상 묶음·실패 요청 묶음을 유지한다.
+`candidate_count`는 1차 제외·중복 제거 후 후보, `rows`는 상세 선별을 통과한 최종 적격 수다.
+`listing_state`와 `detail_state`를 따로 표시하므로 목록 실패 전에 후보를 확보했어도 상세 미실행이면 적격 수는 0이다.
+`candidate_path`는 마지막으로 저장·재검증한 후보 파일이며, 저장 실패 시 그 이전의 성공 파일을 유지한다.
+상세 처리는 원래 묶음 번호와 순서로 기록한다. Main이 완료된 뒤 BSR 목록에 실패해도 완료 Main의 적격 행과 후보 파일은 유지한다.
 `state=not_started`, `rows=null`은 미실행이며, 실행해서 확보한 0개와 구분한다.
 이번 제공 로그의 205개 상품 전체는 원래 최종 CSV가 없어 복구하지 않았다. 테스트 상품은 합성 데이터이며,
 원래 로그의 수량과 페이지 신호만 사용해 Main 205/BSR 100 및 모의 DB 205행 연결을 검증한다.
@@ -175,7 +201,7 @@ DRY는 `dry/listing.py`의 전용 수집 루프를 사용한다. 기존 여섯 �
 - 배송 불가만 있거나 픽업 가능·구매 가능·필드 누락·알 수 없는 상태이면 이 문구로 바꾸지 않는다. 선택 필드가 명시적으로 잘못된 자료형이면 상품 파싱 실패로 기록한다.
 - 이 문구는 화면 문장의 원문 복사가 아니라 API 상태의 표준 표시값이다. `purchase_status`와 최종 `field_selected`의 `source=API_status`, `derived=true`로 구분한다. 중간 저장마다 동일 문구 선택 로그를 반복하지 않는다.
 - `onlineStatus` 원문과 진단용 `UNRECOGNIZED_STATUS`는 판정에 사용하지 않는다. 상태 부재나 API 오류를 품절로 숨기지 않으며, 추천상품의 상태도 사용하지 않는다.
-- 상태는 상세 메모리 캐시에만 좁게 보관하며 최종 CSV·중간 상품 행은 계속 정확히 20컬럼이다. 이전 CSV 재적재에서는 API를 부르거나 가격을 재해석하지 않는다.
+- 상태는 상세 메모리 캐시와 중간 journal의 정규화한 상품 결과에만 좁게 보관하며 최종 CSV·중간 상품 행은 계속 정확히 20컬럼이다. 이전 CSV 재적재에서는 API를 부르거나 가격을 재해석하지 않는다.
 건조기 사양 표기의 공개 근거: [SIEMENS WT43N202](https://www.mediamarkt.de/de/product/_siemens-wt43n202-trockner-80-kg-b-2580915.html), [건조기 카테고리](https://www.mediamarkt.de/de/category/trockner-4.html).
 
 DB 적재 직전에 information_schema로 컬럼·자료형·NULL·기본값 존재·id 생성을 확인한다.
@@ -212,9 +238,15 @@ INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다.
 - Main/BSR·페이지·상세 처리 상품번호·적격 수/목표·제외 이유·중복 수·API 호출 수·경과시간을 기록한다.
 - 30초마다 `waiting` 이벤트로 현재 단계와 마지막 진행 위치를 표시한다. 응답이 없는 외부 호출도 대기 단계가 보인다.
 - `field_selected`는 선택한 SKU·용량·로딩타입의 제목/스펙/DB 출처와 관련 값·단위를 남긴다.
-- 상세 `page`는 DRY의 현재 목록 묶음 번호다. 첫 주소 1, 다음 주소 2이며 DB 컬럼은 추가하지 않는다.
+- 상세 `page`는 저장한 후보의 원래 목록 묶음 번호다. 첫 주소 1, 다음 주소 2이며 DB 컬럼은 추가하지 않는다.
 - `collection_complete`는 수집 완료 시각·소요시간, `run_complete`는 적재·메일을 포함한 `total_elapsed_s`를 남긴다. 실패 시에도 `collection_elapsed_s`와 중단 시각이 유지된다.
-- `page_summary`는 해당 묶음 처리 직후의 확보 수량이다. `pagination_decision`에 종료 근거·총수 충돌·상태/화면 일치를 기록한다.
+- `page_summary`의 `count_kind=candidate`·`candidate_count`는 목록 후보 수이며 이 단계의 `accepted`는 0이다.
+  `detail_phase_start`·`detail_phase_complete`와 상세의 `accepted`로 실제 적격 수를 확인한다.
+  `pagination_decision`에 종료 근거·총수 충돌·상태/화면 일치를 기록한다.
+- `cached_eligible_candidates`, `cached_excluded_candidates`, `unconfirmed_candidates`는 후보의 캐시 확인 상태다. 최종 적격 `accepted`와 구분한다.
+  `detail_phase_complete`의 `cache_hits`·`new_api_calls`로 캐시 재사용과 이번 정렬의 신규 호출을 확인한다.
+- `intermediate_appended`는 추가 기록 수·바이트·경로, `intermediate_saved`는 단계별 전체 저장 경로를 기록한다. manifest의 `intermediate_journals`에서 정렬별 경로·저장 성공/실패를 확인한다.
+- 정렬별 `timing`에 목록·상세 시작/종료·소요시간을 따로 기록한다. 한 실행의 상세 캐시는 유지하지만 프로세스 종료 후 자동 재개는 지원하지 않는다.
 - `run_complete`·메일 보고서는 Main/BSR의 완료·미실행·실패, 최종 CSV 저장 상태, 중간 파일 경로와 DB 실행 상태를 구분한다.
 - `product_failed`는 개별 상품 실패와 계속 진행 여부를 기록한다. 최종 `product_failure_count`는 Main/BSR별 실패 상품 건수 합계이므로 같은 상품이 양쪽에서 실패하면 각각 센다. 실패 상품의 별점이나 사양을 0/NULL로 바꿔 적재하지 않는다.
 - `mail_complete`는 발송·실패·비활성·모의 전송·이미 발송됨을 구분하며 SMTP 원문 오류나 수신 주소를 기록하지 않는다.
@@ -230,7 +262,10 @@ INSERT는 트랜잭션으로 처리하며 DELETE/UPDATE는 하지 않는다.
 - 수집·적재 요약: `mmkt_dry_manifest.json`
 - 메일 보고서: `mmkt_dry_email_report.txt` (수집 전용·구조 확인 모드에서는 만들지 않음)
 - 기존 CSV 검증 실패 시 별도 알림 기록: `mmkt_dry_load_failure.json` (원래 manifest 보존)
-- 배치별 중간 결과: `intermediate\<batch_id>\main_0001_attempt_01.json`, `bsr_0001_attempt_01.json` 등
+- 배치별 누적 기록: `intermediate\<batch_id>\main_journal.jsonl`, `bsr_journal.jsonl` (UTF-8, 한 줄 한 기록)
+- 확정 후보: 같은 폴더의 `main_candidates_마지막요청묶음_attempt_시도.json`, `bsr_candidates_마지막요청묶음_attempt_시도.json` 또는 끝부분 재확인 완료 파일
+- 상세 완료 전체 결과: 같은 폴더의 `main_detail_처리수.json`, `bsr_detail_처리수.json`
+- 오류 시 전체 상태: 같은 폴더의 `main_failure_요청묶음.json`, `bsr_failure_요청묶음.json` (저장 장치 장애 시 작성 실패할 수 있음)
 - 기본 중간 폴더 전체 경로: `C:\samsung_dx_seg\MMKT\dry\data\output\intermediate\<batch_id>`
 - `--output-dir`, `--log-dir`로 각각 경로를 변경할 수 있다.
 
@@ -265,6 +300,8 @@ python -B -X utf8 -m unittest discover -s tests -p test_dry_production.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_resilience.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_listing_end.py -v
 python -B -X utf8 -m unittest discover -s tests -p test_dry_review_fixes.py -v
+python -B -X utf8 -m unittest discover -s tests -p test_dry_listing_phases.py -v
+python -B -X utf8 -m unittest discover -s tests -p test_dry_optimization.py -v
 ```
 
 실제 AWS UC 접속·건조기 API·테이블 구조·INSERT는 이 로컬 테스트의 검증 범위가 아니다.
@@ -307,3 +344,34 @@ OTTO의 기존 1개 테스트는 저장소 내부 임시 폴더 생성 권한 �
 - 동일 batch_id·대상 테이블의 성공 메일 발송 기록이 있으면 재적재 시 중복 발송하지 않는다. 다른 테이블 발송 기록을 재사용하지 않는다.
 - SMTP 발송 후 상태 파일 저장이 실패하면 발송 여부와 오류를 로그에 남기고, 다음 실행에서 `previous_send_unknown`으로 자동 재발송을 보류한다. 운영자가 메일 수신 여부와 해당 manifest를 확인해야 한다.
 - 실제 운영 SMTP 권한·접속과 본테이블 자료형·권한·사이트 최신 응답은 원격 실행 전후에 확인해야 한다.
+
+## 총수 변동 시 끝부분 재확인
+
+- 기존 `?page=N` 렌더링 조회와 첫 묶음 검증은 유지한다. 과거 총수 변동 이력을 지우거나 최솟값을 종료 기준으로 택하지 않는다.
+- 정규 묶음의 상품·중간 결과를 먼저 보존한 뒤, 총수가 변했고 더보기가 없는 마지막 후보를 별도 단계로 확인한다.
+- `직전 묶음 → 마지막 후보 → 다음 묶음 → 직전 묶음` 순서로 최신 총수·상품번호·카드 완전성·버튼 상태를 교차 확인한다.
+- 최신 총수는 적격 건조기 수가 아닌 필터 전 목록 위치와 비교한다. 일반 목록 Sponsored는 수집하고 별도 배너는 위치를 늘리지 않는다.
+- 정상 확인은 4회이며 Main·BSR마다 추가 조회 예산 8회를 공유한다. 재시도나 새 후보 때문에 이 예산을 초기화하지 않는다.
+- 다음에 새 상품이 확인되면 정규 수집으로 넘긴다. 확인용 조회는 상품·순위·상세 API 캐시를 확정하지 않는다.
+- 정상 끝이 확인되면 목표 미달도 완료하고 BSR·병합·CSV·적재·기존 알림으로 이어진다. 불명확·접속·파싱 실패는 성공 처리하지 않는다.
+- 로그/manifest의 `tail_confirmation`에 조회 수·예산·최신 총수·판정 근거가 남는다. `latest_total`은 마지막으로 읽은 총수이며, `confirmed_total`은 끝이 증명됐을 때만 채운다.
+- 확인용 조회는 해당 정렬의 journal에 `kind=tail_read`로 추가하고, 완료 판단 때만 `..._tail_result_번호_page_묶음.json`을 작성한다. 기존 정규 기록을 덮지 않으며 모두 자동 적재 불가다.
+- 이 확인은 끝부분 경계에 대한 증거다. 재방문하지 않은 중간 묶음의 상품 교체나 전체 최신 목록의 누락 0을 보장하지 않는다.
+
+외부 연결 없이 실제 DRY 실행 흐름과 모의 DB·메일까지 확인:
+
+```powershell
+Set-Location 'C:\samsung_dx_seg\MMKT'
+python -B -X utf8 -m unittest discover -s tests -p test_dry_tail_confirmation.py -v
+```
+
+합성 상품·화면으로 검증하며 원격의 실제 HTML·API·DB·SMTP 결과를 검증한 것은 아니다.
+
+## 정렬별 목록 선확보의 확인 범위
+
+2026-10-25 사용자 AWS 진단의 8개 관측은 모두 파싱·내부 목록 정합성이 확인됐다.
+첫 화면의 `dom_complete=false`·`state_coherent=true`, Main 총수 286→288, 끝부분 반복 신호를 합성 연결 검사에 반영한다.
+진단에 없는 중간 상품·HTML은 복구하지 않는다. `heading_totals`는 빈 목록일 수 있고 정렬 선택지 전체는 선택된 정렬의 증거가 아니다.
+일반 목록 Sponsored의 실제 표본과 전체 중간 목록, 새 단계 분리 코드의 실제 AWS 성공은 이 진단으로 확인되지 않았다.
+8회 목록 조회의 관측 `elapsed_s` 합계는 173.4초다. 목록 중 상세 API 대기는 없어지지만 BSR의 확정 캐시가 부족하면 끝까지 읽을 수 있다.
+기존 렌더링·광고 대기시간을 줄이지 않으며, 전체 실행시간 단축·단일 시점 순위·상품 누락 0을 보장하지 않는다.

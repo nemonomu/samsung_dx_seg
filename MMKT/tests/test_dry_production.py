@@ -230,8 +230,9 @@ class ProductionExecutionTests(unittest.TestCase):
             self.assertFalse(mail.call_args.kwargs["collection_success"])
             self.assertTrue(mail.call_args.kwargs["error"])
             self.assertFalse(any(e["event"] == "rating_defaulted" for e in logs))
-            self.assertEqual([], database.load_validated_output(root / "output/mmkt_dry_output.csv"))
-            self.assertEqual("partial", logs[-1]["collection_status"])
+            self.assertFalse((root / "output/mmkt_dry_output.csv").exists())
+            self.assertEqual("failed", logs[-1]["collection_status"])
+            self.assertEqual("DETAIL_API_COMMON_FAILURE", logs[-1]["error"])
 
     def test_sparse_rating_response_reaches_csv_db_and_success_mail_without_extra_calls(self):
         browser = self.browser()

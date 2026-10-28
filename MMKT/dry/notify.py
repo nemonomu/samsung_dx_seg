@@ -29,19 +29,47 @@ def send_error_code(error) -> str:
 
 
 _REASONS_KO = {"last_page": "마지막 목록 확인", "target_reached": "목표 수량 도달",
+               "confirmed_candidates": "Main 상세 결과로 BSR 목표 확보 가능",
+               "first_page_inconsistent": "첫 상품 묶음 불일치 (재조회 소진)",
                "washer_dryer": "세탁건조 일체형", "washing_machine": "세탁기",
                "set_or_combo": "세트·콤보", "advertisement": "별도 광고 배너",
                "portabel_title": "제목 Portabel", "accessory": "부속품",
                "other_appliance": "다른 종류의 제품", "duplicate": "중복"}
 _ERRORS_KO = {"UNCONFIRMED_PRODUCT_TYPE": "상품 종류를 확인하지 못함",
+              "DETAIL_API_COMMON_FAILURE": "여러 상품에 공통인 API 장애로 중단",
               "PARTIAL_PRODUCT_FAILURES": "일부 상품 처리 실패",
               "DETAIL_API_FAILED": "상세 API 호출 실패", "DETAIL_AVAILABILITY_INVALID": "구매 상태 응답 형식 오류",
               "REVIEW_DISTRIBUTION_INVALID": "별점 통계 응답 형식 오류",
               "DB_BACKFILL_FAILED": "기존 DB 값 조회 실패", "DB_CONNECT_FAILED": "DB 연결 실패",
               "DB_INSERT_FAILED": "DB 적재 실패", "DB_COMMIT_FAILED": "DB 반영 여부 확인 필요",
               "DB_COMMITTED_MANIFEST_SAVE_FAILED": "DB 반영 후 결과 기록 실패",
+              "INTERMEDIATE_SAVE_FAILED": "중간 결과 저장 실패",
               "FINAL_CSV_SAVE_FAILED": "최종 CSV 저장 실패",
+              "CONFIRMED_CANDIDATES_INSUFFICIENT": "사전 확인한 후보 수와 실제 적격 수 불일치",
               "FINAL_MANIFEST_SAVE_FAILED": "수집 결과 기록 실패"}
+
+_TAIL_REASONS_KO = {
+    "fresh_total_and_verified_tail_boundary": "최신 총수와 마지막 목록 경계 일치",
+    "new_following_products": "다음 묶음의 새 상품을 정규 수집으로 전달",
+    "confirmation_budget_exhausted": "추가 조회 한도 소진",
+    "current_total_missing_or_conflicting": "최신 총수 누락 또는 화면 내 수치 불일치",
+    "current_total_below_read_slots": "최신 총수가 확인한 목록 위치보다 작음",
+    "current_total_or_more_control_mismatch": "최신 총수 또는 더보기 상태 불일치",
+    "current_document_totals_conflict": "재확인한 화면끼리 총수 불일치",
+    "reference_unstable_during_confirmation": "재확인 전후 총수 또는 상품 변경",
+    "preceding_products_changed": "직전 묶음의 상품 또는 더보기 상태 변경",
+    "tail_changed_or_incomplete": "마지막 후보 상품 변경 또는 카드 누락",
+    "following_not_a_contiguous_expansion": "다음 목록의 연속성 미확인",
+    "following_cards_incomplete": "다음 조회 화면의 상품 카드 누락",
+    "preceding_fetch_or_parse_failed": "직전 묶음 접속 또는 파싱 실패",
+    "tail_fetch_or_parse_failed": "마지막 후보 접속 또는 파싱 실패",
+    "following_fetch_or_parse_failed": "다음 조회 접속 또는 파싱 실패",
+    "non_contiguous_history": "이전 묶음 확인 이력 누락",
+    "incoherent_or_repeated_history": "이전 목록 불일치 또는 반복",
+    "non_uniform_prefix": "이전 묶음의 목록 위치 불일치",
+    "incomplete_tail_candidate": "마지막 후보의 카드 또는 더보기 근거 부족",
+    "probe_checkpoint_failed": "재확인 중간 결과 저장 실패",
+}
 
 
 def _duration_ko(value):
@@ -70,8 +98,32 @@ def _korean_summary(manifest, table, *, error, elapsed_s):
         target = (manifest.get("targets") or {}).get(sort, "확인 불가")
         reason = _REASONS_KO.get(listing.get("stop_reason"), "종료 근거 미확정")
         lines.append(f"{sort.upper()}: {count} / 목표 {target}개 — {states.get(state, '확인 필요')} ({reason})")
+        if "listing_state" in listing:
+            phase_names = {**states, "collecting": "진행 중"}
+            lines.append(f"  목록 확보: {phase_names.get(listing['listing_state'], '확인 필요')}; "
+                         f"후보 {listing.get('candidate_count', 0)}개; "
+                         f"필터 전 목록 위치 {listing.get('category_slots_read', 0)}; "
+                         f"상세: {phase_names.get(listing.get('detail_state'), '미실행')}; "
+                         f"처리 {listing.get('detail_processed', 0)}개")
+            times = listing.get("timing") or {}
+            lines.append(f"  목록 소요시간: {_duration_ko(times.get('listing_elapsed_s'))}; "
+                         f"상세 소요시간: {_duration_ko(times.get('detail_elapsed_s'))}")
+            if "cached_eligible_candidates" in listing:
+                lines.append(f"  캐시로 적격 확인 {listing['cached_eligible_candidates']}개; "
+                             f"미확인 후보 {listing.get('unconfirmed_candidates', 0)}개; "
+                             f"목록 종료: {_REASONS_KO.get(listing.get('listing_stop_reason'), '미완료')}; "
+                             f"상세 캐시 재사용 {listing.get('cache_hits', 0)}건; "
+                             f"신규 API {listing.get('new_api_calls', 0)}회")
         if listing.get("last_requested_page") is not None:
             lines.append(f"  마지막 정상 묶음: {listing.get('last_successful_page')}; 마지막 요청 묶음: {listing['last_requested_page']}")
+        boundary = listing.get("tail_confirmation")
+        if boundary:
+            states_ko = {"confirmed": "마지막 확인됨", "more_products": "다음 상품 발견",
+                         "failed": "확인 실패", "checking": "확인 중 중단"}
+            lines.append(f"  끝부분 재확인: {states_ko.get(boundary.get('state'), '확인 필요')}; "
+                         f"추가 조회 {boundary.get('queries', 0)}/{boundary.get('query_limit', 8)}회; "
+                         f"최신 총수 {boundary.get('latest_total')}; "
+                         f"근거 {_TAIL_REASONS_KO.get(boundary.get('reason'), '확인 필요')} ({boundary.get('reason')})")
         excluded = listing.get("excluded") or {}
         reasons = [f"{_REASONS_KO.get(key, key)} {count}건" for key, count in excluded.items() if key != "duplicate"]
         if reasons:
@@ -88,6 +140,8 @@ def _korean_summary(manifest, table, *, error, elapsed_s):
         db_result = "확인 필요 (대상 테이블 불일치)"
     elif written is True:
         db_result = "반영 확인됨" + (" (후속 기록 오류 확인 필요)" if db_state != "success" else "")
+    elif db_state == "skipped_empty":
+        db_result = "미실행 (확인된 적격 상품 0건)"
     elif not db or db_state == "not_started":
         db_result = "미실행"
     elif written is None:
@@ -114,6 +168,9 @@ def build_report(manifest, table, *, success, error=None, elapsed_s=None):
     if not success and manifest.get("product_failure_count", 0):
         english_subject = "[CHECK] [SEG] MediaMarkt DRY partial collection"
         subject = "[CHECK] [SEG] MediaMarkt DRY 일부 상품 실패 / partial collection"
+    elif not success and (manifest.get("database") or {}).get("state") == "skipped_empty":
+        english_subject = "[CHECK] [SEG] MediaMarkt DRY no eligible products"
+        subject = "[CHECK] [SEG] MediaMarkt DRY 적격 상품 0건 / no eligible products"
     lines = [subject, "", *_korean_summary(manifest, table, error=error, elapsed_s=elapsed_s),
              "", "English details", english_subject, "", f"Batch: {manifest.get('batch_id') or 'not completed'}",
              f"Table: {'.'.join(table)}", f"Collected unique products: {manifest.get('output_rows', 0)}"]
@@ -124,11 +181,21 @@ def build_report(manifest, table, *, success, error=None, elapsed_s=None):
         count = "not started" if state == "not_started" else listing.get("rows", 0)
         lines.append(f"{sort}: {count}/{(manifest.get('targets') or {}).get(sort, '?')}"
                      f" ({listing.get('stop_reason') or 'not completed'}) state={state}")
+        if "listing_state" in listing:
+            lines.append(f"{sort} listing={listing['listing_state']}; candidates={listing.get('candidate_count', 0)}; "
+                         f"category slots={listing.get('category_slots_read', 0)}; "
+                         f"detail={listing.get('detail_state')}; processed={listing.get('detail_processed', 0)}; "
+                         f"phase timing={listing.get('timing', {})}")
         if listing.get("last_requested_page") is not None:
             lines.append(f"{sort} last successful group: {listing.get('last_successful_page')};"
                          f" last requested group: {listing['last_requested_page']}; end basis: {listing.get('end_basis')}")
         if listing.get("excluded"):
             lines.append(f"{sort} exclusions/duplicates: {listing['excluded']}")
+        if listing.get("tail_confirmation"):
+            boundary = listing["tail_confirmation"]
+            lines.append(f"{sort} tail confirmation: state={boundary.get('state')}; "
+                         f"queries={boundary.get('queries', 0)}/{boundary.get('query_limit', 8)}; "
+                         f"latest total={boundary.get('latest_total')}; reason={boundary.get('reason')}")
     lines.append(f"Product failures (per listing): {manifest.get('product_failure_count', 0)}")
     for product in manifest.get("product_failures", []):
         lines.append(f"Failed product: {product['sort']} page={product['page']} item={product['item']}"
