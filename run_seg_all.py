@@ -137,6 +137,7 @@ def default_steps(root: Path, python_executable: str = sys.executable) -> tuple[
         Step("MMKT LDY", mmkt, (python_executable, "run.py", "--product", "ldy", "--concurrency", "1")),
         Step("OTTO LDY", otto, (python_executable, "ldy\\run.py")),
         Step("MMKT DRY", mmkt, (python_executable, "-B", "-X", "utf8", "-u", "-m", "dry.run")),
+        Step("OTTO DRY", otto, (python_executable, "-B", "-u", "dry\\run.py")),
     )
 
 

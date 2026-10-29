@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import io_util, listing
-from dry import client, config, fields, pipeline, storage
+from dry import client, config, fields, pipeline, storage, history, notify
 
 
 class Log:
@@ -71,6 +71,12 @@ class Offline(unittest.TestCase):
         self.environment.start()
         self.addCleanup(self.network.stop)
         self.addCleanup(self.environment.stop)
+        self.history_connection = patch.object(history, "connect", side_effect=lambda: FakeConnection())
+        self.email_settings = patch.object(notify, "env_value", side_effect=lambda name, default=None: default)
+        self.history_connection.start()
+        self.email_settings.start()
+        self.addCleanup(self.history_connection.stop)
+        self.addCleanup(self.email_settings.stop)
 
 
 class ClassificationTests(Offline):

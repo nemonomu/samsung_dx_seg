@@ -11,7 +11,7 @@ from dry.pipeline import execute
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="OTTO DRY: Topseller -> 20 columns -> test DB")
+    parser = argparse.ArgumentParser(description="OTTO DRY: Topseller -> 20 columns -> retail DB + report")
     parser.add_argument("--limit", type=int, default=int(os.getenv("OTTO_DRY_LIMIT", config.DEFAULT_LIMIT)))
     parser.add_argument("--table", default=os.getenv("OTTO_DRY_TABLE", config.DEFAULT_TABLE))
     parser.add_argument("--output-root", type=Path, default=Path(os.getenv("OTTO_DRY_OUTPUT_ROOT", str(config.OUTPUT_ROOT))))

@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from dry import config, storage
+from dry import config, storage, history, notify
 from dry.client import Client, RequestFailure, COMPARISON_FIELD_LABELS
 from dry.events import Events
 from dry.fields import candidates, choose, classify, name_key, classification_evidence, text
@@ -262,7 +262,7 @@ def collect(client, events, state, save):
 
 
 def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_root=config.OUTPUT_ROOT,
-            load_only=None, client_factory=Client, database=storage.database):
+            load_only=None, client_factory=Client, database=storage.database, backfill=None, notifier=None):
     storage.table_parts(table)
     if limit <= 0:
         raise config.DryError("limit_must_be_positive")
@@ -275,7 +275,7 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
         state = dict(batch_id=batch_id, mode="load_only", source_csv=str(Path(load_only).resolve()),
                      collection_status=original["collection_status"], target=original["target"], output_rows=len(rows))
         # Preserve original item errors when an old shortfall or completed batch is reloaded.
-        state.update({key: original[key] for key in ("counts", "end_reason", "shortfall_reason") if key in original})
+        state.update({key: original[key] for key in ("counts", "end_reason", "shortfall_reason", "history_backfill") if key in original})
     else:
         now = datetime.now()
         batch_id = "o_dry_" + now.strftime("%Y%m%d_%H%M%S")
@@ -301,6 +301,8 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
             storage.checkpoint(directory, rows, state)
             rows = collect(client_factory(events), events, state,
                            lambda current: storage.checkpoint(directory, current, state))
+            with events.stage("과거 DB 보충"):
+                state["history_backfill"] = (backfill or history.backfill)(table, events, rows)
             with events.stage("CSV 저장"):
                 storage.checkpoint(directory, rows, state)
         state["db_status"] = "running"
@@ -312,7 +314,7 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
             state["db_status"] = state["database"]["status"]
         else:
             state["db_status"] = "skipped_empty"
-        if any(state.get("counts", {}).get(k) for k in
+        if state.get("history_backfill", {}).get("error") or any(state.get("counts", {}).get(k) for k in
                 ("item_failures", "request_error_items", "extraction_error_items", "price_warning_items")):
             code = 2
     except (Exception, KeyboardInterrupt) as exc:
@@ -331,12 +333,23 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
             import csv
             with (directory / "otto_dry.csv").open(encoding="utf-8-sig", newline="") as handle:
                 rows = list(csv.DictReader(handle))
-        state.update(exit_code=code, request_statistics=events.statistics(), finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        state.update(exit_code=code, collection_exit_code=code, request_statistics=events.statistics(), finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
                      durations={k: round(v, 2) for k, v in events.timings.items()},
                      total_seconds=round(time.monotonic()-events.started, 2), output_rows=len(rows),
                      null_counts={c: sum(r.get(c) in (None, "") for r in rows) for c in config.COLUMNS},
                      csv=str(Path(load_only).resolve()) if load_only else str(directory / "otto_dry.csv"),
                      log=str(directory / "run.log"), diagnostics=str(directory / "diagnostics.jsonl"))
+        storage.atomic_json(directory / "state.json", state)
+        try:
+            with events.stage("메일 보고"):
+                state["notification"] = (notifier or notify.send)(state, rows)
+        except Exception as exc:
+            state["notification"] = dict(status="failed", sent=False, error="email_failed:" + type(exc).__name__)
+        if state["notification"].get("status") == "failed" and code == 0:
+            code = 6
+        state.update(exit_code=code, total_seconds=round(time.monotonic()-events.started, 2),
+                     finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+                     durations={k: round(v, 2) for k, v in events.timings.items()})
         storage.atomic_json(directory / "state.json", state)
         events.emit("summary", **state)
         events.close()
