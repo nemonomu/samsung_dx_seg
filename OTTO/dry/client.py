@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 
 from common import compare, datasheet, listing, review_rating
 from dry.config import CAPACITY_LABELS, CATEGORY_LABELS, COMPARE_LABELS, SEARCH_TERM, SEARCH_URL, DryError, PDF_PARSE_TIMEOUT, PDF_MAX_ATTEMPTS
-from dry.fields import capacity, capacity_candidate, capacity_label, public_product_url, text, loading, savings, DRYER, valid_sku, sku_rejection
+from dry.fields import capacity, capacity_candidate, capacity_label, public_product_url, text, loading, savings, DRYER, valid_sku, sku_rejection, dimension_sku
 from dry.pdf_process import pdf_attempt
 
 MAX_PDF_BYTES = 20_000_000  # Existing download bound; at most one cached document.
@@ -98,23 +98,40 @@ class Client:
             raise RequestFailure("listing_count_invalid")
         if not products and count is not None and offset < count:
             raise RequestFailure("listing_empty_before_reported_end")
-        # Pure LDY slot composition; immediately discard unrelated output fields.
-        composed = listing.compose_rows(page, offset, data)
-        rows = [{k: row.get(k) for k in ("product_id", "variation_id", "product_url", "retailer_sku_name")}
-                for row in composed]
-        for row in rows:
+        sponsored_intents = [it for it in intents if isinstance(it, dict) and it.get("intent") == "sponsored"]
+        if (len(sponsored_intents) > 1 or sponsored_intents
+                and not isinstance(sponsored_intents[0].get("products"), list)):
+            raise RequestFailure("listing_sponsored_contract_changed")
+        sponsored = sponsored_intents[0]["products"] if sponsored_intents else []
+        if any(not isinstance(p, dict) or not p.get("id") for p in sponsored):
+            raise RequestFailure("listing_product_contract_changed")
+        # DRY candidates include every received occurrence. Slots order ads but
+        # never cap the combined response or defer its ordinary tail to a later GET.
+        rows, organic_index, sponsored_index = [], 0, 0
+        slots = set(listing.SPONSORED_SLOT_POSITIONS)
+        while organic_index < len(products) or sponsored_index < len(sponsored):
+            if sponsored_index < len(sponsored) and (len(rows) + 1 in slots or organic_index == len(products)):
+                product = sponsored[sponsored_index]
+                sponsored_index += 1
+            else:
+                product = products[organic_index]
+                organic_index += 1
+            row = dict(product_id=text(product.get("id")),
+                       variation_id=text(product.get("bestVariationId") or product.get("id")),
+                       retailer_sku_name=text(product.get("name")) or None)
             if any(not re.fullmatch(r"[A-Za-z0-9_-]+", str(row.get(k) or "")) for k in ("product_id", "variation_id")):
                 raise RequestFailure("listing_identifier_missing_or_invalid")
-            row["product_url"] = public_product_url(row["product_url"], row["variation_id"])
-        # Advance by displayed organic positions, like LDY (never skip undisplayed results).
-        sponsored = listing.products_for_intent(data, "sponsored")
+            row["product_url"] = public_product_url(product.get("variationPath"), row["variation_id"])
+            rows.append(row)
+        if len(rows) != len(products) + len(sponsored):
+            raise RequestFailure("listing_candidate_accounting_mismatch")
+        # Keep the established overlapping API step separate from candidate count.
         consumed = min(len(products), listing.LISTING_POSITIONS_PER_PAGE - min(len(sponsored), len(listing.SPONSORED_SLOT_POSITIONS)))
         end = not products or (count is not None and offset + consumed >= count)
         display_count = ranked[0].get("displayCount")
         self.last_page_meta = dict(count=count,
             display_count=display_count if type(display_count) is int and display_count >= 0 else None,
-            organic_occurrences=sum(r["exposure_type"] == "organic" for r in composed),
-            sponsored_occurrences=sum(r["exposure_type"] == "sponsored" for r in composed))
+            organic_occurrences=len(products), sponsored_occurrences=len(sponsored))
         fingerprint = tuple(str(p["id"]) + ":" + str(p.get("bestVariationId")) for p in products)
         return rows, consumed, end, fingerprint
 
@@ -445,7 +462,8 @@ def pdf_model_candidates(content):
         raw = re.split(r"\b(?:Gewicht|Weight|Beladung|Trockenkapazit[äa]t)\b", raw,
                        maxsplit=1, flags=re.I)[0].strip()
         if raw:
-            model = valid_sku(datasheet._valid_model(raw))
+            # Validate dimensions before the common tokenizer can drop their unit.
+            model = valid_sku(datasheet._valid_model(raw)) if not dimension_sku(raw) else None
             yield raw, model, None if model else sku_rejection(raw)
 
 

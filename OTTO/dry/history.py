@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from common.last_known_db import _item_key, _name_key
 from dry.config import ACCOUNT_NAME, COUNTRY
-from dry.fields import capacity_candidate, loading, text, valid_sku
+from dry.fields import capacity_candidate, loading, text, valid_sku, sku_rejection
 from dry.storage import connect, table_parts
 
 FIELDS = ("sku", "capacity", "loading_type")
@@ -147,6 +147,7 @@ def backfill(table, events, rows, *, connector=None):
                     rejected["invalid_" + field] += 1
                     events.emit("history_rejected", item=row["item"], variation_id=key[2], field=field,
                                 raw=text(raw)[:500], reason="invalid_" + field,
+                                validation_reason=sku_rejection(raw) if field == "sku" else "invalid_" + field,
                                 source_batch=previous["batch_id"])
                     continue
                 row[field] = value

@@ -244,8 +244,8 @@ class EvidenceTests(base.Offline):
         with patch.object(c,"fetch",return_value=(data,{})) as request:
             rows,consumed,end,_=c.page(1,0)
         self.assertEqual(request.call_count,1)
-        self.assertEqual(c.last_page_meta,dict(count=637,display_count=597,organic_occurrences=109,sponsored_occurrences=11))
-        self.assertEqual((len(rows),consumed,end),(120,109,False))
+        self.assertEqual(c.last_page_meta,dict(count=637,display_count=597,organic_occurrences=120,sponsored_occurrences=11))
+        self.assertEqual((len(rows),consumed,end),(131,109,False))
 
     def test_detailed_evidence_has_one_canonical_copy_and_request_statistics(self):
         with tempfile.TemporaryDirectory() as root,patch("sys.stdout",new=io.StringIO()):

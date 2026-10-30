@@ -239,7 +239,7 @@ class ClientTests(Offline):
         self.assertEqual(actual["final_sku_price"], "499,99 €")
         self.assertEqual(actual["top_infos"], {"Nennkapazität": "9 kg"})
 
-    def test_ldy_ad_placement_matches(self):
+    def test_ldy_ad_slots_match_prefix_without_discarding_ordinary_tail(self):
         products = [dict(id=str(i), bestVariationId="v"+str(i), variationPath=f"/p/dryer-{i}/", name=f"Trockner DR{i}") for i in range(130)]
         data = {"intents": [{"intent": "ranked", "products": products, "count": 200},
                             {"intent": "sponsored", "products": [dict(products[0], id="ad", bestVariationId="vad")]}]}
@@ -247,7 +247,10 @@ class ClientTests(Offline):
         with patch.object(c, "fetch", return_value=(data, {})):
             actual, consumed, end, _ = c.page(1, 0)
         expected = listing.compose_rows(1, 0, data)
-        self.assertEqual([r["product_id"] for r in actual], [r["product_id"] for r in expected])
+        self.assertEqual([r["product_id"] for r in actual[:len(expected)]], [r["product_id"] for r in expected])
+        self.assertEqual(len(actual), len(products) + 1)
+        self.assertEqual([r["product_id"] for r in actual if r["product_id"] != "ad"],
+                         [p["id"] for p in products])
         self.assertEqual(consumed, 119)
         self.assertFalse(end)
 
@@ -1058,7 +1061,7 @@ class RevisionTests(Offline):
             clock.now.return_value = datetime(2026, 10, 23, 12, 34, 31)
             db = MagicMock(return_value={"status": "loaded"})
             _, state = pipeline.execute(limit=1, output_root=root, client_factory=lambda e: Source([[target(1)]]), database=db)
-            self.assertEqual(state["batch_id"], "o_dry_20261023_123431")
+            self.assertEqual(state["batch_id"], "o_20261023_123431")
             before = Path(state["csv"]).read_bytes()
             with self.assertRaises(FileExistsError):
                 pipeline.execute(limit=1, output_root=root, database=db)

@@ -69,6 +69,9 @@ def collect_listing(client, events, state):
             # Minimal listing evidence is written once in diagnostics, not copied per product.
             events.emit("listing_candidates", page=page, candidates=page_rows)
             events.emit("page", page=page, offset=offset, candidates=len(page_rows), consumed=consumed,
+                        received_organic=meta.get("organic_occurrences", consumed),
+                        received_sponsored=meta.get("sponsored_occurrences", 0),
+                        api_count=meta.get("count"), display_count=meta.get("display_count"),
                         actual_end=end, **summary)
             if end:
                 state["listing_complete"] = True
@@ -278,7 +281,7 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
         state.update({key: original[key] for key in ("counts", "end_reason", "shortfall_reason", "history_backfill") if key in original})
     else:
         now = datetime.now()
-        batch_id = "o_dry_" + now.strftime("%Y%m%d_%H%M%S")
+        batch_id = "o_" + now.strftime("%Y%m%d_%H%M%S")
         directory = Path(output_root).resolve() / batch_id
         rows = []
         state = dict(batch_id=batch_id, mode="collect", target=limit, collection_status="not_started",

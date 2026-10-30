@@ -280,15 +280,32 @@ def loading(raw):
     return ("Front loader" if front else "Top-loading") if front != top else None
 
 
+_SKU_NUMBER = r"\d+(?:[.,]\d+)?"
+_SKU_UNIT = r"(?:cm|mm|inch(?:es)?|zoll|in|인치|\"|″|”|'')"
+_SKU_DIMENSION = re.compile(r"(?<!\w)" + _SKU_NUMBER
+    + r"(?:\s*(?:" + _SKU_UNIT + r")?\s*[x×]\s*" + _SKU_NUMBER + r")*"
+    + r"\s*(?:" + _SKU_UNIT + r")(?!\w)", re.I)
+
+
+def dimension_sku(raw):
+    """A numeric measurement is not a model; embedded model letters stay valid."""
+    return bool(_SKU_DIMENSION.search(text(raw)))
+
+
 def valid_sku(raw):
+    if dimension_sku(raw):
+        return None
     value = clean_model(text(raw))
-    return value if value and len(value) > 3 else None
+    return value if value and len(value) > 3 and not dimension_sku(value) else None
 
 
 def sku_rejection(raw, *, from_name=False):
+    candidate = model_from_name(raw) if from_name else text(raw)
+    if dimension_sku(candidate) or (not candidate and dimension_sku(raw)):
+        return "sku_dimension"
     if from_name and _NAME_FEATURE.search(text(raw)):
         return "sku_feature_description"
-    value = clean_model(model_from_name(raw) if from_name else text(raw))
+    value = clean_model(candidate)
     return "sku_too_short" if value and len(value) <= 3 else "no_valid_model"
 
 
@@ -297,6 +314,8 @@ def model_from_name(name):
     dryer = DRYER.search(value)
     if dryer:
         value = value[dryer.end():]
+    # Keep decimal commas/units together before title delimiters are processed.
+    value = _SKU_DIMENSION.sub(" ", value)
     value = re.split(r"[,;]|\b(?:mit|für|inklusive|inkl\.|Frontlader|Toplader)\b", value, maxsplit=1, flags=re.I)[0]
     value = re.split(r"\d+(?:[.,]\d+)?\s*kg\b", value, maxsplit=1, flags=re.I)[0]
     # Series descriptors are not model identifiers, regardless of brand.
@@ -347,7 +366,8 @@ def candidates(target, chars, pdf=None):
     loads += [("dryer_category:" + k, chars.get(k) or infos.get(k)) for k in CATEGORY_LABELS
               if DRYER.search(text(chars.get(k) or infos.get(k)))]
     models = [("comparison_model", chars.get("Modellbezeichnung"), valid_sku(chars.get("Modellbezeichnung"))),
-              ("product_pdf", pdf.get("sku_raw") or pdf.get("sku"), valid_sku(pdf.get("sku"))),
+              ("product_pdf", pdf.get("sku_raw") or pdf.get("sku"),
+               valid_sku(pdf.get("sku")) if not dimension_sku(pdf.get("sku_raw")) else None),
               ("listing_title", target.get("retailer_sku_name"), valid_sku(model_from_name(target.get("retailer_sku_name"))))]
     return {
         "sku": models,
