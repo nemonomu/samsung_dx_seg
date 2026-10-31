@@ -228,45 +228,72 @@ class Client:
             self.events.emit("comparison_supplement_skipped", reason="already_attempted", count=len(requested))
             return {vid: deepcopy(self.compare_cache.get(vid, {})) for vid in ids}
         sent = [ids[0], *pending]  # Include cached reference in the actual HTTP request.
+        normalizers = {"sku": valid_sku, "capacity": lambda value: capacity(value, labelled=True),
+                       "loading_type": loading}
+        recovery_labels = {**COMPARISON_FIELD_LABELS,
+                           "loading_type": (*COMPARISON_FIELD_LABELS["loading_type"], *CATEGORY_LABELS)}
+        def normalized(field, label, value):
+            if label in CATEGORY_LABELS and not DRYER.search(text(value)):
+                return None
+            return normalizers[field](value)
+        # A response fetched for one omitted row may also contain another needed
+        # field. Read it now, before considering another group or the own PDF.
+        recovery = {vid: list(dict.fromkeys([*fields, *(
+            field for field, labels in recovery_labels.items()
+            if not any(normalized(field, label, self.compare_cache.get(vid, {}).get(label)) for label in labels)
+        )])) for vid, fields in pending.items()}
         self.compare_supplemented.update((vid, field) for vid, fields in pending.items() for field in fields)
         self.events.emit("comparison_supplement_start", reference=ids[0], targets=pending,
                          reason="missing_characteristic_rows", max_attempts=self.attempts)
-        needed_labels = tuple(dict.fromkeys(label for fields in pending.values()
-                              for field in fields for label in COMPARISON_FIELD_LABELS[field]))
+        needed_labels = tuple(dict.fromkeys(label for fields in recovery.values()
+                              for field in fields for label in recovery_labels[field]))
+        need_names = any(not self.compare_cache.get(vid, {}).get("_name") for vid in pending)
         try:
-            fresh = self._comparison_response(sent, labels=needed_labels, include_names=False)
+            fresh = self._comparison_response(sent, labels=needed_labels, include_names=need_names)
         except RequestFailure as exc:
             for vid in pending:
                 self.compare_cache.setdefault(vid, {}).update(_error=str(exc), _error_kind="request")
             self.events.emit("comparison_supplement_end", status="failed", reason=str(exc), count=len(pending))
         else:
-            for vid, fields in pending.items():
+            for vid, fields in recovery.items():
                 old = self.compare_cache.setdefault(vid, {})
                 own = fresh.get(vid, {})
-                labels = {label for field in fields for label in COMPARISON_FIELD_LABELS[field]}
+                labels = {label for field in fields for label in recovery_labels[field]}
                 added = []
-                for label in labels:
-                    if not compare._present(old.get(label)) and compare._present(own.get(label)):
-                        old[label] = own[label]
-                        added.append(label)
+                for field in fields:
+                    for label in recovery_labels[field]:
+                        if (compare._present(own.get(label)) and
+                                (not compare._present(old.get(label)) or
+                                 (not normalized(field, label, old.get(label)) and normalized(field, label, own[label])))):
+                            old[label] = own[label]
+                            added.append(label)
+                name_added = not old.get("_name") and bool(own.get("_name"))
+                if name_added:
+                    old["_name"] = own["_name"]
+                    old.pop("_title_reason", None)
                 old["_present_labels"] = list(dict.fromkeys(old.get("_present_labels", []) +
                     [label for label in own.get("_present_labels", []) if label in labels]))
-                if added:
+                if added or name_added:
                     old.pop("_unavailable", None)
-                normalizers = {"sku": valid_sku, "capacity": lambda value: capacity(value, labelled=True),
-                               "loading_type": loading}
                 confirmed = []
-                for field in fields:
+                for field in COMPARISON_FIELD_LABELS:
                     sources = [("comparison_model" if field == "sku" else "comparison_spec:" + label
-                                if field == "capacity" else label)
-                               for label in COMPARISON_FIELD_LABELS[field]
-                               if label in added and normalizers[field](old.get(label))]
+                                if field == "capacity" else "dryer_category:" + label if label in CATEGORY_LABELS else label)
+                               for label in recovery_labels[field]
+                               if label in added and normalized(field, label, old.get(label))]
+                    if name_added and field != "sku" and normalizers[field](old["_name"]):
+                        sources.append("comparison_title")
                     if sources:
                         confirmed.append(field)
                         old.setdefault("_supplemented_sources", {}).setdefault(field, []).extend(sources)
-                present = any(label in old["_present_labels"] for label in labels)
+                # Opportunistic reads replace another planned request only when
+                # they actually confirmed that field. Missing data may still
+                # need its own proven reference; never suppress that request.
+                self.compare_supplemented.update((vid, field) for field in confirmed)
+                present = any(label in old["_present_labels"] for field in pending[vid]
+                              for label in COMPARISON_FIELD_LABELS[field])
                 self.events.emit("comparison_supplement_result", variation_id=vid, fields=fields,
-                                 added_labels=added, confirmed_fields=confirmed,
+                                 added_labels=added, title_recovered=bool(name_added), confirmed_fields=confirmed,
                                  status="confirmed" if confirmed else "field_present_without_new_valid_value"
                                  if present else "field_rows_unavailable",
                                  reason=own.get("_unavailable"))
@@ -459,11 +486,15 @@ def pdf_model_candidates(content):
         tail = content[label.end():end].lstrip(" :\t\r\n")
         raw = tail.splitlines()[0] if tail else ""
         raw = datasheet._MODEL_NEXT_FIELD_RE.split(raw, maxsplit=1)[0].strip(" :;,.|\t")
-        raw = re.split(r"\b(?:Gewicht|Weight|Beladung|Trockenkapazit[äa]t)\b", raw,
+        raw = re.split(r"\b(?:Gewicht|Weight|Beladung|Trockenkapazit[äa]t|Farbe|Colou?r|"
+                       r"Nennkapazit[äa]t|Füllmenge|Fassungsvermögen|Beladungsmenge|Ladevolumen|"
+                       r"Drying capacity|Höhe|Height|Breite|Width|Tiefe|Depth|Energieverbrauch|Energy consumption)\b", raw,
                        maxsplit=1, flags=re.I)[0].strip()
         if raw:
-            # Validate dimensions before the common tokenizer can drop their unit.
-            model = valid_sku(datasheet._valid_model(raw)) if not dimension_sku(raw) else None
+            # Keep the whole labelled field, including mixed-case suffixes and
+            # '&'. The shared tokenizer validates a model seed, not its suffix.
+            value = re.sub(r"^\([a-z]\)\s*[:;]?\s*", "", raw)
+            model = valid_sku(value) if not dimension_sku(raw) and datasheet._valid_model(value) else None
             yield raw, model, None if model else sku_rejection(raw)
 
 

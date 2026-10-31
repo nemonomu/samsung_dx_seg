@@ -194,6 +194,7 @@ class SixthComparisonTests(base.Offline):
         c=client.Client(base.Log())
         c.compare_cache={'r':{'Bauart':'Frontlader','_present_labels':['Bauart']},
                          'v2':{'Modellbezeichnung':'LONG900 Active','Nennkapazität':'9 kg',
+                               '_name':'Wäschetrockner LONG900 Active, 9 kg',
                                '_present_labels':['Modellbezeichnung','Nennkapazität']}}
         html=comparison_html(['r','v2'],{'r':{'Bauart':'Frontlader'},
              'v2':{'Bauart':'Toplader','Modellbezeichnung':'WRONG900','Nennkapazität':'1 kg'}})
@@ -205,10 +206,12 @@ class SixthComparisonTests(base.Offline):
             self.assertEqual(request.call_count,1)
             sent=base.parse_qs(base.urlsplit(request.call_args.args[0]).query)['variationIds'][0]
             self.assertEqual(sent,'r,v2')
-            self.assertEqual([call.args[1] for call in parsed.call_args_list],['Beladung','Bauart'])
+            self.assertEqual([call.args[1] for call in parsed.call_args_list],
+                             ['Beladung','Bauart',*config.CATEGORY_LABELS])
         self.assertEqual(result['v2']['Bauart'],'Toplader')
         self.assertEqual(result['v2']['Modellbezeichnung'],'LONG900 Active')
         self.assertEqual(result['v2']['Nennkapazität'],'9 kg')
+        self.assertEqual(result['v2']['_name'],'Wäschetrockner LONG900 Active, 9 kg')
         result['v2']['Bauart']='WRONG'
         self.assertEqual(again['v2']['Bauart'],'Toplader')
         self.assertEqual(c.compare_cache['r']['Bauart'],'Frontlader')

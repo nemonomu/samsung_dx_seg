@@ -150,17 +150,18 @@ def select_targets(client, events, state, listing_rows):
 
 def supplement_comparisons(client, events, chunk, chars_by_id, options, references):
     """Recover proven row omissions, never every NULL or another option's value."""
-    for target in chunk:
-        vid = target["variation_id"]
+    def remember_reference(vid):
         chars = chars_by_id.get(vid, {})
         if "_present_labels" not in chars or chars.get("_error"):
-            continue
+            return
         for field, labels in COMPARISON_FIELD_LABELS.items():
             if field not in references and any(value and (
                     source == "comparison_model" or source in labels
                     or source.startswith("comparison_spec:"))
                     for source, _, value in options[vid][field]):
                 references[field] = vid
+    for target in chunk:
+        remember_reference(target["variation_id"])
     groups = {}
     for target in chunk:
         vid = target["variation_id"]
@@ -168,7 +169,11 @@ def supplement_comparisons(client, events, chunk, chars_by_id, options, referenc
         if "_present_labels" not in chars or chars.get("_error"):
             continue  # No successful response/presence evidence: use existing PDF path.
         for field, labels in COMPARISON_FIELD_LABELS.items():
-            if (any(value for _, _, value in options[vid][field])
+            # A name SKU is lower priority than comparison/PDF. It cannot prove
+            # that a missing comparison model row needs no bounded supplement.
+            confirmed = options[vid][field][0][2] if field == "sku" else any(
+                value for _, _, value in options[vid][field])
+            if (confirmed
                     or any(label in chars["_present_labels"] for label in labels)):
                 continue
             reference = references.get(field)
@@ -186,10 +191,10 @@ def supplement_comparisons(client, events, chunk, chars_by_id, options, referenc
                 before, after = chars_by_id.get(vid, {}), fresh.get(vid, {})
                 chars_by_id[vid] = after
                 # Recompute candidates only when field evidence actually changed.
-                if any(before.get(label) != after.get(label)
-                       for field in pending[vid] for label in COMPARISON_FIELD_LABELS[field]):
+                if any(before.get(label) != after.get(label) for label in (*config.COMPARE_LABELS, "_name")):
                     target = next(t for t in chunk if t["variation_id"] == vid)
                     options[vid] = candidates(target, after)
+                    remember_reference(vid)
 
 
 def collect(client, events, state, save):

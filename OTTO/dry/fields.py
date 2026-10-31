@@ -24,7 +24,8 @@ _TRAVEL_DRYER = r"\b(?:reise[- ]?|camping[- ]?)(?:wäsche)?trockner\b"
 EXCLUDED = (
     (r"\bwasch[- ]?trockner\b", "washer_dryer"),
     (_TRAVEL_DRYER, "portable"),
-    (r"\b(?:haartrockner|haarföhn|föhn|foehn|multi[- ]?haarstyler|haarstyler)\b", "hair_dryer"),
+    (r"\b(?:haartrockner|haarföhn|föhn|foehn|multi[- ]?haarstyler|haarstyler|haarpflege[- ]?set)\b", "hair_dryer"),
+    (r"\b(?:kosmetikpinsel[- ]?set|pinselreiniger)\b", "cosmetic_brush_cleaner"),
     (r"\b(?:dörrautomat|doerrautomat|lebensmitteltrockner|obsttrockner)\b", "food_dehydrator"),
     (r"\b(?:luftentfeuchter|bautrockner)\b", "dehumidifier"),
     (r"\b(?:waschmaschinenumbauschrank|waschmaschinenschrank)\b", "furniture"),
@@ -36,9 +37,12 @@ EXCLUDED = (
 # These nouns identify a sold object, not a feature after 'mit/inklusive/...'.
 _SOLD_TYPES = (
     (r"\b(?:heizstab|heizregister|thermodetektor|temperaturfühler|stellfuß|stellfuss|vibrationsdämpfer|schwingungsdämpfer|schutzhülle|schützhülle)\b|\b(?:sensor|griff)\s+(?:wie|für|fuer)\b|\b(?:wäsche|waesche)trockner[- ]kondensator\b", "sold_accessory"),
+    (r"\b(?:griffkappe|schalengriff|griffplatte|dichtungsring|trommeldichtung|türdichtung|dämpfer|steckerschloss|steckersafe|lüftungsgitter|abluftgitter)\b", "sold_accessory"),
     (r"\b(?:kompressor|schraubenkompressor)\b", "sold_compressor"),
     (r"\b(?:filament|filatment|teppich|hundepflege|haustier)[- ]?trockner\b|\bfilament[- ]?dryer\b|\btrockner\s+(?:für|fuer)\s+(?:(?:den|die|das)\s+)?(?:helm(?:e)?|stiefel|filamente?|haustiere?|hunde|katzen|teppiche?)\b", "sold_non_clothing_dryer"),
+    (r"\btrockner\s+(?:motorrad)?stiefel\b|\b(?:standventilator|bodenlüfter|bodenventilator|fußbläser)\b", "sold_non_clothing_dryer"),
     (r"\b(?:unterziehshirt|unterhemd|füllwatte|bastelfilz|standregal|dusch[- ]wc|hänge[- ]?wc|bidet|haargel|3d[- ]drucker|hundeschermaschine)\b", "sold_unrelated_product"),
+    (r"\b(?:schuhwaschbeutel|skisocken|badematte|badvorleger|clown[- ]?kostüm|lernspielzeug|einlegesohlen|kühlbox|deo[- ]?roller)\b", "sold_unrelated_product"),
     # A carpet air mover may put its purpose after speed/features in the title.
     (r"\b(?:elektro[- ]gebläse|air\s+mover)\b", "sold_non_clothing_dryer"),
 )
