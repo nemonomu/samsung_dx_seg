@@ -1,27 +1,30 @@
-"""Step01 (shared): collect an OTTO topseller listing via everglades + crocotile.
+"""Step01 (shared): collect the OTTO Topseller tiles, then hydrate their attributes.
 
-Category-driven: the everglades suchbegriff comes from cfg.SUCHBEGRIFF (umlauts
+Category-driven: the suchbegriff comes from cfg.SUCHBEGRIFF (umlauts
 transliterated). All crocotile topInfos are stored generically as a top_infos JSON
 column so each category can pick its spec fields (TV diagonal, REF/LDY capacity).
 """
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import os
 import time
+import zlib
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 from common import translate
-from common.parsers import ensure_variation_query
+from common.parsers import ensure_variation_query, parse_topseller_page
 from common.discount_stickers import sticker_fields, sticker_diagnostics
 from common.io_util import REFERENCES_ROOT, category_output_root, ensure_dirs, write_csv, write_json
 
 EVERGLADES_URL = "https://www.otto.de/everglades/products"
+TILELIST_URL = "https://www.otto.de/dundee/tilelist"
 CROCOTILE_URL = "https://www.otto.de/crocotile/tile/data"
 OTTO_BASE_URL = "https://www.otto.de"
 
@@ -130,6 +133,14 @@ def fetch_json(
     *,
     extra_headers: dict[str, str] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
+    return _fetch(url, referer, json.loads, timeout, retries, extra_headers=extra_headers)
+
+
+def _fetch(
+    url: str, referer: str, parse: Callable[[bytes], Any],
+    timeout: int = DEFAULT_TIMEOUT, retries: int = 2,
+    *, extra_headers: dict[str, str] | None = None,
+) -> tuple[Any, dict[str, Any]]:
     last_failure: ListingFetchError | None = None
     for attempt in range(retries + 1):
         started = time.perf_counter()
@@ -142,6 +153,7 @@ def fetch_json(
                 body = resp.read()
                 status = resp.status
                 response_headers = dict(resp.headers.items())
+                compressed = resp.headers.get("Content-Encoding", "").casefold() == "gzip"
         except HTTPError as exc:
             try:
                 body = exc.read()
@@ -157,16 +169,19 @@ def fetch_json(
                 cause=exc,
                 attempts=attempt + 1,
             )
-        except URLError as exc:
+        except (URLError, TimeoutError) as exc:
             last_failure = ListingFetchError(url, cause=exc, attempts=attempt + 1)
         else:
+            decoded = body
             try:
-                payload = json.loads(body.decode("utf-8"))
-            except json.JSONDecodeError as exc:
+                if compressed:
+                    decoded = gzip.decompress(body)
+                payload = parse(decoded)
+            except (ValueError, gzip.BadGzipFile, EOFError, zlib.error) as exc:
                 last_failure = ListingFetchError(
                     url,
                     status=status,
-                    body=body,
+                    body=decoded,
                     headers=response_headers,
                     cause=exc,
                     attempts=attempt + 1,
@@ -185,7 +200,7 @@ def fetch_json(
             last_failure.status is None
             or last_failure.status in (408, 425, 429)
             or last_failure.status >= 500
-            or isinstance(last_failure.cause, json.JSONDecodeError)
+            or isinstance(last_failure.cause, (ValueError, gzip.BadGzipFile, EOFError, zlib.error))
         )
         if attempt >= retries or not retryable:
             break
@@ -193,6 +208,16 @@ def fetch_json(
 
     assert last_failure is not None
     raise last_failure from last_failure.cause
+
+
+def fetch_topseller_page(suchbegriff: str, offset: int, referer: str) -> tuple[tuple[list[dict[str, Any]], bool], dict[str, Any]]:
+    # The storefront response provides the actual order and sponsored placements.
+    rule = f"(und.(suchbegriff.{suchbegriff}).(~.(v.1)))"
+    url = TILELIST_URL + "?" + urlencode({
+        "rule": rule, "entryRule": rule, "sortiertnach": "topseller", "o": offset,
+    })
+    return _fetch(url, referer, lambda body: parse_topseller_page(body, offset),
+                  extra_headers={"Accept": "text/html", "Accept-Encoding": "gzip"})
 
 
 def build_everglades_url(suchbegriff: str, offset: int) -> str:
@@ -394,7 +419,7 @@ def run(cfg) -> dict[str, Any]:
         "created_at": started.isoformat(timespec="seconds"),
         "suchbegriff": cfg.SUCHBEGRIFF,
         "listing_pages_requested": LISTING_PAGES_TO_COLLECT,
-        "listing_positions_per_page": LISTING_POSITIONS_PER_PAGE,
+        "listing_source": "topseller_tilelist",
         "crocotile_batch_size": CROCOTILE_BATCH_SIZE,
         "output": str(listing_csv),
         "request_diagnostics": str(diagnostics_path),
@@ -406,20 +431,31 @@ def run(cfg) -> dict[str, Any]:
     vids: list[str] = []
     tiles: dict[str, dict[str, Any]] = {}
     failed_ids: list[str] = []
-    everglades_meta: list[dict[str, Any]] = []
+    tilelist_meta: list[dict[str, Any]] = []
     crocotile_diagnostics: list[dict[str, Any]] = []
-    phase = "everglades"
+    phase = "tilelist"
     try:
-        organic_per_page = LISTING_POSITIONS_PER_PAGE - len(SPONSORED_SLOT_POSITIONS)
+        offset = 0
         for page in range(1, LISTING_PAGES_TO_COLLECT + 1):
-            offset = (page - 1) * organic_per_page
-            data, meta = fetch_json(build_everglades_url(cfg.SUCHBEGRIFF, offset), cfg.WARMUP_LISTING_URL)
-            rows.extend(compose_rows(page, offset, data))
-            everglades_meta.append({
+            (page_rows, has_next), meta = fetch_topseller_page(cfg.SUCHBEGRIFF, offset, cfg.WARMUP_LISTING_URL)
+            positions = [row["display_rank"] for row in page_rows]
+            if positions != list(range(len(rows) + 1, len(rows) + len(page_rows) + 1)):
+                raise ValueError(f"Topseller page {page} has repeated, missing or out-of-order positions")
+            organic = sum(row["exposure_type"] == "organic" for row in page_rows)
+            if has_next and not organic:
+                raise ValueError(f"Topseller page {page} cannot advance the organic offset")
+            rows.extend(dict(row, page_number=page, page_offset=offset) for row in page_rows)
+            tilelist_meta.append({
                 "page": page,
                 "offset": offset,
+                "organic_rows": organic,
+                "sponsored_rows": len(page_rows) - organic,
                 **{k: meta.get(k) for k in ("http_status", "body_bytes", "elapsed_seconds")},
             })
+            if not has_next:
+                break
+            # OTTO paginates the ranked stream; ads occupy display slots without consuming its offset.
+            offset += organic
             if REQUEST_SLEEP > 0:
                 time.sleep(REQUEST_SLEEP)
         assign_exposure(rows)
@@ -477,7 +513,7 @@ def run(cfg) -> dict[str, Any]:
             "status": status,
             "success": True,
             "finished_at": finished_at,
-            "listing_pages_collected": len(everglades_meta),
+            "listing_pages_collected": len(tilelist_meta),
             "listing_rows": len(rows),
             "unique_variation_ids": len(vids),
             "crocotile_returned": len(tiles),
@@ -487,7 +523,7 @@ def run(cfg) -> dict[str, Any]:
             "crocotile_http_400_count": sum(
                 1 for attempt in crocotile_diagnostics if attempt.get("http_status") == 400
             ),
-            "everglades_requests": everglades_meta,
+            "tilelist_requests": tilelist_meta,
             "crocotile_requests": successful_crocotile_requests,
             "discount_stickers": discount_stickers,
         }
@@ -517,7 +553,7 @@ def run(cfg) -> dict[str, Any]:
             "finished_at": finished_at,
             "failed_phase": phase,
             "error": error_detail,
-            "listing_pages_collected": len(everglades_meta),
+            "listing_pages_collected": len(tilelist_meta),
             "listing_rows_in_memory": len(rows),
             "unique_variation_ids": len(vids),
             "crocotile_returned": len(tiles),
@@ -526,7 +562,7 @@ def run(cfg) -> dict[str, Any]:
             "crocotile_http_400_count": sum(
                 1 for attempt in crocotile_diagnostics if attempt.get("http_status") == 400
             ),
-            "everglades_requests": everglades_meta,
+            "tilelist_requests": tilelist_meta,
         }
         write_json(manifest_path, failure_manifest)
         print(

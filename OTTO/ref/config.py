@@ -399,6 +399,30 @@ def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] 
     return model_sku.model_sku(target, ctx)
 
 
+def resolve_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:
+    pdf_sku = ds.get("sku")
+    if not pdf_sku:
+        return extract_sku(target, ds, ctx)
+    option_sku = model_sku.characteristic(target, ctx, "Modellbezeichnung")
+    pdf_key, option_key = _norm(pdf_sku), _norm(option_sku)
+    if not option_key or pdf_key == option_key:
+        return pdf_sku
+
+    # Shared labels can list several options. Require the original comma separators
+    # and the exact comparison field so neither source can guess at a model.
+    for row in ds.get("rows") or []:
+        for cell in row:
+            label, _, value = cell.partition(":")
+            if _label_key(label) not in ("modellkennung", "modellkennungdeslieferanten",
+                                         "modelidentifier", "modellbezeichnung") or "," not in value:
+                continue
+            models = [_norm(part) or "" for part in value.split(",")]
+            if (option_key in models and " ".join(models) == pdf_key
+                    and all(re.search(r"[a-z]", model) and re.search(r"[0-9]", model) for model in models)):
+                return option_sku.strip()
+    return pdf_sku
+
+
 def extract_pdp_spec(soup) -> dict[str, Any]:
     rows = parsers.all_characteristics(soup)
     raw = parsers.characteristic_by_label(

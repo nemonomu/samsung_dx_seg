@@ -96,10 +96,19 @@ def _one_pass(ids: list[str], label: str, timeout: int, sleep: float, batch_size
 
 
 def _names_from_html(soup: BeautifulSoup, wanted: set[str]) -> dict[str, str]:
-    """{variation_id: longest product-name text} — the long name carries the subtitle
-    (e.g. '..., Frontlader, Inverter Motor, ...') used as a fallback when a structured
-    characteristic is blank."""
+    """Return the product name and subtitle for each requested variation."""
     out: dict[str, str] = {}
+    # A specification cell can be longer than the title and carries the same variation ID.
+    for link in soup.select('a[data-navigation="title"][data-variation-id]'):
+        vid = link["data-variation-id"]
+        name = _clean(link.get_text(" ", strip=True))
+        if vid in wanted and name:
+            out.setdefault(vid, name)
+
+    # Keep the legacy fallback for options without a marked title link.
+    missing = wanted - out.keys()
+    if not missing:
+        return out
     for node in soup.find_all(string=True):
         text = _clean(node)
         if not text or len(text) < 15:
@@ -111,7 +120,7 @@ def _names_from_html(soup: BeautifulSoup, wanted: set[str]) -> dict[str, str]:
             vid = anc.get("data-variation-id")
             if vid:
                 vid = str(vid)
-                if vid in wanted and len(text) > len(out.get(vid, "")):
+                if vid in missing and len(text) > len(out.get(vid, "")):
                     out[vid] = text
                 break
             anc = anc.parent

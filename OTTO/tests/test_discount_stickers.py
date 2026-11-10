@@ -120,21 +120,20 @@ class DiscountStickerTests(unittest.TestCase):
                               SUCHBEGRIFF="fernseher", WARMUP_LISTING_URL="https://www.otto.de/suche/fernseher/",
                               USE_DATASHEET=False, classify=lambda name: (True, "test"),
                               extract_spec=lambda *args, **kwargs: {})
-        products = [{"id": "p" + str(i), "bestVariationId": "v" + str(i),
-                     "variationPath": f"/p/test-{i}/", "name": f"Test TV {i}"} for i in range(4)]
+        page_rows = [dict(display_rank=i + 1, product_id=f"p{i}", variation_id=f"v{i}", exposure_type="organic",
+                          source="topseller_tilelist",
+                          product_url=f"https://www.otto.de/p/test-{i}/", retailer_sku_name=f"Test TV {i}")
+                     for i in range(4)]
         tiles = [{"variationId": "v" + str(i), "deal": {"image": {"src": url}, "highlight": "nur diesen Monat"}}
                  for i, url in enumerate([KNOWN, UNKNOWN, UNKNOWN, None])]
-        def fetch(url, *args, **kwargs):
-            return ({"intents": [{"intent": "ranked", "products": products}]} if url.startswith(listing.EVERGLADES_URL)
-                    else tiles), {"http_status": 200}
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             out = Path(directory)
             stack.enter_context(patch.object(listing, "ensure_dirs", return_value=out))
             stack.enter_context(patch.object(listing, "REFERENCES_ROOT", out))
-            api = stack.enter_context(patch.object(listing, "fetch_json", side_effect=fetch))
+            page = stack.enter_context(patch.object(listing, "fetch_topseller_page",
+                                                   return_value=((page_rows, False), {"http_status": 200})))
+            api = stack.enter_context(patch.object(listing, "fetch_json", return_value=(tiles, {"http_status": 200})))
             stack.enter_context(patch.object(listing, "LISTING_PAGES_TO_COLLECT", 1))
-            stack.enter_context(patch.object(listing, "LISTING_POSITIONS_PER_PAGE", 4))
-            stack.enter_context(patch.object(listing, "SPONSORED_SLOT_POSITIONS", ()))
             stack.enter_context(patch.object(listing, "REQUEST_SLEEP", 0))
             image = stack.enter_context(patch.object(stickers, "urlopen", side_effect=TimeoutError))
             for module in (targets, full_output, notify, db_save):
@@ -149,7 +148,8 @@ class DiscountStickerTests(unittest.TestCase):
             send = stack.enter_context(patch.object(notify, "_send", return_value=(True, 1, None)))
             log = stack.enter_context(redirect_stdout(io.StringIO()))
             listing.run(cfg)
-            self.assertEqual(2, api.call_count)
+            page.assert_called_once()
+            api.assert_called_once()
             image.assert_called_once()
             targets.run(cfg)
             saved = read_csv(out / "otto_final_targets.csv")

@@ -377,11 +377,13 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             if cfg.USE_DATASHEET and (target.get("energy_datasheet_uri") or "").strip():
                 body, ds_status, _ = datasheet.fetch_datasheet_bytes(target["energy_datasheet_uri"], timeout)
                 ds = datasheet.parse(body)
-            # sku first: datasheet Modellkennung, then a category hook (e.g. /vergleich/
-            # Modellbezeichnung), then the name-token heuristic. Passed to extract_spec so
-            # spec extractors can reuse it (e.g. TV model-aware source parsing).
-            ctx_sku = cfg.extract_sku(target, ds, ctx) if hasattr(cfg, "extract_sku") else None
-            sku = first(ds.get("sku") if ds else None, ctx_sku, sku_from_name(target.get("retailer_sku_name")))
+            # Categories with shared datasheets can resolve the selected option before title fallback.
+            if hasattr(cfg, "resolve_sku"):
+                source_sku = cfg.resolve_sku(target, ds, ctx)
+            else:
+                ctx_sku = cfg.extract_sku(target, ds, ctx) if hasattr(cfg, "extract_sku") else None
+                source_sku = first(ds.get("sku") if ds else None, ctx_sku)
+            sku = first(source_sku, sku_from_name(target.get("retailer_sku_name")))
             spec = cfg.extract_spec(target, ds, ctx, sku=sku)
             if apply_ref_type_policy(spec):
                 spec["_policy_null_fields"] = sorted(_policy_null_fields(spec) | {"ref_refrigerator_type"})
@@ -438,7 +440,19 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                             raw_html.save(f"pdp_{pid}", pdp_body)  # opt-in audit copy (OTTO_SAVE_HTML)
                         if pdp.get("detail_present"):
                             soup = BeautifulSoup(pdp_body.decode("utf-8", errors="replace"), "lxml")
-                            pdp_spec = cfg.extract_pdp_spec(soup)
+                            if cfg.PRODUCT == "TV":
+                                # The requested URL can retain its variationId even when OTTO renders another option.
+                                frame = soup.select_one(".pdp-frame[data-variation-id]")
+                                expected = (target.get("variation_id") or "").strip()
+                                if not expected or frame is None:
+                                    pdp_failure_reason = "variation_id_unverified"
+                                elif frame["data-variation-id"] != expected:
+                                    pdp_failure_reason = "variation_id_mismatch"
+                                else:
+                                    soup = frame.select_one(".pdp_details__characteristics-html")
+                                    if soup is None:
+                                        pdp_failure_reason = "characteristics_not_present"
+                            pdp_spec = {} if pdp_failure_reason else cfg.extract_pdp_spec(soup)
                             apply_ref_type_policy(pdp_spec)
                             for key in pdp_target_fields:
                                 value = pdp_spec.get(key)
@@ -455,7 +469,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                     field for field in pdp_target_fields
                     if not has_value(spec.get(field))
                 ]
-                if remaining_pdp_fields:
+                if remaining_pdp_fields and pdp_failure_reason is None:
                     if pdp_error:
                         pdp_failure_reason = pdp_error
                     elif pdp_status != 200:
@@ -554,7 +568,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
     if low:
         print(f"[full/{cfg.PRODUCT}][QA][WARN] low coverage (<{QA_FILL_WARN:.0%}): " +
               ", ".join(f"{f}={fill_rate[f]:.1%}" for f in low) +
-              " - check /vergleich/, EPREL, PDP fallback or category throttling before trusting this batch", flush=True)
+              " - check field availability and PDP diagnostics before trusting this batch", flush=True)
     missing_spec_counts = {f: sum(1 for r in rows if not has_value(r.get(f))) for f in cfg.SPEC_FIELDS}
     rating_qa = {"checked": len(attempts),
                  **{state: sum(a["rating_state"] == state for a in attempts)

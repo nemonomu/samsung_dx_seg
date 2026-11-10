@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from bs4 import BeautifulSoup
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -257,12 +259,49 @@ class EprelMatchConfidenceTests(unittest.TestCase):
         self.assertIs(eprel._best_hit([hit], "50UV1563DD"), hit)
 
 
-class OttoTvSpecFallbackTests(unittest.TestCase):
-    def test_eprel_hdr_fallback_used_when_pdf_and_compare_missing(self) -> None:
-        target = {"retailer_sku_name": "Coocaa 55 Zoll 55R5G LCD-LED Fernseher"}
-        with patch.object(tv_config.eprel, "display_on_mode_power", return_value="110 W"):
-            spec = tv_config.extract_spec(target, {}, {"model": {}}, sku="55R5G")
-        self.assertEqual(spec["estimated_annual_electricity_use"], "110 W")
+class OttoTvPdpSpecTests(unittest.TestCase):
+    def test_saved_pdp_reads_the_actual_hdr_row(self) -> None:
+        for filename, size, power in (
+            ("detail.html", "32", "36 W"),
+            ("har/detail_sample.html", "55", "114 W"),
+        ):
+            with self.subTest(filename=filename):
+                path = ROOT / "references" / filename
+                soup = BeautifulSoup(path.read_bytes(), "lxml")
+                spec = tv_config.extract_pdp_spec(soup.select_one(".pdp_details__characteristics-html"))
+                self.assertEqual(spec["screen_size"], size)
+                self.assertEqual(spec["estimated_annual_electricity_use"], power)
+
+    def test_hdr_requires_the_exact_label_and_a_watt_value(self) -> None:
+        hdr = tv_config.HDR_POWER_LABEL
+        for label, value in (
+            ("Bluetooth-Version", "5.3"),
+            ("Bildschirmauflösung in Pixel", "3.840 × 2.160"),
+            ("Leistungsaufnahme im Ein-Zustand bei Standard-Dynamikumfang (SDR)", "84 W"),
+            ("Energieverbrauch im Ein-Zustand bei hohem Dynamikumfang (HDR) pro 1000 h", "114 kWh"),
+            (hdr + " pro 1000 h", "114 W"),
+            (hdr, "5.3"),
+            (hdr, "114 W / 84 W"),
+            (hdr, "nicht zutreffend"),
+        ):
+            with self.subTest(label=label, value=value):
+                soup = BeautifulSoup(
+                    f'<table class="dv_characteristicsTable"><tr><td>{label}</td>'
+                    f'<td>{value}</td></tr></table>', "lxml",
+                )
+                self.assertIsNone(tv_config.extract_pdp_spec(soup).get("estimated_annual_electricity_use"))
+
+    def test_hdr_cannot_be_filled_from_non_pdp_sources(self) -> None:
+        target = {"retailer_sku_name": "Coocaa 55 Zoll 55R5G LCD-LED Fernseher", "variation_id": "v1"}
+        ctx = {"model": {"v1": {tv_config.HDR_POWER_LABEL: "100 W"}}}
+        with patch.object(datasheet, "power_by_label", return_value="5.3 W") as pdf_power, \
+                patch.object(eprel, "display_on_mode_power", return_value="110 W") as eprel_power:
+            spec = tv_config.extract_spec(target, {}, ctx, sku="55R5G")
+            empty_spec = tv_config.extract_spec(target, {}, {}, sku="55R5G")
+        pdf_power.assert_not_called()
+        eprel_power.assert_not_called()
+        self.assertIsNone(spec["estimated_annual_electricity_use"])
+        self.assertIsNone(empty_spec["estimated_annual_electricity_use"])
         self.assertEqual(spec["screen_size"], "55")
 
     def test_url_cm_fallback_used_when_no_zoll_sources(self) -> None:
@@ -278,20 +317,18 @@ class OttoTvSpecFallbackTests(unittest.TestCase):
                 "100 cm",
             ),
         ]
-        with patch.object(tv_config.eprel, "display_on_mode_power", return_value=None):
-            for name, url, expected in cases:
-                with self.subTest(url=url):
-                    target = {"retailer_sku_name": name, "product_url": url}
-                    spec = tv_config.extract_spec(target, {}, {"model": {}}, sku=None)
-                    self.assertEqual(spec["screen_size"], expected)
+        for name, url, expected in cases:
+            with self.subTest(url=url):
+                target = {"retailer_sku_name": name, "product_url": url}
+                spec = tv_config.extract_spec(target, {}, {"model": {}}, sku=None)
+                self.assertEqual(spec["screen_size"], expected)
 
     def test_url_cm_fallback_ignores_variant_urls_with_zoll(self) -> None:
         target = {
             "retailer_sku_name": "Sony K-55S3 DLED-Fernseher",
             "product_url": "https://www.otto.de/p/sony-k-85s3-85-bravia-3-dled-fernseher-215-cm-85-zoll-C1970862261/",
         }
-        with patch.object(tv_config.eprel, "display_on_mode_power", return_value=None):
-            spec = tv_config.extract_spec(target, {}, {"model": {}}, sku="K-55S3")
+        spec = tv_config.extract_spec(target, {}, {"model": {}}, sku="K-55S3")
         self.assertIsNone(spec["screen_size"])
 
 

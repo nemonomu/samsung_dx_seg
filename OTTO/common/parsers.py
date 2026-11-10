@@ -220,6 +220,46 @@ def parse_listing_html(path: Path, source_name: str) -> list[dict[str, Any]]:
     return rows
 
 
+def parse_topseller_page(body: bytes, offset: int) -> tuple[list[dict[str, Any]], bool]:
+    soup = BeautifulSoup(body, "lxml")
+    root = soup.select_one('[data-qa="reptile-search-result"]')
+    if root is None:
+        raise ValueError("Topseller result root missing")
+    page = json.loads(root.get("data-page") or "{}")
+    if (not isinstance(page, dict) or page.get("sortiertnach") != "topseller"
+            or int_or_none(page.get("o")) != offset):
+        raise ValueError(f"Topseller result does not confirm offset {offset} and sort order")
+
+    # Use the site's data attributes so visual markup changes do not alter rank or option identity.
+    rows = []
+    for tile in root.select('[data-qa="reptile-product-tile"]'):
+        pos = int_or_none(tile.get("data-list-position"))
+        pid = text_clean(tile.get("data-product-id"))
+        vid = text_clean(tile.get("data-variation-id"))
+        origin = tile.get("data-origin")
+        url = first_product_url(tile)
+        if not pos or not pid or not vid or not url or origin not in (None, "organic", "sponsored"):
+            raise ValueError("Topseller card missing position, product/option ID, URL, or supported origin")
+        rows.append({
+            "source": "topseller_tilelist", "display_rank": pos, "list_position": pos,
+            "row_index": pos, "target_rank": pos, "is_listing_target": True,
+            "exposure_type": "sponsored" if origin == "sponsored" else "organic",
+            "origin": origin, "product_id": pid, "variation_id": vid,
+            "product_url": url, "retailer_sku_name": first_listing_name(tile),
+        })
+    if not rows:
+        raise ValueError("Topseller result contains no verifiable product cards")
+    next_control = root.select_one('[data-qa="reptile-paging-next"]')
+    if next_control is None:
+        # A missing Next button is only an end marker when the pager confirms the current page is last.
+        pages = root.select('[data-qa^="reptile-paging-page-"], [data-qa="reptile-paging-current"]')
+        if not pages or pages[-1].get("data-qa") != "reptile-paging-current":
+            raise ValueError("Topseller pagination missing or inconsistent")
+        return rows, False
+    disabled = '[disabled], [aria-disabled="true"]'
+    return rows, not (next_control.css.match(disabled) or next_control.select_one(disabled))
+
+
 def parse_jsonld(html: str) -> list[Any]:
     values: list[Any] = []
     for match in re.finditer(r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", html, re.I | re.S):

@@ -1,6 +1,7 @@
 # OTTO discount_type
 
-기존 Everglades/Crocotile API 수집을 유지한다. `deal.image.src`의 이미지 식별자로
+인기순 화면에서 상품 옵션을 확인하고 Crocotile API에서 스티커 정보를 읽는다.
+`deal.image.src`의 이미지 식별자로
 원형 스티커를 구분하며, 할인 기간을 나타내는 `deal.highlight`는 사용하지 않는다.
 이 기능을 위한 페이지 렌더링·OCR·번역 API 호출이나 추가 패키지는 없다.
 

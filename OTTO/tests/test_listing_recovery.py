@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import sys
+import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
@@ -14,6 +18,20 @@ if str(OTTO_ROOT) not in sys.path:
     sys.path.insert(0, str(OTTO_ROOT))
 
 from common import listing  # noqa: E402
+from common.io_util import read_csv  # noqa: E402
+
+
+def topseller_html(offset, cards, has_next=False):
+    tiles = "".join(
+        f'<div class="new-layout" data-qa="reptile-product-tile" data-list-position="{rank}" '
+        f'data-product-id="{pid}" data-variation-id="{vid}" {origin}>'
+        f'<a href="/p/item-{pid}/">Test TV</a></div>'
+        for rank, pid, vid, origin in cards
+    )
+    disabled = "" if has_next else " disabled"
+    return (f'<main data-qa="reptile-search-result" '
+            f'data-page=\'{{"sortiertnach":"topseller","o":"{offset}"}}\'>'
+            f'{tiles}<div data-qa="reptile-paging-next"><button{disabled}></button></div></main>').encode()
 
 
 def variation_ids_from_url(url: str) -> list[str]:
@@ -35,6 +53,56 @@ class StubListingFetchError(listing.ListingFetchError):
 
 class OttoListingRecoveryTests(unittest.TestCase):
     REFERER = "https://www.otto.de/suche/fernseher/"
+
+    def test_run_uses_display_positions_and_advances_by_organic_cards(self):
+        ad = 'data-origin="sponsored"'
+        pages = {
+            0: topseller_html(0, [(1, "a", "v1", ""), (2, "b", "v2", ad),
+                                  (3, "c", "v3", ad), (4, "d", "v4", "")], has_next=True),
+            2: topseller_html(2, [(5, "b", "v2", ""), (6, "e", "v5", ad)]),
+        }
+        offsets = []
+
+        def fetch(request, **kwargs):
+            query = parse_qs(urlsplit(request.full_url).query)
+            self.assertEqual(query["sortiertnach"], ["topseller"])
+            self.assertEqual(request.get_header("Accept-encoding"), "gzip")
+            offset = int(query["o"][0])
+            offsets.append(offset)
+            return nullcontext(SimpleNamespace(read=lambda: gzip.compress(pages[offset]), status=200,
+                                               headers={"Content-Encoding": "gzip"}))
+
+        cfg = SimpleNamespace(PRODUCT="TV", SUCHBEGRIFF="fernseher", WARMUP_LISTING_URL=self.REFERER)
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            with patch.object(listing, "ensure_dirs", return_value=out), \
+                    patch.object(listing, "urlopen", side_effect=fetch), \
+                    patch.object(listing, "fetch_json", return_value=([], {"http_status": 200})) as details, \
+                    patch.object(listing, "REQUEST_SLEEP", 0), \
+                    patch.object(listing, "sticker_diagnostics", return_value={"unknown_image_count": 0}):
+                listing.run(cfg)
+            rows = read_csv(out / "otto_listing_topseller_rows.csv")
+        self.assertEqual(offsets, [0, 2])
+        self.assertEqual([(row["display_rank"], row["variation_id"], row["sku_status"]) for row in rows],
+                         [("1", "v1", ""), ("2", "v2", "Sponsored"), ("3", "v3", "Sponsored"),
+                          ("4", "v4", ""), ("5", "v2", ""), ("6", "v5", "Sponsored")])
+        self.assertTrue(rows[4]["product_url"].endswith("?variationId=v2"))
+        self.assertEqual(variation_ids_from_url(details.call_args.args[0]), ["v1", "v2", "v3", "v4", "v5"])
+
+    def test_topseller_requires_real_position_and_requested_offset(self):
+        html = topseller_html(0, [(1, "a", "v1", "")])
+        with self.assertRaisesRegex(ValueError, "offset"):
+            listing.parse_topseller_page(html, 109)
+        with self.assertRaisesRegex(ValueError, "position"):
+            listing.parse_topseller_page(html.replace(b'data-list-position="1"', b''), 0)
+
+    def test_missing_next_control_requires_last_page_evidence(self):
+        html = topseller_html(0, [(1, "a", "v1", "")])
+        html = html.replace(b'reptile-paging-next', b'renamed-pager')
+        with self.assertRaisesRegex(ValueError, "pagination"):
+            listing.parse_topseller_page(html, 0)
+        last = html.replace(b'renamed-pager', b'reptile-paging-current')
+        self.assertFalse(listing.parse_topseller_page(last, 0)[1])
 
     def assert_diagnostic_shape(self, diagnostic: dict[str, object]) -> None:
         self.assertTrue(
@@ -153,45 +221,22 @@ class OttoListingRecoveryTests(unittest.TestCase):
             SUCHBEGRIFF = "fernseher"
             WARMUP_LISTING_URL = "https://www.otto.de/suche/fernseher/"
 
-        everglades_payload = {
-            "intents": [
-                {
-                    "intent": "ranked",
-                    "products": [
-                        {
-                            "id": "product-v1",
-                            "bestVariationId": "v1",
-                            "variationPath": "/p/example/product-v1/",
-                            "name": "Example TV",
-                        }
-                    ],
-                }
-            ]
-        }
+        page_rows = [{"display_rank": 1, "product_id": "product-v1", "variation_id": "v1",
+                      "exposure_type": "organic", "retailer_sku_name": "Example TV"}]
         crocotile_error = listing.ListingFetchError(
             f"{listing.CROCOTILE_URL}?variationIds=v1",
             status=503,
             body=b'{"message":"crocotile upstream maintenance"}',
         )
 
-        def fake_fetch(url: str, _referer: str, **_kwargs):
-            if url.startswith(listing.EVERGLADES_URL):
-                return everglades_payload, {
-                    "http_status": 200,
-                    "body_bytes": 100,
-                    "elapsed_seconds": 0.01,
-                }
-            raise crocotile_error
-
         output = OTTO_ROOT / "tests" / "_tmp_listing_recovery_output"
         self.assertFalse(output.exists(), f"test output path already exists: {output}")
         output.mkdir()
         try:
             with patch.object(listing, "ensure_dirs", return_value=output), \
-                    patch.object(listing, "fetch_json", side_effect=fake_fetch), \
+                    patch.object(listing, "fetch_topseller_page", return_value=((page_rows, False), {"http_status": 200})), \
+                    patch.object(listing, "fetch_json", side_effect=crocotile_error), \
                     patch.object(listing, "LISTING_PAGES_TO_COLLECT", 1), \
-                    patch.object(listing, "LISTING_POSITIONS_PER_PAGE", 1), \
-                    patch.object(listing, "SPONSORED_SLOT_POSITIONS", ()), \
                     patch.object(listing, "CROCOTILE_BATCH_SIZE", 4), \
                     patch.object(listing, "REQUEST_SLEEP", 0), \
                     patch("sys.stdout", new=io.StringIO()), \
