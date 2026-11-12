@@ -66,7 +66,8 @@ def run(cfg) -> dict[str, Any]:
             bsr.setdefault(key, len(bsr) + 1)
 
     final_rows = [
-        dict(row, main_rank=rank, bsr_rank=bsr.get(key, ""), page_type="main")
+        dict(row, main_rank="" if row.get("source") == "topseller_api_fallback" else rank,
+             bsr_rank=bsr.get(key, ""), page_type="main")
         for rank, (key, row) in enumerate(main.items(), 1)
     ]
 

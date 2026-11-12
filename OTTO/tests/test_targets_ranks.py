@@ -95,6 +95,13 @@ def test_legacy_listing_can_build_main_without_inventing_bsr(tmp_path):
     assert manifest["bsr_tagged_rows"] == 0
 
 
+def test_fallback_keeps_product_without_unverified_ranks(tmp_path):
+    row = dict(offer(1, "A", "a1", "organic"), source="topseller_api_fallback")
+    rows, manifest = run_targets(tmp_path, [row], main_limit=1, bsr_limit=1)
+    assert [(r["product_id"], r["main_rank"], r["bsr_rank"]) for r in rows] == [("A", "", "")]
+    assert manifest["final_target_rows"] == 1
+
+
 def test_failed_or_mismatched_listing_warns_and_keeps_existing_behavior(tmp_path):
     manifest_path = tmp_path / "step01_listing_manifest.json"
     offers = [dict(offer(1, "A", "a1", "organic"), discount_sticker_run_id="old")]

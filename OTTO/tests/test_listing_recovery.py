@@ -54,6 +54,80 @@ class StubListingFetchError(listing.ListingFetchError):
 class OttoListingRecoveryTests(unittest.TestCase):
     REFERER = "https://www.otto.de/suche/fernseher/"
 
+    def test_api_fallback_after_screen_request_fails(self):
+        cfg = SimpleNamespace(PRODUCT="TV", SUCHBEGRIFF="fernseher", WARMUP_LISTING_URL=self.REFERER)
+        error = listing.ListingFetchError("https://www.otto.de/", status=503)
+        api = {"intents": [{"intent": "ranked", "products": [
+            {"id": "123", "bestVariationId": "v1", "name": "Test TV", "variationPath": "/p/item-123/"}]}]}
+        def fetch(url, *args, **kwargs):
+            if url.startswith(listing.EVERGLADES_URL):
+                return api, {"http_status": 200}
+            return [{"variationId": "v1"}], {"http_status": 200}
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            with patch.object(listing, "ensure_dirs", return_value=out), \
+                    patch.object(listing, "fetch_topseller_page", side_effect=error), \
+                    patch.object(listing, "fetch_json", side_effect=fetch), \
+                    patch.object(listing, "LISTING_PAGES_TO_COLLECT", 1), \
+                    patch.object(listing, "REQUEST_SLEEP", 0), \
+                    patch.object(listing, "sticker_diagnostics", return_value={"unknown_image_count": 0}):
+                manifest = listing.run(cfg)
+            rows = read_csv(out / "otto_listing_topseller_rows.csv")
+        self.assertEqual([(r["source"], r["variation_id"]) for r in rows], [("topseller_api_fallback", "v1")])
+        self.assertEqual(manifest["status"], "completed_with_warnings")
+        self.assertEqual(manifest["listing_source"], "topseller_api_fallback")
+        self.assertEqual(manifest["listing_pages_collected"], 1)
+        self.assertTrue(any("final fallback" in w for w in manifest["listing_warnings"]))
+
+    def test_api_fallback_keeps_ranked_and_sponsored_and_partial_page(self):
+        cfg = SimpleNamespace(PRODUCT="TV", SUCHBEGRIFF="fernseher", WARMUP_LISTING_URL=self.REFERER)
+        api = {"intents": [
+            {"intent": "ranked", "products": [{"id": "1", "bestVariationId": "v1", "name": "TV 1"},
+                                               {"id": "2", "bestVariationId": "v2", "name": "TV 2"}]},
+            {"intent": "sponsored", "products": [{"id": "3", "bestVariationId": "v3", "name": "TV 3"}]},
+        ]}
+        offsets = []
+        def fetch(url, *args, **kwargs):
+            if url.startswith(listing.EVERGLADES_URL):
+                offsets.append(int(parse_qs(urlsplit(url).query)["ranked.offset"][0]))
+                if len(offsets) == 2:
+                    raise listing.ListingFetchError(url, status=503)
+                return api, {"http_status": 200}
+            return [{"variationId": vid} for vid in ("v1", "v2", "v3")], {"http_status": 200}
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            with patch.object(listing, "ensure_dirs", return_value=out), \
+                    patch.object(listing, "fetch_topseller_page", side_effect=listing.ListingFetchError("https://www.otto.de/", status=503)), \
+                    patch.object(listing, "fetch_json", side_effect=fetch), \
+                    patch.object(listing, "LISTING_PAGES_TO_COLLECT", 2), \
+                    patch.object(listing, "REQUEST_SLEEP", 0), \
+                    patch.object(listing, "sticker_diagnostics", return_value={"unknown_image_count": 0}):
+                manifest = listing.run(cfg)
+            rows = read_csv(out / "otto_listing_topseller_rows.csv")
+        self.assertEqual(offsets, [0, 2])
+        self.assertEqual([(r["variation_id"], r["exposure_type"]) for r in rows],
+                         [("v1", "organic"), ("v2", "organic"), ("v3", "sponsored")])
+        self.assertTrue(all(not r.get("display_rank") for r in rows))
+        self.assertTrue(any("fallback page 2" in w for w in manifest["listing_warnings"]))
+
+    def test_later_page_http_failure_keeps_earlier_products(self):
+        cfg = SimpleNamespace(PRODUCT="TV", SUCHBEGRIFF="fernseher", WARMUP_LISTING_URL=self.REFERER)
+        row = {"display_rank": 1, "product_id": "a", "variation_id": "v1",
+               "exposure_type": "organic", "retailer_sku_name": "Test TV"}
+        error = listing.ListingFetchError("https://www.otto.de/", status=503)
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            with patch.object(listing, "ensure_dirs", return_value=out), \
+                    patch.object(listing, "fetch_topseller_page", side_effect=[(([row], True), {}), error]), \
+                    patch.object(listing, "fetch_json", return_value=([{"variationId": "v1"}], {"http_status": 200})), \
+                    patch.object(listing, "REQUEST_SLEEP", 0), \
+                    patch.object(listing, "sticker_diagnostics", return_value={"unknown_image_count": 0}):
+                manifest = listing.run(cfg)
+            saved = read_csv(out / "otto_listing_topseller_rows.csv")
+        self.assertEqual([r["variation_id"] for r in saved], ["v1"])
+        self.assertEqual(manifest["status"], "completed_with_warnings")
+        self.assertTrue(any("HTTP 503" in warning for warning in manifest["listing_warnings"]))
+
     def test_empty_or_unrecognized_page_is_retried(self):
         for html in (b"<html></html>", topseller_html(0, [])):
             with self.subTest(html=html):

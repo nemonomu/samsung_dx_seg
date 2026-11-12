@@ -447,13 +447,22 @@ def run(cfg) -> dict[str, Any]:
     tiles: dict[str, dict[str, Any]] = {}
     failed_ids: list[str] = []
     tilelist_meta: list[dict[str, Any]] = []
+    fallback_pages = 0
     listing_warnings: list[str] = []
     crocotile_diagnostics: list[dict[str, Any]] = []
     phase = "tilelist"
+    initial_error = None
     try:
         offset = 0
         for page in range(1, LISTING_PAGES_TO_COLLECT + 1):
-            (page_rows, has_next), meta = fetch_topseller_page(cfg.SUCHBEGRIFF, offset, cfg.WARMUP_LISTING_URL)
+            try:
+                (page_rows, has_next), meta = fetch_topseller_page(cfg.SUCHBEGRIFF, offset, cfg.WARMUP_LISTING_URL)
+            except ListingFetchError as exc:
+                if not rows:
+                    initial_error = exc
+                listing_warnings.append(f"page {page} request failed ({type(exc).__name__}, HTTP {exc.status}); retaining prior pages")
+                print(f"[listing/{cfg.PRODUCT}][WARN] {listing_warnings[-1]}", flush=True)
+                break
             positions = [row["display_rank"] for row in page_rows]
             if positions != list(range(len(rows) + 1, len(rows) + len(page_rows) + 1)):
                 listing_warnings.append(f"page {page} has repeated, missing or out-of-order positions")
@@ -478,6 +487,45 @@ def run(cfg) -> dict[str, Any]:
             offset += organic
             if REQUEST_SLEEP > 0:
                 time.sleep(REQUEST_SLEEP)
+        if not rows:
+            listing_warnings.append("screen listing unavailable; trying existing API as final fallback; screen ranks are unverified")
+            print(f"[listing/{cfg.PRODUCT}][WARN] {listing_warnings[-1]}", flush=True)
+            organic_offset = 0
+            for page in range(1, LISTING_PAGES_TO_COLLECT + 1):
+                try:
+                    data, _ = fetch_json(build_everglades_url(cfg.SUCHBEGRIFF, organic_offset), cfg.WARMUP_LISTING_URL)
+                except ListingFetchError as exc:
+                    listing_warnings.append(f"fallback page {page} request failed (HTTP {exc.status}); retaining collected rows")
+                    print(f"[listing/{cfg.PRODUCT}][WARN] {listing_warnings[-1]}", flush=True)
+                    break
+                ranked = products_for_intent(data, "ranked")
+                sponsored = products_for_intent(data, "sponsored")
+                fallback_rows = []
+                for exposure, products in (("organic", ranked), ("sponsored", sponsored)):
+                    for product in products:
+                        vid = _text(product.get("bestVariationId"))
+                        fallback_rows.append({
+                            "source": "topseller_api_fallback", "page_number": page,
+                            "page_offset": organic_offset, "exposure_type": exposure,
+                            "product_id": _text(product.get("id")), "variation_id": vid,
+                            "product_url": ensure_variation_query(_abs_url(product.get("variationPath")), vid),
+                            "retailer_sku_name": _text(product.get("name")),
+                        })
+                if not fallback_rows:
+                    listing_warnings.append(f"fallback page {page} returned no products")
+                    print(f"[listing/{cfg.PRODUCT}][WARN] {listing_warnings[-1]}", flush=True)
+                    break
+                rows.extend(fallback_rows)
+                fallback_pages += 1
+                if not ranked:
+                    listing_warnings.append(f"fallback page {page} has no organic products to advance the offset")
+                    print(f"[listing/{cfg.PRODUCT}][WARN] {listing_warnings[-1]}", flush=True)
+                    break
+                organic_offset += len(ranked)
+                if REQUEST_SLEEP > 0:
+                    time.sleep(REQUEST_SLEEP)
+            if not rows and initial_error:
+                raise initial_error
         assign_exposure(rows)
 
         seen: set[str] = set()
@@ -536,7 +584,8 @@ def run(cfg) -> dict[str, Any]:
             "success": bool(rows),
             "listing_warnings": listing_warnings,
             "finished_at": finished_at,
-            "listing_pages_collected": len(tilelist_meta),
+            "listing_source": "topseller_api_fallback" if fallback_pages else "topseller_tilelist",
+            "listing_pages_collected": fallback_pages if fallback_pages else len(tilelist_meta),
             "listing_rows": len(rows),
             "unique_variation_ids": len(vids),
             "crocotile_returned": len(tiles),
