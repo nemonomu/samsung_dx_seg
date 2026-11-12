@@ -1,0 +1,12 @@
+[SEG] OTTO REF crawled
+
+총 수집 300 sku
+
+랭크 수집 현황
+  main_rank - 300/300
+  bsr_rank - 100/100
+
+전체 null 현황
+  summarized_review_content
+
+특이사항 없음

@@ -28,8 +28,10 @@
 | Unser Hero | Our Hero |
 | Premium Hero | Premium Hero |
 | Technik Highlights | Tech Highlights |
+| Pre-Sale | Pre-Sale |
 
 2026-09-18에 확인한 이미지 10종(색상·gesponsert 유무 변형 포함)을 등록했다.
+2026-11-12에 확인한 Pre-Sale 이미지 2종도 등록했다.
 OTTO Days는 영어 표기 자체는 유지할 수 있지만, 확인되지 않은 이미지 ID는
 자동 추측하지 않고 미등록으로 보고한다.
 

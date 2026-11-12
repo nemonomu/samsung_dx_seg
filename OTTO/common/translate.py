@@ -42,6 +42,7 @@ STICKER_TRANSLATIONS = {
     "Unser Hero": "Our Hero",
     "Premium Hero": "Premium Hero",
     "Technik Highlights": "Tech Highlights",
+    "Pre-Sale": "Pre-Sale",
     "OTTO Days": "OTTO Days",
 }
 

@@ -1,0 +1,75 @@
+{
+  "run_type": "listing",
+  "product": "TV",
+  "created_at": "2026-06-29T22:26:00+09:00",
+  "suchbegriff": "fernseher",
+  "listing_pages_collected": 5,
+  "listing_positions_per_page": 120,
+  "listing_rows": 600,
+  "unique_variation_ids": 472,
+  "crocotile_returned": 472,
+  "everglades_requests": [
+    {
+      "page": 1,
+      "offset": 0,
+      "http_status": 200,
+      "body_bytes": 109391,
+      "elapsed_seconds": 5.118
+    },
+    {
+      "page": 2,
+      "offset": 109,
+      "http_status": 200,
+      "body_bytes": 114569,
+      "elapsed_seconds": 2.428
+    },
+    {
+      "page": 3,
+      "offset": 218,
+      "http_status": 200,
+      "body_bytes": 111128,
+      "elapsed_seconds": 2.622
+    },
+    {
+      "page": 4,
+      "offset": 327,
+      "http_status": 200,
+      "body_bytes": 104912,
+      "elapsed_seconds": 4.507
+    },
+    {
+      "page": 5,
+      "offset": 436,
+      "http_status": 200,
+      "body_bytes": 111591,
+      "elapsed_seconds": 2.354
+    }
+  ],
+  "crocotile_requests": [
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 80,
+      "returned": 80
+    },
+    {
+      "requested": 72,
+      "returned": 72
+    }
+  ],
+  "output": "C:\\samsung_dx_seg\\OTTO\\tv\\data\\output\\otto_listing_topseller_rows.csv"
+}

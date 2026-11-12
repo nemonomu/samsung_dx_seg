@@ -7,7 +7,9 @@ def build_report(state, rows):
     counts, db = state.get("counts", {}), state.get("database", {})
     history = state.get("history_backfill", {})
     code = state.get("collection_exit_code", state.get("exit_code", 0))
-    outcome = "실패" if code in (3, 4, 5) else "확인 필요" if code else "완료"
+    unexpected_ids = counts.get("tile_unexpected_ids") or []
+    unidentified_rows = counts.get("tile_unidentified_rows") or 0
+    outcome = "실패" if code in (3, 4, 5) else "확인 필요" if code or unexpected_ids or unidentified_rows else "완료"
     mode = "CSV 재적재" if state.get("mode") == "load_only" else "수집"
     subject = f"[SEG] OTTO DRY {mode} {outcome}"
     main_count = sum(row.get("main_rank") not in (None, "") for row in rows)
@@ -20,6 +22,8 @@ def build_report(state, rows):
              f"제외 {counts.get('excluded', 0)} / 중복 {counts.get('duplicates', 0)}",
              f"상품 실패 {counts.get('item_failures', 0)} / 요청 오류 상품 {counts.get('request_error_items', 0)}"
              f" / 추출 오류 상품 {counts.get('extraction_error_items', 0)} / 가격 경고 {counts.get('price_warning_items', 0)}",
+             *([f"목록 보강 응답: 미요청 옵션 {len(unexpected_ids)}개: {', '.join(unexpected_ids)}"
+                f" / 옵션 ID 미확인 {unidentified_rows}건"] if unexpected_ids or unidentified_rows else []),
              f"DB: {state.get('db_status', 'not_started')} / 삽입 {db.get('inserted', 0)} / 중복 {db.get('duplicates', 0)}",
              f"과거 DB 보충: {history.get('status', 'not_started')} / {history.get('recovered_rows', 0)}개 상품",
              *[f"  {field}: 보충 {history.get('recovered_fields', {}).get(field, 0)} / 최종 NULL "

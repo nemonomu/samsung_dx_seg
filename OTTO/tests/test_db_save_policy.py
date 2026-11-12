@@ -79,7 +79,7 @@ class OttoDbSavePolicyTests(unittest.TestCase):
         self.assertIn("not found", manifest["reason"])
         cursor.executemany.assert_not_called()
 
-    def test_tv_hdr_stays_null_while_other_fields_use_history(self) -> None:
+    def test_tv_hdr_and_other_missing_fields_use_history(self) -> None:
         power = "estimated_annual_electricity_use"
         rows = [
             {
@@ -118,10 +118,11 @@ class OttoDbSavePolicyTests(unittest.TestCase):
         insert_cursor.executemany.assert_called_once()
         inserted = [dict(zip(manifest["inserted_columns"], values))
                     for values in insert_cursor.executemany.call_args.args[1]]
-        self.assertEqual([row[power] for row in inserted], [None, "10 W", "28 W"])
-        self.assertEqual([row[power] for row in saved_rows], ["", "10 W", "28 W"])
+        self.assertEqual([row[power] for row in inserted], ["5.3 W", "10 W", "28 W"])
+        self.assertEqual([row[power] for row in saved_rows], ["5.3 W", "10 W", "28 W"])
         self.assertEqual((inserted[0]["sku"], inserted[0]["screen_size"]), ("MODEL-55", "55"))
-        self.assertEqual(manifest["last_known_db_backfill"]["recovered_fields"], {"sku": 1, "screen_size": 1})
+        self.assertEqual(manifest["last_known_db_backfill"]["recovered_fields"],
+                         {"sku": 1, "screen_size": 1, power: 1})
 
     def test_missing_specs_warn_only_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

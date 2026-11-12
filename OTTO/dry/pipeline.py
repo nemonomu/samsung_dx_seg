@@ -115,6 +115,8 @@ def select_targets(client, events, state, listing_rows):
                 tiles = client.tiles(list(dict.fromkeys(t["variation_id"] for t, _ in pending)))
             finally:
                 stats["tile_http_400_failures"] = getattr(client, "tile_http_400_failures", 0)
+                stats["tile_unexpected_ids"] = list(getattr(client, "tile_unexpected_ids", []))
+                stats["tile_unidentified_rows"] = getattr(client, "tile_unidentified_rows", 0)
             for target, decision in pending:
                 tile = tiles.get(target["variation_id"])
                 if tile is None:
@@ -323,7 +325,8 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
         else:
             state["db_status"] = "skipped_empty"
         if state.get("history_backfill", {}).get("error") or any(state.get("counts", {}).get(k) for k in
-                ("item_failures", "request_error_items", "extraction_error_items", "price_warning_items")):
+                ("item_failures", "request_error_items", "extraction_error_items", "price_warning_items",
+                 "tile_unexpected_ids", "tile_unidentified_rows")):
             code = 2
     except (Exception, KeyboardInterrupt) as exc:
         reason = str(exc) if isinstance(exc, config.DryError) else type(exc).__name__

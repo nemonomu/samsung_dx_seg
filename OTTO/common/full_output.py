@@ -482,7 +482,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             # star rating: per-variation, from the review page ONLY (Kasada-free, matches
             # the actual product page). The crocotile listing aggregate over-counts (it is a
             # model-level number projected onto every variation tile), so it is NOT used.
-            # Missing/failed fields remain NULL. Only proven unrated pages yield 0.
+            # Missing/failed fields remain NULL; a proven empty review count is 0.
             count_reviews = review.get("rating_count")
             star_rating = review.get("average_rating")
             print(json.dumps({"event": "review_rating_final", "product": cfg.PRODUCT,

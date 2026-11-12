@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import test_dry as base
-from dry import client, fields, pipeline, storage
+from dry import client, fields, notify, pipeline, storage
 from dry.events import Events
 
 
@@ -165,6 +165,75 @@ class ReuseTests(base.Offline):
             self.assertEqual(c.tiles(["v1"]),{})
             self.assertIn("v1",c.tiles(["v1"]))
             self.assertEqual(request.call_count,2)
+
+    def test_unrequested_tile_is_reported_without_discarding_requested_product(self):
+        log = base.Log()
+        c = client.Client(log)
+        data = [dict(variationId="v1", name="Trockner A", price={"retailPrice": "100"}),
+                dict(variationId="other", name="Trockner B", price={"retailPrice": "200"})]
+        with patch.object(c, "fetch", return_value=(data, {})):
+            result = c.tiles(["v1"])
+        self.assertEqual(set(result), {"v1"})
+        self.assertEqual(result["v1"]["final_sku_price"], "100 €")
+        self.assertNotIn("other", c.tile_cache)
+        self.assertTrue(any(event == "failure" and values.get("variation_id") == "other"
+                            and values.get("reason") == "unexpected_tile_option"
+                            for event, values in log.records))
+
+    def test_unidentified_tiles_are_counted_without_discarding_requested_product(self):
+        log = base.Log()
+        c = client.Client(log)
+        data = [dict(variationId="v1", name="Trockner A", price={"retailPrice": "100"}),
+                dict(name="Trockner B"), dict(variationId="", name="Trockner C")]
+        with patch.object(c, "fetch", return_value=(data, {})):
+            result = c.tiles(["v1"])
+        self.assertEqual(set(result), {"v1"})
+        self.assertEqual(result["v1"]["final_sku_price"], "100 €")
+        self.assertTrue(any(event == "failure" and values.get("reason") == "tile_option_id_missing"
+                            and values.get("count") == 2 for event, values in log.records))
+
+    def test_tile_anomalies_are_reported_while_valid_products_continue(self):
+        log = base.Log()
+        c = client.Client(log)
+        source = base.Source([[base.target(1)]])
+        c.page, c.comparison, c.pdf, c.rating = source.page, source.comparison, source.pdf, source.rating
+        data = [dict(variationId="v1", name="Trockner DR0001", price={"retailPrice": "100"}),
+                dict(variationId="other", name="Trockner X"), dict(name="Trockner unknown")]
+        run = state(1)
+        with patch.object(c, "fetch", return_value=(data, {})):
+            rows = pipeline.collect(c, log, run, lambda _: None)
+        self.assertEqual([row["item"] for row in rows], ["1"])
+        self.assertEqual(run["counts"]["tile_unexpected_ids"], ["other"])
+        self.assertEqual(run["counts"]["tile_unidentified_rows"], 1)
+        subject, body = notify.build_report(run, rows)
+        self.assertIn("확인 필요", subject)
+        self.assertIn("other", body)
+        self.assertIn("옵션 ID 미확인 1건", body)
+
+    def test_tile_anomalies_do_not_prevent_storage_and_reach_notification(self):
+        source = base.Source([[base.target(1)]])
+        data = [dict(variationId="v1", name="Trockner DR0001", price={"retailPrice": "100"}),
+                dict(variationId="other", name="Trockner X"), dict(name="Trockner unknown")]
+        def factory(events):
+            c = client.Client(events)
+            c.page, c.comparison, c.pdf, c.rating = source.page, source.comparison, source.pdf, source.rating
+            c.fetch = MagicMock(return_value=(data, {}))
+            return c
+        database = MagicMock(side_effect=lambda table, events, rows=None:
+                             {"status": "loaded", "inserted": len(rows), "duplicates": 0} if rows else {})
+        reports = []
+        def notifier(state, rows):
+            reports.append(notify.build_report(state, rows))
+            return {"status": "sent", "sent": True}
+        with tempfile.TemporaryDirectory() as root, patch("sys.stdout", new=io.StringIO()):
+            code, result = pipeline.execute(limit=1, output_root=root, client_factory=factory,
+                database=database, backfill=lambda table, events, rows: {}, notifier=notifier)
+        self.assertEqual(code, 2)
+        self.assertEqual(result["database"]["inserted"], 1)
+        self.assertEqual(database.call_count, 2)
+        self.assertEqual(database.call_args.args[2][0]["item"], "1")
+        self.assertIn("확인 필요", reports[0][0])
+        self.assertIn("미요청 옵션 1개: other / 옵션 ID 미확인 1건", reports[0][1])
 
     def test_duplicate_tile_is_rejected_without_discarding_other_options(self):
         log = base.Log()

@@ -31,7 +31,9 @@ CLI가 환경변수 `OTTO_DRY_LIMIT`, `OTTO_DRY_TABLE`, `OTTO_DRY_OUTPUT_ROOT`�
 허용 수량은 1~300이며 범위 밖 설정은 사이트·DB 요청 전에 거부한다. 시작 로그의 `target`과 `bsr_limit`에 실제 적용값을 표시한다.
 시작 로그의 `table`을 확인한다. 기존 `OTTO_DRY_TABLE` 환경변수가 있으면 기본 테이블보다 우선하므로 테스트 대상으로 설정돼 있지 않은지 확인한다. 비밀 설정 파일을 출력할 필요는 없다.
 
-현재 통합 실행기에는 OTTO DRY가 포함되지 않는다. 위 단독 BAT로 실행한다.
+전체 실행은 프로젝트 루트에서 `call run_seg_all.bat`를 사용한다.
+MMKT TV → OTTO TV → MMKT REF → OTTO REF → MMKT LDY → OTTO LDY → MMKT DRY → OTTO DRY 순서다.
+단독 BAT와 통합 실행은 같은 `dry/run.py`를 사용하며 실행당 메일 보고를 한 번만 시도한다.
 
 기존 CSV 재적재: 실행 마지막에 출력된 **실제 CSV 경로**를 넣는다.
 

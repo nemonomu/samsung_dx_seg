@@ -1,0 +1,12 @@
+{
+  "run_type": "final_targets",
+  "product": "REF",
+  "input_rows": 600,
+  "excluded_rows": 30,
+  "final_target_rows": 300,
+  "main_target_unique": 300,
+  "main_target_shortfall": 0,
+  "bsr_rank_limit": 100,
+  "bsr_tagged_rows": 100,
+  "output": "C:\\samsung_dx_seg\\OTTO\\ref\\data\\output\\otto_final_targets.csv"
+}

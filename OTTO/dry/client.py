@@ -39,6 +39,8 @@ class Client:
         self.last_page_meta = {}
         self.pdf_timeout = pdf_timeout
         self.tile_http_400_failures = 0  # Run total for diagnostics, never the abort counter.
+        self.tile_unexpected_ids = []
+        self.tile_unidentified_rows = 0
 
     def fetch(self, url, endpoint, *, kind="html", headers=None, attempts=None):
         attempts = attempts or self.attempts
@@ -171,6 +173,16 @@ class Client:
         if not isinstance(data, list) or any(not isinstance(t, dict) for t in data):
             raise RequestFailure("tile_contract_changed")
         counts = Counter(str(tile.get("variationId") or "") for tile in data)
+        if counts[""]:
+            self.tile_unidentified_rows += counts[""]
+            self.events.emit("failure", stage="listing", reason="tile_option_id_missing",
+                             count=counts[""], row_saved=False)
+        for vid in counts:
+            if vid and vid not in needed:
+                if vid not in self.tile_unexpected_ids:
+                    self.tile_unexpected_ids.append(vid)
+                self.events.emit("failure", stage="listing", variation_id=vid,
+                                 reason="unexpected_tile_option", row_saved=False)
         for vid in needed:
             if counts[vid] > 1:
                 self.events.emit("failure", stage="listing", variation_id=vid,

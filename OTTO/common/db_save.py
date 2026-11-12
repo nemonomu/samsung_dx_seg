@@ -118,9 +118,7 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
                     rows=rows,
                     account_names=(cfg.ACCOUNT_NAME,),
                     product=cfg.PRODUCT,
-                    # OTTO history has no option-level evidence that a stored value came from the HDR row.
-                    fields=("sku", *(field for field in spec_fields
-                                     if field != "estimated_annual_electricity_use")),
+                    fields=("sku", *cfg.SPEC_FIELDS),
                 )
                 manifest["last_known_db_backfill"] = last_known
                 manifest.update(

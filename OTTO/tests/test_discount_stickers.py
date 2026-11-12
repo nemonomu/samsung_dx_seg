@@ -29,6 +29,7 @@ class DiscountStickerTests(unittest.TestCase):
             "mpp360_130783_162313": "Deal of the month", "mpp360_130598_161988": "Deal of the week",
             "mpp360_134491_167816": "Our Hero", "mpp360_435551_1031782": "Our Hero",
             "mpp360_258249_414645": "Premium Hero", "mpp360_292558_476572": "Tech Highlights",
+            "mpp360_340188_600459": "Pre-Sale", "mpp360_448335_1090761": "Pre-Sale",
         }
         for asset, english in expected.items():
             with self.subTest(asset=asset):

@@ -1,0 +1,3016 @@
+{
+  "run_type": "full_output",
+  "product": "REF",
+  "created_at": "2026-06-30T00:16:07+09:00",
+  "batch_id": "o_20260629_232502",
+  "output_rows": 300,
+  "spec_fields": [
+    "ref_refrigerator_type",
+    "ref_capacity"
+  ],
+  "use_datasheet": true,
+  "pdp_supplement": "none",
+  "output": "C:\\samsung_dx_seg\\OTTO\\ref\\data\\output\\otto_full_output.csv",
+  "attempts": [
+    {
+      "rank": "1",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "375 l"
+      }
+    },
+    {
+      "rank": "2",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "409 l"
+      }
+    },
+    {
+      "rank": "3",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "419 l"
+      }
+    },
+    {
+      "rank": "4",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "341 l"
+      }
+    },
+    {
+      "rank": "5",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "269 l"
+      }
+    },
+    {
+      "rank": "6",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "175 l"
+      }
+    },
+    {
+      "rank": "7",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "492 l"
+      }
+    },
+    {
+      "rank": "8",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "506 l"
+      }
+    },
+    {
+      "rank": "9",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "260 l"
+      }
+    },
+    {
+      "rank": "10",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "512 l"
+      }
+    },
+    {
+      "rank": "11",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "242 l"
+      }
+    },
+    {
+      "rank": "12",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "532 l"
+      }
+    },
+    {
+      "rank": "13",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "251 l"
+      }
+    },
+    {
+      "rank": "14",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "76 l"
+      }
+    },
+    {
+      "rank": "15",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "60 l"
+      }
+    },
+    {
+      "rank": "16",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "315 l"
+      }
+    },
+    {
+      "rank": "17",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "242 l"
+      }
+    },
+    {
+      "rank": "18",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "522 l"
+      }
+    },
+    {
+      "rank": "19",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "175 l"
+      }
+    },
+    {
+      "rank": "20",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "134 l"
+      }
+    },
+    {
+      "rank": "21",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "614 l"
+      }
+    },
+    {
+      "rank": "22",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "635 l"
+      }
+    },
+    {
+      "rank": "23",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "313 l"
+      }
+    },
+    {
+      "rank": "24",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "25",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "108 l"
+      }
+    },
+    {
+      "rank": "26",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "574 l"
+      }
+    },
+    {
+      "rank": "27",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "414 l"
+      }
+    },
+    {
+      "rank": "28",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "541 l"
+      }
+    },
+    {
+      "rank": "29",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "577 l"
+      }
+    },
+    {
+      "rank": "30",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "323 l"
+      }
+    },
+    {
+      "rank": "31",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "173 l"
+      }
+    },
+    {
+      "rank": "32",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "89 l"
+      }
+    },
+    {
+      "rank": "33",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "363 l"
+      }
+    },
+    {
+      "rank": "34",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "117 l"
+      }
+    },
+    {
+      "rank": "35",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "641 l"
+      }
+    },
+    {
+      "rank": "36",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "128 l"
+      }
+    },
+    {
+      "rank": "37",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "38",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "260 l"
+      }
+    },
+    {
+      "rank": "39",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "268 l"
+      }
+    },
+    {
+      "rank": "40",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "362 l"
+      }
+    },
+    {
+      "rank": "41",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "419 l"
+      }
+    },
+    {
+      "rank": "42",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "206 l"
+      }
+    },
+    {
+      "rank": "43",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "206 l"
+      }
+    },
+    {
+      "rank": "44",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "45",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "51 l"
+      }
+    },
+    {
+      "rank": "46",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "47",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "442 l"
+      }
+    },
+    {
+      "rank": "48",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "49",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "175 l"
+      }
+    },
+    {
+      "rank": "50",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "51",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "75 l"
+      }
+    },
+    {
+      "rank": "52",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "387 l"
+      }
+    },
+    {
+      "rank": "53",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "506 l"
+      }
+    },
+    {
+      "rank": "54",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "55",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "513 l"
+      }
+    },
+    {
+      "rank": "56",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "133 l"
+      }
+    },
+    {
+      "rank": "57",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "640 l"
+      }
+    },
+    {
+      "rank": "58",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "304 l"
+      }
+    },
+    {
+      "rank": "59",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "60",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "532 l"
+      }
+    },
+    {
+      "rank": "61",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "62",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "398 l"
+      }
+    },
+    {
+      "rank": "63",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "64",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "157 l"
+      }
+    },
+    {
+      "rank": "65",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "66",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "442 l"
+      }
+    },
+    {
+      "rank": "67",
+      "datasheet_status": 200,
+      "reco": 11,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "343 l"
+      }
+    },
+    {
+      "rank": "68",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "485 l"
+      }
+    },
+    {
+      "rank": "69",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "61 l"
+      }
+    },
+    {
+      "rank": "70",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "321 l"
+      }
+    },
+    {
+      "rank": "71",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "173 l"
+      }
+    },
+    {
+      "rank": "72",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "375 l"
+      }
+    },
+    {
+      "rank": "73",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "262 l"
+      }
+    },
+    {
+      "rank": "74",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "300 l"
+      }
+    },
+    {
+      "rank": "75",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "628 l"
+      }
+    },
+    {
+      "rank": "76",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "77",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": "129 l"
+      }
+    },
+    {
+      "rank": "78",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "508 l"
+      }
+    },
+    {
+      "rank": "79",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "231 l"
+      }
+    },
+    {
+      "rank": "80",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "81",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "34 l"
+      }
+    },
+    {
+      "rank": "82",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "645 l"
+      }
+    },
+    {
+      "rank": "83",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "90 l"
+      }
+    },
+    {
+      "rank": "84",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "592 l"
+      }
+    },
+    {
+      "rank": "85",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "86",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "636 l"
+      }
+    },
+    {
+      "rank": "87",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "82 l"
+      }
+    },
+    {
+      "rank": "88",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "614 l"
+      }
+    },
+    {
+      "rank": "89",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "628 l"
+      }
+    },
+    {
+      "rank": "90",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "291 l"
+      }
+    },
+    {
+      "rank": "91",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "632 l"
+      }
+    },
+    {
+      "rank": "92",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "638 l"
+      }
+    },
+    {
+      "rank": "93",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "242 l"
+      }
+    },
+    {
+      "rank": "94",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "387 l"
+      }
+    },
+    {
+      "rank": "95",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "96",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "628 l"
+      }
+    },
+    {
+      "rank": "97",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "390 l"
+      }
+    },
+    {
+      "rank": "98",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "81 l"
+      }
+    },
+    {
+      "rank": "99",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "127 l"
+      }
+    },
+    {
+      "rank": "100",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "605 l"
+      }
+    },
+    {
+      "rank": "101",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "617 l"
+      }
+    },
+    {
+      "rank": "102",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "103",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "85 l"
+      }
+    },
+    {
+      "rank": "104",
+      "datasheet_status": 200,
+      "reco": 18,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "346 l"
+      }
+    },
+    {
+      "rank": "105",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "90 l"
+      }
+    },
+    {
+      "rank": "106",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "14 l"
+      }
+    },
+    {
+      "rank": "107",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": "197 l"
+      }
+    },
+    {
+      "rank": "108",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "562 l"
+      }
+    },
+    {
+      "rank": "109",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "530 l"
+      }
+    },
+    {
+      "rank": "110",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "439 l"
+      }
+    },
+    {
+      "rank": "111",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "108 l"
+      }
+    },
+    {
+      "rank": "112",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "255 l"
+      }
+    },
+    {
+      "rank": "113",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "120 l"
+      }
+    },
+    {
+      "rank": "114",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "46 l"
+      }
+    },
+    {
+      "rank": "115",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "42 l"
+      }
+    },
+    {
+      "rank": "116",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "242 l"
+      }
+    },
+    {
+      "rank": "117",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "90 l"
+      }
+    },
+    {
+      "rank": "118",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "659 l"
+      }
+    },
+    {
+      "rank": "119",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "495 l"
+      }
+    },
+    {
+      "rank": "120",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "127 l"
+      }
+    },
+    {
+      "rank": "121",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "634 l"
+      }
+    },
+    {
+      "rank": "122",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "70 l"
+      }
+    },
+    {
+      "rank": "123",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "414 l"
+      }
+    },
+    {
+      "rank": "124",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "115 l"
+      }
+    },
+    {
+      "rank": "125",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "386 l"
+      }
+    },
+    {
+      "rank": "126",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "421 l"
+      }
+    },
+    {
+      "rank": "127",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "578 l"
+      }
+    },
+    {
+      "rank": "128",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "79 l"
+      }
+    },
+    {
+      "rank": "129",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Wine Cooler",
+        "ref_capacity": "78 l"
+      }
+    },
+    {
+      "rank": "130",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "72 l"
+      }
+    },
+    {
+      "rank": "131",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "282 l"
+      }
+    },
+    {
+      "rank": "132",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "343 l"
+      }
+    },
+    {
+      "rank": "133",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "229 l"
+      }
+    },
+    {
+      "rank": "134",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "115 l"
+      }
+    },
+    {
+      "rank": "135",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "351 l"
+      }
+    },
+    {
+      "rank": "136",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "377 l"
+      }
+    },
+    {
+      "rank": "137",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "242 l"
+      }
+    },
+    {
+      "rank": "138",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "442 l"
+      }
+    },
+    {
+      "rank": "139",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "14 l"
+      }
+    },
+    {
+      "rank": "140",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "483 l"
+      }
+    },
+    {
+      "rank": "141",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "142",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "143",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "144",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "532 l"
+      }
+    },
+    {
+      "rank": "145",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "113 l"
+      }
+    },
+    {
+      "rank": "146",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "456 l"
+      }
+    },
+    {
+      "rank": "147",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "375 l"
+      }
+    },
+    {
+      "rank": "148",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "360 l"
+      }
+    },
+    {
+      "rank": "149",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "372 l"
+      }
+    },
+    {
+      "rank": "150",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "304 l"
+      }
+    },
+    {
+      "rank": "151",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "398 l"
+      }
+    },
+    {
+      "rank": "152",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "249 l"
+      }
+    },
+    {
+      "rank": "153",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "28 l"
+      }
+    },
+    {
+      "rank": "154",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "155",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "156",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": "110 l"
+      }
+    },
+    {
+      "rank": "157",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "158",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "211 l"
+      }
+    },
+    {
+      "rank": "159",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "372 l"
+      }
+    },
+    {
+      "rank": "160",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "386 l"
+      }
+    },
+    {
+      "rank": "161",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "88 l"
+      }
+    },
+    {
+      "rank": "162",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": "189 l"
+      }
+    },
+    {
+      "rank": "163",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "164",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "592 l"
+      }
+    },
+    {
+      "rank": "165",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "91 l"
+      }
+    },
+    {
+      "rank": "166",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "331 l"
+      }
+    },
+    {
+      "rank": "167",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "490 l"
+      }
+    },
+    {
+      "rank": "168",
+      "datasheet_status": 200,
+      "reco": 10,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "399 l"
+      }
+    },
+    {
+      "rank": "169",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "45 l"
+      }
+    },
+    {
+      "rank": "170",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "336 l"
+      }
+    },
+    {
+      "rank": "171",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "355 l"
+      }
+    },
+    {
+      "rank": "172",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "173",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "174",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "386 l"
+      }
+    },
+    {
+      "rank": "175",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "375 l"
+      }
+    },
+    {
+      "rank": "176",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "244 l"
+      }
+    },
+    {
+      "rank": "177",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "384 l"
+      }
+    },
+    {
+      "rank": "178",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "218 l"
+      }
+    },
+    {
+      "rank": "179",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "466 l"
+      }
+    },
+    {
+      "rank": "180",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "516 l"
+      }
+    },
+    {
+      "rank": "181",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "45 l"
+      }
+    },
+    {
+      "rank": "182",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "578 l"
+      }
+    },
+    {
+      "rank": "183",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "486 l"
+      }
+    },
+    {
+      "rank": "184",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "81 l"
+      }
+    },
+    {
+      "rank": "185",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "109 l"
+      }
+    },
+    {
+      "rank": "186",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "355 l"
+      }
+    },
+    {
+      "rank": "187",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "125 l"
+      }
+    },
+    {
+      "rank": "188",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "387 l"
+      }
+    },
+    {
+      "rank": "189",
+      "datasheet_status": null,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Freezer",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "190",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "621 l"
+      }
+    },
+    {
+      "rank": "191",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "192",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "193",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "375 l"
+      }
+    },
+    {
+      "rank": "194",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "474 l"
+      }
+    },
+    {
+      "rank": "195",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": "209 l"
+      }
+    },
+    {
+      "rank": "196",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "316 l"
+      }
+    },
+    {
+      "rank": "197",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "218 l"
+      }
+    },
+    {
+      "rank": "198",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "199",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "108 l"
+      }
+    },
+    {
+      "rank": "200",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "343 l"
+      }
+    },
+    {
+      "rank": "201",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "230 l"
+      }
+    },
+    {
+      "rank": "202",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "262 l"
+      }
+    },
+    {
+      "rank": "203",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "204",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "205",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "495 l"
+      }
+    },
+    {
+      "rank": "206",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "512 l"
+      }
+    },
+    {
+      "rank": "207",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "115 l"
+      }
+    },
+    {
+      "rank": "208",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": "118 l"
+      }
+    },
+    {
+      "rank": "209",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "60 l"
+      }
+    },
+    {
+      "rank": "210",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "262 l"
+      }
+    },
+    {
+      "rank": "211",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "642 l"
+      }
+    },
+    {
+      "rank": "212",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": "82 l"
+      }
+    },
+    {
+      "rank": "213",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "442 l"
+      }
+    },
+    {
+      "rank": "214",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "641 l"
+      }
+    },
+    {
+      "rank": "215",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "615 l"
+      }
+    },
+    {
+      "rank": "216",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "217",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "126 l"
+      }
+    },
+    {
+      "rank": "218",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "107 l"
+      }
+    },
+    {
+      "rank": "219",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "343 l"
+      }
+    },
+    {
+      "rank": "220",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "485 l"
+      }
+    },
+    {
+      "rank": "221",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "442 l"
+      }
+    },
+    {
+      "rank": "222",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": "506 l"
+      }
+    },
+    {
+      "rank": "223",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "109 l"
+      }
+    },
+    {
+      "rank": "224",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "206 l"
+      }
+    },
+    {
+      "rank": "225",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "109 l"
+      }
+    },
+    {
+      "rank": "226",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "419 l"
+      }
+    },
+    {
+      "rank": "227",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "92 l"
+      }
+    },
+    {
+      "rank": "228",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "18 l"
+      }
+    },
+    {
+      "rank": "229",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "206 l"
+      }
+    },
+    {
+      "rank": "230",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "230 l"
+      }
+    },
+    {
+      "rank": "231",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "126 l"
+      }
+    },
+    {
+      "rank": "232",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "355 l"
+      }
+    },
+    {
+      "rank": "233",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "387 l"
+      }
+    },
+    {
+      "rank": "234",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "566 l"
+      }
+    },
+    {
+      "rank": "235",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "512 l"
+      }
+    },
+    {
+      "rank": "236",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "390 l"
+      }
+    },
+    {
+      "rank": "237",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "238",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "467 l"
+      }
+    },
+    {
+      "rank": "239",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "240",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "333 l"
+      }
+    },
+    {
+      "rank": "241",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "578 l"
+      }
+    },
+    {
+      "rank": "242",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "48 l"
+      }
+    },
+    {
+      "rank": "243",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "334 l"
+      }
+    },
+    {
+      "rank": "244",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "46 l"
+      }
+    },
+    {
+      "rank": "245",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "355 l"
+      }
+    },
+    {
+      "rank": "246",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "247",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "402 l"
+      }
+    },
+    {
+      "rank": "248",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "510 l"
+      }
+    },
+    {
+      "rank": "249",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "401 l"
+      }
+    },
+    {
+      "rank": "250",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "218 l"
+      }
+    },
+    {
+      "rank": "251",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "252",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "527 l"
+      }
+    },
+    {
+      "rank": "253",
+      "datasheet_status": 200,
+      "reco": 11,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "399 l"
+      }
+    },
+    {
+      "rank": "254",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "463 l"
+      }
+    },
+    {
+      "rank": "255",
+      "datasheet_status": 200,
+      "reco": 0,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "406 l"
+      }
+    },
+    {
+      "rank": "256",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "387 l"
+      }
+    },
+    {
+      "rank": "257",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": "181 l"
+      }
+    },
+    {
+      "rank": "258",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "259",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Built-in Refrigerator",
+        "ref_capacity": "199 l"
+      }
+    },
+    {
+      "rank": "260",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "439 l"
+      }
+    },
+    {
+      "rank": "261",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "262",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Multi Door",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "263",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "264",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "370 l"
+      }
+    },
+    {
+      "rank": "265",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "256 l"
+      }
+    },
+    {
+      "rank": "266",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "330 l"
+      }
+    },
+    {
+      "rank": "267",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "382 l"
+      }
+    },
+    {
+      "rank": "268",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "269",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "415 l"
+      }
+    },
+    {
+      "rank": "270",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "94 l"
+      }
+    },
+    {
+      "rank": "271",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "538 l"
+      }
+    },
+    {
+      "rank": "272",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "273",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "111 l"
+      }
+    },
+    {
+      "rank": "274",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "260 l"
+      }
+    },
+    {
+      "rank": "275",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "41 l"
+      }
+    },
+    {
+      "rank": "276",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "415 l"
+      }
+    },
+    {
+      "rank": "277",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "628 l"
+      }
+    },
+    {
+      "rank": "278",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "477 l"
+      }
+    },
+    {
+      "rank": "279",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "206 l"
+      }
+    },
+    {
+      "rank": "280",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "413 l"
+      }
+    },
+    {
+      "rank": "281",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "265 l"
+      }
+    },
+    {
+      "rank": "282",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "634 l"
+      }
+    },
+    {
+      "rank": "283",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": "66 l"
+      }
+    },
+    {
+      "rank": "284",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "426 l"
+      }
+    },
+    {
+      "rank": "285",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "286",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "287",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "674 l"
+      }
+    },
+    {
+      "rank": "288",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "521 l"
+      }
+    },
+    {
+      "rank": "289",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "363 l"
+      }
+    },
+    {
+      "rank": "290",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "256 l"
+      }
+    },
+    {
+      "rank": "291",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "174 l"
+      }
+    },
+    {
+      "rank": "292",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Side by Side",
+        "ref_capacity": "528 l"
+      }
+    },
+    {
+      "rank": "293",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "538 l"
+      }
+    },
+    {
+      "rank": "294",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "414 l"
+      }
+    },
+    {
+      "rank": "295",
+      "datasheet_status": null,
+      "reco": 0,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "296",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "654 l"
+      }
+    },
+    {
+      "rank": "297",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Refrigerator",
+        "ref_capacity": null
+      }
+    },
+    {
+      "rank": "298",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "211 l"
+      }
+    },
+    {
+      "rank": "299",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "Fridge-freezer Combination",
+        "ref_capacity": "85 l"
+      }
+    },
+    {
+      "rank": "300",
+      "datasheet_status": 200,
+      "reco": 20,
+      "review_status": 200,
+      "spec": {
+        "ref_refrigerator_type": "French Door",
+        "ref_capacity": "435 l"
+      }
+    }
+  ]
+}

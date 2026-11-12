@@ -27,6 +27,8 @@ STICKER_LABELS = {
     "mpp360_435551_1031782": "Unser Hero",
     "mpp360_258249_414645": "Premium Hero",
     "mpp360_292558_476572": "Technik Highlights",
+    "mpp360_340188_600459": "Pre-Sale",
+    "mpp360_448335_1090761": "Pre-Sale",
 }
 _IMAGE_EXTENSIONS = {
     "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",

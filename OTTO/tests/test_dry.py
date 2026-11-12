@@ -282,12 +282,12 @@ class ClientTests(Offline):
             self.assertEqual(fetch.call_count, 1)
             self.assertEqual(fetch.call_args.args[0], "https://www.otto.de/kundenbewertungen/100/")
 
-    def test_unrated_only_explicit_zero(self):
+    def test_unrated_without_score_keeps_average_null(self):
         c = client.Client(Log())
         body = '<div class="js_pdp_cr_sidebar__noReviewsText">Für diesen Artikel wurde noch keine Bewertung abgegeben.</div>'.encode()
         with patch.object(c, "fetch", return_value=(body, {"status": 200})):
             value = c.rating("100")
-        self.assertEqual((value["average_rating"], value["rating_count"], value["rating_state"]), ("0.0", 0, "unrated"))
+        self.assertEqual((value["average_rating"], value["rating_count"], value["rating_state"]), (None, 0, "unrated"))
 
     def test_rating_failure_preserves_independent_field(self):
         for body, expected in ((rating_document(mean="bad"), (None, 123)),
@@ -610,6 +610,7 @@ class PipelineTests(Offline):
         cases = (
             ([rating_document()], ("4.3", "123", "rated")),
             ([rating_document(mean="0", count="0")], ("0.0", "0", "unrated")),
+            ([b'<div class="js_pdp_cr_sidebar__noReviewsText">F\xc3\xbcr diesen Artikel wurde noch keine Bewertung abgegeben.</div>'], ("", "0", "unrated")),
             ([rating_document(count="bad")], ("4.3", "", "failed")),
             ([rating_document(mean="bad")], ("", "123", "failed")),
             ([rating_document(mean="bad", count="0"), rating_document(count="bad")], ("4.3", "", "failed")),
