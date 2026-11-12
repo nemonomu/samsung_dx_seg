@@ -29,6 +29,46 @@ def washer(vid, model, rank=1, pid="2048348958"):
 
 
 class VariationIdentityTests(unittest.TestCase):
+    def test_ldy_capacity_priority_matches_pdf_fetch_decision(self):
+        cases = (
+            ("Waschmaschine 9 kg", "Waschmaschine 10 kg", "11 kg", "8 kg", "9 kg", False),
+            ("Waschmaschine", "Waschmaschine 10 kg", "11 kg", "8 kg", "10 kg", False),
+            ("Waschmaschine", "Waschmaschine", "11 kg", "8 kg", "11 kg", False),
+            ("Waschmaschine", "Waschmaschine", None, "8 kg", "8 kg", False),
+            ("Waschtrockner", "Waschtrockner", None, "6 kg", "9 kg", True),
+        )
+        for name, listing_name, top, comparison, expected, needs_pdf in cases:
+            with self.subTest(name=name, listing=listing_name, top=top):
+                target = washer("v1", "MODEL1234")
+                target["retailer_sku_name"] = listing_name
+                target["top_infos"] = json.dumps({"Kapazität Waschen": top})
+                chars = {"v1": {"_name": name, "Modellbezeichnung": "MODEL1234",
+                                "Fassungsvermögen": comparison}}
+                with patch.object(compare, "characteristics_map", return_value=chars), \
+                        patch.object(ldy, "_category_vids", return_value=set()), \
+                        patch.object(datasheet, "fetch_datasheet_bytes", return_value=(b"pdf", 200, None)) as fetch, \
+                        patch.object(datasheet, "parse", return_value={"text": "Nennkapazität 9"}):
+                    ctx = ldy.prepare_context([target])
+                self.assertEqual(fetch.call_count, int(needs_pdf))
+                self.assertEqual(ldy.extract_spec(target, {}, ctx)["ldy_capacity"], expected)
+
+    def test_ldy_washer_dryer_capacity_uses_wash_label_or_stays_null(self):
+        for extra, expected, pdf_calls in (
+            ({"Nennkapazität (Waschen)": "10 kg", "Fassungsvermögen": "6 kg"}, "10 kg", 0),
+            ({"Fassungsvermögen": "6 kg"}, None, 1),
+        ):
+            with self.subTest(extra=extra):
+                target = washer("v1", "MODEL1234")
+                target.update(retailer_sku_name="Waschtrockner", top_infos="{}")
+                chars = {"v1": {"_name": "Waschtrockner", "Modellbezeichnung": "MODEL1234", **extra}}
+                with patch.object(compare, "characteristics_map", return_value=chars), \
+                        patch.object(ldy, "_category_vids", return_value=set()), \
+                        patch.object(datasheet, "fetch_datasheet_bytes", return_value=(b"pdf", 200, None)) as fetch, \
+                        patch.object(datasheet, "parse", return_value={}):
+                    ctx = ldy.prepare_context([target])
+                self.assertEqual(fetch.call_count, pdf_calls)
+                self.assertEqual(ldy.extract_spec(target, {}, ctx)["ldy_capacity"], expected)
+
     def test_ldy_same_item_keeps_both_models_and_specs(self):
         for pid, models, vids in [
             ("2048348958", ["WW11DB8B95GH", "WW11DB8B95GB"], ["1855570148", "1855568959"]),

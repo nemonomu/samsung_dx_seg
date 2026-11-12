@@ -3,9 +3,9 @@
 ldy_loading_type (Bauart) is collected Kasada-free from the OTTO product-comparison
 page (/vergleich/?variationIds=...). That page renders each product's Details
 characteristics side by side and is NOT Kasada-protected; every Bauart cell carries
-its own data-variation-id, so we read each SKU's *own* value (no positional guessing,
-no category inference). We batch the run's target variation_ids in prepare_context and
-translate Frontlader -> Front loader, Toplader -> Top-loading (other values -> NULL).
+its own data-variation-id, so we read each SKU's *own* value without positional guessing.
+When these sources do not identify loading type, the same option's frontlader/toplader
+category membership is used. Other unconfirmed values remain NULL.
 """
 from __future__ import annotations
 
@@ -73,7 +73,6 @@ EXCLUDE_KEYWORDS = (
 
 
 def _norm(value: str | None) -> str | None:
-    import re
     if not value:
         return None
     return re.sub(r"\s+", " ", value).strip().casefold() or None
@@ -253,10 +252,7 @@ def prepare_context(targets: list[dict[str, Any]] | None = None) -> dict[str, An
         vid = str(t.get("variation_id") or "").strip()
         c = chars.get(vid, {})
         name = names.get(vid)
-        wt = _is_waschtrockner(name, t.get("retailer_sku_name"), c.get("Produkttyp"))
-        capacity = (_capacity_from_name(name) or _capacity_from_name(t.get("retailer_sku_name"))
-                    or top_info(t, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
-                    or _vergleich_capacity(c, allow_generic=not wt))
+        capacity = _capacity_before_datasheet(t, name, c)
         if model_sku.clean_model(c.get("Modellbezeichnung")) and _has_value(capacity):
             continue
         uri = (t.get("energy_datasheet_uri") or "").strip()
@@ -289,6 +285,15 @@ def _vergleich_capacity(vid_chars: dict[str, str | None], *, allow_generic: bool
     return None
 
 
+def _capacity_before_datasheet(target: dict[str, Any], name: str | None,
+                               vid_chars: dict[str, str | None]) -> str | None:
+    wt = _is_waschtrockner(name, target.get("retailer_sku_name"), vid_chars.get("Produkttyp"))
+    return (_capacity_from_name(name)
+            or _capacity_from_name(target.get("retailer_sku_name"))
+            or top_info(target, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
+            or _vergleich_capacity(vid_chars, allow_generic=not wt))
+
+
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
     ctx = ctx or {}
@@ -308,11 +313,7 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     # the drying capacity is never picked. top_info "Kapazität Waschen" and the name's first
     # "N kg" (wash is listed first) are wash-safe; generic /vergleich/ labels only for plain
     # washers.
-    wt = _is_waschtrockner(name, target.get("retailer_sku_name"), vid_chars.get("Produkttyp"))
-    capacity = (_capacity_from_name(name)
-                or _capacity_from_name(target.get("retailer_sku_name"))
-                or top_info(target, "Kapazität Waschen", "Füllmenge", "Fassungsvermögen")
-                or _vergleich_capacity(vid_chars, allow_generic=not wt)
+    capacity = (_capacity_before_datasheet(target, name, vid_chars)
                 or _capacity_from_datasheet(ctx.get("datasheets", {}).get(
                     (target.get("energy_datasheet_uri") or "").strip(), ds))
                 )

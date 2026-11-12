@@ -148,8 +148,8 @@ def characteristic_map(variation_ids: list[str], label: str, *, timeout: int = 4
 
     Keyed by each cell's own data-variation-id so a value always belongs to that SKU.
     Unresolved ids (transient empty responses) are re-queried for a few batched rounds,
-    then once per-id (batch=1, most reliable). Ids that stay empty are genuinely blank on
-    OTTO (e.g. Waschtrockner / accessories).
+    then once per-id (batch=1, most reliable). Values still missing after retries remain
+    unverified because the response may have failed.
     """
     ids = [str(v) for v in variation_ids if v]
     result = _one_pass(ids, label, timeout, sleep)
@@ -203,7 +203,7 @@ def characteristics_map(variation_ids: list[str], labels: list[str], *, timeout:
     per-id fetch, dropped in the batch), and the per-id pass is reliable. `required_any`
     groups an either/or intent (e.g. Gesamtrauminhalt OR Gesamtnutzinhalt) so a fridge that
     genuinely carries one is not endlessly retried for the other. Labels that stay missing
-    after the per-id pass are genuinely absent on OTTO."""
+    after the per-id pass remain unverified; a failed response can also leave them empty."""
     ids = list(dict.fromkeys(str(v).strip() for v in variation_ids if str(v or "").strip()))
     result = _multi_pass(ids, labels, timeout, sleep)
 
@@ -217,7 +217,7 @@ def characteristics_map(variation_ids: list[str], labels: list[str], *, timeout:
         # required_any (e.g. a capacity either/or group) drives only the cheap BATCHED
         # retries: an intermittently-dropped cell usually re-renders within a couple of
         # batched passes. It must NOT drive the per-id pass — that would fetch one page for
-        # every item that GENUINELY lacks the group (most fridges get capacity from the
+        # every item that lacks a confirmed group (most fridges get capacity from the
         # datasheet), which is prohibitively slow.
         if include_any and required_any and any(not any(_present(d.get(lbl)) for lbl in grp) for grp in required_any):
             return True

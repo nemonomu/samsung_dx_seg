@@ -2,7 +2,7 @@
 
 For each target: category spec fields (cfg.extract_spec from datasheet/listing),
 similar products (reco-core API), reviews (direct review page). Optionally supplements
-PDP-only fields (cfg.PDP_SUPPLEMENT_FIELDS, e.g. LDY Bauart) via a ZenRows browser.
+PDP-only fields (cfg.PDP_SUPPLEMENT_FIELDS, e.g. TV HDR power) via a ZenRows browser.
 """
 from __future__ import annotations
 

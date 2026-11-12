@@ -6,6 +6,6 @@ easyocr>=1.7,<2
 PyMuPDF>=1.24,<2
 # PostgreSQL load (step14 db_save). Required for a real --only ...,db run.
 psycopg2-binary>=2.9,<3
-# playwright is only needed for the legacy --transport zenrows/local PDP scrapers;
-# the default --transport api path does not require it.
+# ZenRows is the default PDP mode; TV/REF use Playwright for missing allowed fields.
+# LDY currently has no PDP supplement fields; --pdp-supplement none skips the step.
 playwright>=1.40,<2
