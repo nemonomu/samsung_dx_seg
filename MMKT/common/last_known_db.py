@@ -84,6 +84,7 @@ def backfill_from_retail_history(
     product: str,
     fields: Iterable[str],
     excluded_batch_ids: Iterable[str] = (),
+    skip_ref_type_items: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Fill blanks field-by-field from newest exact item+name history."""
     stats = empty_stats()
@@ -135,10 +136,13 @@ def backfill_from_retail_history(
 
     recovered_counts: Counter[str] = Counter()
     recovered_rows = 0
+    skip_ref_type_keys = {_text(item).casefold() for item in skip_ref_type_items}
     for row in eligible:
         candidates = history_by_identity.get(_identity(row), ())
         changed = False
         for field in fill_fields:
+            if field == "ref_refrigerator_type" and _text(row.get("item")).casefold() in skip_ref_type_keys:
+                continue
             if _text(row.get(field)):
                 continue
             for candidate in candidates:

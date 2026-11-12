@@ -19,6 +19,7 @@ _EXCLUDED_REF_TYPES = frozenset({
     "compact",
     "without water dispenser",
     "chest freezer",
+    "gefrierbox",
     "fleischreifeschrank",
     "getr\u00e4nkek\u00fchler",
     "getr\u00e4nkek\u00fchlschrank",

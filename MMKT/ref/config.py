@@ -117,7 +117,7 @@ _REF_TYPE_EXCLUDE_TOKENS = (
     "kuehlvitrine", "displayrefrigerator", "refrigerateddisplaycase",
     "kuehlbox", "coolerbox", "coolbox",
 )
-_REF_TYPE_EXCLUDE_EXACT = {"freezer", "chestfreezer", "uprightfreezer"}
+_REF_TYPE_EXCLUDE_EXACT = {"freezer", "chestfreezer", "uprightfreezer", "gefrierbox"}
 
 
 def _excluded_type(value: str | None) -> bool:
@@ -243,4 +243,6 @@ def extract_pdp_spec(features: dict[str, str], name: str | None = None) -> dict[
     # step02 does not issue an unnecessary SSR request or refetch it on resume.
     if typ is None and (excluded or raw_feature_type):
         result[PRIMARY_SPEC_EXPECTED_NULL] = True
+    if _type_key(raw_feature_type) == "gefrierbox":
+        result["_ref_type_gefrierbox"] = True
     return result

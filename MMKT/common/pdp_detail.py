@@ -59,7 +59,7 @@ def make_session(transport: str, review_pages: int, review_max_pages: int):
 
 def csv_columns(cfg):
     policy_columns = (
-        [PRIMARY_SPEC_EXPECTED_NULL]
+        [PRIMARY_SPEC_EXPECTED_NULL, "_ref_type_gefrierbox"]
         if getattr(cfg, "PERSIST_PRIMARY_SPEC_EXPECTED_NULL", False)
         else []
     )
@@ -200,6 +200,10 @@ def backfill_missing_pdp_fields(
             recovered.append(field)
     if primary_spec_expected_null(ssr_row):
         row[PRIMARY_SPEC_EXPECTED_NULL] = True
+    if ssr_row.get("_ref_type_gefrierbox"):
+        row["_ref_type_gefrierbox"] = True
+    if str(row.get("_ref_type_gefrierbox") or "").strip().casefold() in {"1", "true", "yes"}:
+        row["ref_refrigerator_type"] = None
     if ssr_row.get(IS_BUNDLE):
         row[IS_BUNDLE] = True
         _apply_review_ratings(row, _parsed_row_reviews(row))
@@ -229,6 +233,8 @@ def _merge_missing_values(row: dict[str, Any], parsed: dict[str, Any], cfg) -> l
             recovered.append(field)
     if primary_spec_expected_null(parsed):
         row[PRIMARY_SPEC_EXPECTED_NULL] = True
+    if str(row.get("_ref_type_gefrierbox") or "").strip().casefold() in {"1", "true", "yes"}:
+        row["ref_refrigerator_type"] = None
     if bundle:
         row[IS_BUNDLE] = True
         if isinstance(row.get("_review_resps"), list):

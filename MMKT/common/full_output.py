@@ -57,6 +57,7 @@ def full_columns(cfg):
         "retailer_sku_name_similar", "star_rating",
         "count_of_star_ratings", "count_of_reviews",
         "recommendation_intent", "summarized_review_content", "detailed_review_content",
+        *(["_ref_type_gefrierbox"] if cfg.PRODUCT == "REF" else []),
     ]
 
 
@@ -212,6 +213,10 @@ def main() -> int:
             "summarized_review_content": d.get("summarized_review_content"),
             "detailed_review_content": d.get("detailed_review_content"),
         })
+        if (_truthy(d.get("_ref_type_gefrierbox"))
+                or str(d.get("ref_refrigerator_type") or "").strip().casefold() == "gefrierbox"):
+            rows[-1]["ref_refrigerator_type"] = None
+            rows[-1]["_ref_type_gefrierbox"] = True
 
     discount_translation = normalize_discount_rows(rows)
     for row in rows:

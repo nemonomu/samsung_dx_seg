@@ -90,6 +90,16 @@ def _policy_null_ids(cfg) -> set[str]:
     }
 
 
+def _gefrierbox_ids(cfg) -> set[str]:
+    path = cfg.OUTPUT_ROOT / "mmkt_pdp_detail.csv"
+    return {
+        str(row.get("sku_id") or "").strip()
+        for row in read_csv(path)
+        if _truthy(row.get("_ref_type_gefrierbox"))
+        or str(row.get("ref_refrigerator_type") or "").strip().casefold() == "gefrierbox"
+    } if path.exists() else set()
+
+
 def table_columns(cur, schema: str, table: str) -> list[str]:
     cur.execute(
         "SELECT column_name FROM information_schema.columns "
@@ -118,6 +128,16 @@ def main() -> int:
     input_rows = read_csv(input_path)
     rows = filter_listing_rows(input_rows, args.product)
     discount_translation = normalize_discount_rows(rows)
+    gefrierbox_ids = {
+        str(row.get("item") or "").strip() for row in rows
+        if _truthy(row.get("_ref_type_gefrierbox"))
+        or str(row.get("ref_refrigerator_type") or "").strip().casefold() == "gefrierbox"
+    }
+    if cfg.PRODUCT == "REF" and rows and "_ref_type_gefrierbox" not in rows[0] and not args.input:
+        gefrierbox_ids.update(_gefrierbox_ids(cfg))
+    for row in rows:
+        if str(row.get("item") or "").strip() in gefrierbox_ids:
+            row["ref_refrigerator_type"] = None
     excluded_ref_type_ids = {
         str(row.get("item") or "").strip() for row in rows if apply_ref_type_policy(row)
     }
@@ -147,7 +167,7 @@ def main() -> int:
         return 0 if success else 1
 
     spec_fields = list(getattr(cfg, "SPEC_FIELDS", []) or [])
-    policy_null_ids = _policy_null_ids(cfg) | excluded_ref_type_ids
+    policy_null_ids = _policy_null_ids(cfg) | excluded_ref_type_ids | gefrierbox_ids
     spec_missing_counts = {field: sum(1 for row in rows if not _has_value(row.get(field))) for field in spec_fields}
     primary = spec_fields[0] if spec_fields else None
     rows_missing_primary_spec = sum(
@@ -198,6 +218,7 @@ def main() -> int:
                     account_names=(ACCOUNT_NAME,),
                     product=cfg.PRODUCT,
                     fields=("sku", *cfg.SPEC_FIELDS),
+                    skip_ref_type_items=gefrierbox_ids,
                 )
                 manifest["last_known_db_backfill"] = last_known
                 manifest.update(
@@ -247,7 +268,7 @@ def main() -> int:
                         f"weak_detail={weak_detail_rows} counts={spec_missing_counts}; "
                         "continuing DB insert"
                     )
-                insert_columns = [c for c in existing if c != "id" and c in csv_fields]
+                insert_columns = [c for c in existing if c not in {"id", "_ref_type_gefrierbox"} and c in csv_fields]
 
                 # INSERT-ONLY: never delete/update existing rows. Each run appends
                 # the current crawl (its own batch_id). Removing DB rows is a manual,
