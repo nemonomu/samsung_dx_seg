@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db-dry-run", action="store_true")
     parser.add_argument("--detail-sleep", type=float, default=DEFAULT_SLEEP)
     parser.add_argument("--headless", action="store_true")
-    parser.add_argument("--streaming-insert", action="store_true", help="insert retail_com rows as detail records are collected")
+    parser.add_argument("--streaming-insert", action="store_true", help="legacy option; batch insert is used instead")
     parser.add_argument("--no-auto-insert", action="store_true", help="collect JSONL/CSV only; skip DB insert")
     parser.add_argument("--email-report", action="store_true", help="send report when email settings allow it")
     return parser.parse_args()
@@ -208,7 +208,6 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
     }
     write_json(out / "step00_run_manifest.json", run_manifest)
 
-    streamer = None
     if args.streaming_insert:
         siel_log.run_log(
             "streaming insert is disabled for safe all-or-nothing detail loads; using batch insert",
@@ -220,8 +219,6 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
             record["batch_id"] = batch_id
         append_jsonl(jsonl_path, record)
         siel_log.log_record_event(record)
-        if streamer is not None:
-            streamer.handle(record)
 
     status = 0
     fatal_error: Exception | None = None
@@ -306,22 +303,16 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
                 siel_log.run_log(f"stage=full product={cfg.PRODUCT} done rows={full_manifest.get('output_rows')}")
             if "db" in steps and not args.no_auto_insert:
                 siel_log.run_log(f"stage=db product={cfg.PRODUCT} start")
-                if streamer is not None:
-                    summary = streamer.summary()
-                    summary["run_log_path"] = str(run_log_path)
-                    emit(summary)
-                    write_json(out / "step14_streaming_db_save_manifest.json", summary)
-                else:
-                    expected_rows = detail_manifest.get("rows") if detail_manifest is not None else None
-                    manifest = merge_insert.insert_jsonl(
-                        cfg,
-                        jsonl_path,
-                        dry_run=args.db_dry_run,
-                        expected_rows=expected_rows,
-                    )
-                    manifest["stage"] = "db_insert_summary"
-                    manifest["run_log_path"] = str(run_log_path)
-                    emit(manifest)
+                expected_rows = detail_manifest.get("rows") if detail_manifest is not None else None
+                manifest = merge_insert.insert_jsonl(
+                    cfg,
+                    jsonl_path,
+                    dry_run=args.db_dry_run,
+                    expected_rows=expected_rows,
+                )
+                manifest["stage"] = "db_insert_summary"
+                manifest["run_log_path"] = str(run_log_path)
+                emit(manifest)
                 siel_log.run_log(f"stage=db product={cfg.PRODUCT} done")
         except Exception as exc:  # noqa: BLE001
             status = 1
@@ -345,8 +336,6 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
             )
     finally:
         close_shared_session("pipeline_done")
-        if streamer is not None:
-            streamer.close()
     if fatal_error:
         print(f"[run/{cfg.PRODUCT}] FAILED: {fatal_error!r}", file=sys.stderr, flush=True)
     else:

@@ -195,7 +195,7 @@ class DetailFailureSafetyTests(unittest.TestCase):
             patch.object(pipeline, "append_jsonl"),
             patch.object(pipeline, "run_meta", return_value={"batch_id": "a_test"}),
             patch.object(pipeline.siel_log, "setup_run", return_value="run.log"),
-            patch.object(pipeline.siel_log, "run_log"),
+            patch.object(pipeline.siel_log, "run_log") as run_log,
             patch.object(pipeline.siel_log, "log_record_event"),
             patch.object(
                 pipeline.detail,
@@ -215,6 +215,10 @@ class DetailFailureSafetyTests(unittest.TestCase):
         streaming.assert_not_called()
         batch_insert.assert_called_once()
         self.assertEqual(batch_insert.call_args.kwargs["expected_rows"], 1)
+        run_log.assert_any_call(
+            "streaming insert is disabled for safe all-or-nothing detail loads; using batch insert",
+            "WARNING",
+        )
 
     def test_jsonl_row_mismatch_stops_before_insert_rows(self) -> None:
         cfg = SimpleNamespace(PRODUCT="REF")

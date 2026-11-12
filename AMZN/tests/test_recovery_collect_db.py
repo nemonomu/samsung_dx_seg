@@ -151,6 +151,7 @@ class RecoveryTests(unittest.TestCase):
         collect.assert_not_called()
 
     def test_collection_uses_only_missing_targets_and_persists_before_crash(self):
+        import common
         from common.io_util import read_csv
         fake_detail = ModuleType("common.detail")
         state = self.initialize()
@@ -163,7 +164,10 @@ class RecoveryTests(unittest.TestCase):
             raise RuntimeError("browser crashed")
 
         fake_detail.run = crash
-        with patch.dict(sys.modules, {"common.detail": fake_detail}), patch.object(recovery.importlib, "import_module", return_value=SimpleNamespace(PRODUCT="REF")), redirect_stdout(io.StringIO()):
+        with patch.dict(sys.modules, {"common.detail": fake_detail}), \
+                patch.object(common, "detail", fake_detail, create=True), \
+                patch.object(recovery.importlib, "import_module", return_value=SimpleNamespace(PRODUCT="REF")), \
+                redirect_stdout(io.StringIO()):
             with self.assertRaises(RuntimeError):
                 recovery.collect_missing(state, "ref")
         self.assertEqual([r["asin"] for r in self.state()["missing"]], ["C"])
