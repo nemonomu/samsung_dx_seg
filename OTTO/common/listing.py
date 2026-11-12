@@ -390,7 +390,6 @@ def crocotile_fields(tile: dict[str, Any], fallback_name: Any) -> dict[str, Any]
         "retailer_sku_name": name,
         "brand": brand,
         "final_sku_price": _euro(price.get("retailPrice")),
-        "is_starting_price": price.get("isStartingPrice") if isinstance(price.get("isStartingPrice"), bool) else None,
         # original price = UVP (suggestedRetailPrice) or, when absent, the former/
         # comparison price (comparativePrice) that the discount is computed against.
         "original_sku_price": _euro(price.get("suggestedRetailPrice") or price.get("comparativePrice")),

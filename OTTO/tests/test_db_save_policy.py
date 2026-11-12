@@ -43,25 +43,6 @@ def write_full_output(path: Path) -> None:
 
 
 class OttoDbSavePolicyTests(unittest.TestCase):
-    def test_starting_price_marker_is_not_inserted_into_database(self) -> None:
-        row = dict(account_name="OTTO", product="TV", batch_id="test", item="1", is_starting_price="true",
-                   star_rating="4", count_of_star_ratings="2", count_of_reviews="2")
-        driver = MagicMock()
-        cursor = driver.connect.return_value.cursor.return_value.__enter__.return_value
-        cursor.fetchall.return_value = [(field, "YES") for field in row]
-        cursor.fetchone.return_value = None
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out = Path(tmpdir)
-            write_csv(out / "otto_full_output.csv", [row])
-            with patch.object(db_save, "category_output_root", return_value=out), \
-                    patch.object(db_save, "db_config", return_value={"host": "unused.invalid"}), \
-                    patch.object(db_save, "safe_backfill_from_retail_history", return_value={
-                        "recovered_rows": 0, "recovered_fields": {}, "error": ""}), \
-                    patch.dict(sys.modules, {"psycopg2": driver}):
-                manifest = db_save.run(FakeTvConfig(), dry_run=False)
-        self.assertNotIn("is_starting_price", manifest["inserted_columns"])
-        self.assertNotIn('"is_starting_price"', cursor.executemany.call_args.args[0])
-
     def test_missing_table_reports_intentional_skip(self) -> None:
         driver = MagicMock()
         cursor = driver.connect.return_value.cursor.return_value.__enter__.return_value

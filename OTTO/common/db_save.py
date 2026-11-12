@@ -149,7 +149,7 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
                         "continuing DB insert"
                     )
                 csv_fields = list(rows[0].keys())
-                insert_cols = [c for c in existing if c not in {"id", "is_starting_price"} and c in csv_fields]
+                insert_cols = [c for c in existing if c != "id" and c in csv_fields]
                 # NOTE: insert-only. This step NEVER deletes/updates existing DB rows.
                 # Any row removal must be done manually by the user (explicit permission).
                 col_sql = ", ".join(_quote(c) for c in insert_cols)

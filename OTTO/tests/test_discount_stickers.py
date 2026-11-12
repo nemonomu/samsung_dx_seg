@@ -127,8 +127,6 @@ class DiscountStickerTests(unittest.TestCase):
                      for i in range(4)]
         tiles = [{"variationId": "v" + str(i), "deal": {"image": {"src": url}, "highlight": "nur diesen Monat"}}
                  for i, url in enumerate([KNOWN, UNKNOWN, UNKNOWN, None])]
-        tiles[0]["price"] = {"isStartingPrice": True}
-        tiles[1]["price"] = {"isStartingPrice": False}
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             out = Path(directory)
             stack.enter_context(patch.object(listing, "ensure_dirs", return_value=out))
@@ -160,7 +158,6 @@ class DiscountStickerTests(unittest.TestCase):
             self.assertEqual(UNKNOWN, saved[1]["discount_type_image_url"])
             full_output.run(cfg, pdp_supplement="none", detail_sleep=0)
             final = read_csv(out / "otto_full_output.csv")
-            self.assertEqual(["True", "False", "", ""], [r["is_starting_price"] for r in final])
             self.assertEqual(["Deal of the month", "", "", ""], [r["discount_type"] for r in final])
             self.assertEqual(["Deal of the month", None, None, None],
                              [db_save._empty_to_none(r["discount_type"], "discount_type") for r in final])
