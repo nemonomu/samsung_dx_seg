@@ -482,6 +482,9 @@ class Source:
         self.calls.append(("pdf", uri, needed))
         return {"sku": "PDF900", "capacity": "9 kg"}
 
+    def pdp(self, target, needed, *, comparison_name=None):
+        return {}
+
     def rating(self, product_id):
         self.calls.append(("rating", product_id))
         return dict(average_rating="4.3", rating_count=123, rating_state="rated")
@@ -733,6 +736,7 @@ class PipelineTests(Offline):
         requested = []
         def factory(events):
             real = client.Client(events)
+            real.pdp = MagicMock(return_value={})
             def fetch(url, endpoint, **kwargs):
                 requested.append((endpoint, url))
                 if endpoint == "listing":

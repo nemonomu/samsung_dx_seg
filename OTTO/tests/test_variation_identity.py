@@ -215,6 +215,161 @@ class VariationIdentityTests(unittest.TestCase):
             self.assertEqual([parse_qs(urlsplit(r["product_url"]).query)["variationId"][0] for r in rows],
                              ["1855570148", "1855568959"])
 
+    def test_ldy_zenrows_fills_only_missing_fields_for_selected_option(self):
+        targets = [
+            {"product_id": "p" + vid, "variation_id": vid, "main_rank": rank,
+             "retailer_sku_name": "Waschtrockner MODEL1234", "product_url": f"https://www.otto.de/p/model-p{vid}/"}
+            for rank, vid in enumerate(("v1", "v2", "v3", "v4", "v5", "v6", "v7"), 1)
+        ]
+        def page(vid, pid):
+            return (f'<div class="pdp-frame" data-variation-id="{vid}" data-product-id="{pid}">'
+                    '<div class="pdp_details__characteristics-html"><table class="dv_characteristicsTable">'
+                    '<tr><td>Beladung</td><td>Frontlader</td></tr>'
+                    '<tr><td>Nennkapazität (Waschen)</td><td>9 kg</td></tr>'
+                    '<tr><td>Fassungsvermögen</td><td>6 kg</td></tr></table></div></div>').encode()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            with (out / "otto_final_targets.csv").open("w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=list(targets[0])); writer.writeheader(); writer.writerows(targets)
+            with patch.object(full_output, "category_output_root", return_value=out), \
+                    patch.object(ldy, "prepare_context", return_value={}), \
+                    patch.object(ldy, "extract_spec", side_effect=[
+                        {"ldy_loading_type": None, "ldy_capacity": None},
+                        {"ldy_loading_type": None, "ldy_capacity": None},
+                        {"ldy_loading_type": "Top-loading", "ldy_capacity": "8 kg"},
+                        {"ldy_loading_type": None, "ldy_capacity": None},
+                        {"ldy_loading_type": None, "ldy_capacity": None},
+                        {"ldy_loading_type": None, "ldy_capacity": None},
+                        {"ldy_loading_type": None, "ldy_capacity": None},
+                    ]), patch.object(browser, "BrowserSession") as session, \
+                    patch.object(full_output, "fetch_similar_product_names", return_value={}), \
+                    patch.object(full_output, "collect_review", return_value={}), \
+                    patch.object(full_output, "refresh_sticker_fields"), \
+                    patch.object(full_output, "sticker_diagnostics", return_value={}):
+                session.return_value.fetch_pdp.side_effect = [
+                    {"status": 200, "detail_present": True, "body": page("v1", "pv1")},
+                    {"status": 200, "detail_present": True, "body": page("wrong", "pv2")},
+                    {"status": 200, "detail_present": True, "body": page("v4", "other")},
+                    {"status": 200, "detail_present": True, "body": page("v5", "pv5") + page("other", "other")},
+                    {"status": 200, "detail_present": True, "body": page("v6", "pv6") + b'<div class="pdp-frame"></div>'},
+                    {"status": 200, "detail_present": True, "body": page("v7", "pv7").replace(
+                        b'</table>', b'<tr><td>Beladung</td><td>Toplader</td></tr></table>')},
+                ]
+                manifest = full_output.run(ldy, detail_sleep=0)
+            with (out / "otto_full_output.csv").open(encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+            self.assertEqual([(r["ldy_loading_type"], r["ldy_capacity"]) for r in rows],
+                             [("Front loader", "9 kg"), ("", ""), ("Top-loading", "8 kg"), ("", ""), ("", ""), ("", ""), ("", "9 kg")])
+            self.assertEqual(session.return_value.fetch_pdp.call_count, 6)
+            self.assertEqual(manifest["attempts"][1]["pdp_supplement_failure_reason"], "variation_id_mismatch")
+            self.assertEqual(manifest["attempts"][3]["pdp_supplement_failure_reason"], "product_id_mismatch")
+            self.assertEqual(manifest["attempts"][4]["pdp_supplement_failure_reason"], "variation_id_unverified")
+            self.assertEqual(manifest["attempts"][5]["pdp_supplement_failure_reason"], "variation_id_unverified")
+            self.assertEqual(manifest["attempts"][6]["pdp_supplement_failure_reason"], "pdp_conflicting_characteristics:ldy_loading_type")
+
+    def test_ldy_retries_new_pdp_session_after_open_failure_without_exposing_error(self):
+        targets = [{"product_id": "p1", "variation_id": "v1", "main_rank": 1,
+                    "retailer_sku_name": "Waschmaschine MODEL123", "product_url": "https://www.otto.de/p/model-p1/"},
+                   {"product_id": "p2", "variation_id": "v2", "main_rank": 2,
+                    "retailer_sku_name": "Waschmaschine MODEL123", "product_url": "https://www.otto.de/p/model-p2/"}]
+        html = (b'<div class="pdp-frame" data-variation-id="v2" data-product-id="p2">'
+                b'<div class="pdp_details__characteristics-html"><table class="dv_characteristicsTable">'
+                b'<tr><td>Beladung</td><td>Frontlader</td></tr></table></div></div>')
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            with (out / "otto_final_targets.csv").open("w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=list(targets[0])); writer.writeheader(); writer.writerows(targets)
+            with patch.object(full_output, "category_output_root", return_value=out), \
+                    patch.object(ldy, "prepare_context", return_value={}), \
+                    patch.object(ldy, "extract_spec", side_effect=lambda *a, **kw: {"ldy_loading_type": None, "ldy_capacity": "9 kg"}), \
+                    patch.object(browser, "BrowserSession") as sessions, \
+                    patch.object(full_output, "fetch_similar_product_names", return_value={}), \
+                    patch.object(full_output, "collect_review", return_value={}), \
+                    patch.object(full_output, "refresh_sticker_fields"), \
+                    patch.object(full_output, "sticker_diagnostics", return_value={}):
+                first, second = sessions.return_value, type(sessions.return_value)()
+                sessions.side_effect = [first, second]
+                first.open.side_effect = RuntimeError("secret-test-token")
+                second.fetch_pdp.return_value = {"status": 200, "detail_present": True, "body": html}
+                manifest = full_output.run(ldy, detail_sleep=0)
+            self.assertEqual(sessions.call_count, 2)
+            first.close.assert_called_once()
+            second.close.assert_called_once()
+            self.assertEqual(manifest["attempts"][0]["pdp_supplement_error"], "RuntimeError")
+            self.assertNotIn("secret-test-token", json.dumps(manifest))
+            self.assertEqual(manifest["attempts"][1]["spec"]["ldy_loading_type"], "Front loader")
+
+    def test_ldy_pdp_session_failures_are_bounded_and_rows_continue(self):
+        targets = [{"product_id": f"p{i}", "variation_id": f"v{i}", "main_rank": i,
+                    "retailer_sku_name": "Waschmaschine MODEL123", "product_url": f"https://www.otto.de/p/model-p{i}/"}
+                   for i in range(1, 4)]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            with (out / "otto_final_targets.csv").open("w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=list(targets[0])); writer.writeheader(); writer.writerows(targets)
+            with patch.object(full_output, "category_output_root", return_value=out), \
+                    patch.object(ldy, "prepare_context", return_value={}), \
+                    patch.object(ldy, "extract_spec", side_effect=lambda *a, **kw: {"ldy_loading_type": None, "ldy_capacity": "9 kg"}), \
+                    patch.object(browser, "BrowserSession") as sessions, \
+                    patch.object(full_output, "fetch_similar_product_names", return_value={}), \
+                    patch.object(full_output, "collect_review", return_value={}), \
+                    patch.object(full_output, "refresh_sticker_fields"), \
+                    patch.object(full_output, "sticker_diagnostics", return_value={}):
+                sessions.return_value.open.side_effect = RuntimeError("token")
+                manifest = full_output.run(ldy, detail_sleep=0)
+            self.assertEqual(sessions.call_count, 2)
+            self.assertEqual(sessions.return_value.close.call_count, 2)
+            self.assertEqual(manifest["output_rows"], 3)
+            self.assertEqual(manifest["attempts"][2]["pdp_supplement_failure_reason"], "PdpSessionRetryLimit")
+
+    def test_ldy_interrupt_during_pdp_open_closes_browser(self):
+        target = {"product_id": "p1", "variation_id": "v1", "main_rank": 1,
+                  "retailer_sku_name": "Waschmaschine MODEL123", "product_url": "https://www.otto.de/p/model-p1/"}
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            with (out / "otto_final_targets.csv").open("w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=list(target)); writer.writeheader(); writer.writerow(target)
+            with patch.object(full_output, "category_output_root", return_value=out), \
+                    patch.object(ldy, "prepare_context", return_value={}), \
+                    patch.object(ldy, "extract_spec", return_value={"ldy_loading_type": None, "ldy_capacity": "9 kg"}), \
+                    patch.object(browser, "BrowserSession") as session, \
+                    patch.object(full_output, "fetch_similar_product_names", return_value={}), \
+                    patch.object(full_output, "collect_review", return_value={}), \
+                    patch.object(full_output, "refresh_sticker_fields"), \
+                    patch.object(full_output, "sticker_diagnostics", return_value={}):
+                session.return_value.open.side_effect = KeyboardInterrupt()
+                with self.assertRaises(KeyboardInterrupt):
+                    full_output.run(ldy, detail_sleep=0)
+            session.return_value.close.assert_called_once()
+
+    def test_ldy_pdp_product_alias_requires_numeric_id_and_matching_canonical(self):
+        cases = [("C123", "123", "C123"), ("C124", "124", "other"), ("CAB12", "AB12", "CAB12")]
+        targets = [{"product_id": pid, "variation_id": f"v{i}", "main_rank": i,
+                    "retailer_sku_name": "Waschmaschine MODEL123", "product_url": f"https://www.otto.de/p/model-{pid}/"}
+                   for i, (pid, _, _) in enumerate(cases, 1)]
+        bodies = [(f'<link rel="canonical" href="https://www.otto.de/p/model-{canonical}/">'
+                   f'<div class="pdp-frame" data-product-id="{actual}" data-variation-id="v{i}">'
+                   '<div class="pdp_details__characteristics-html"><table class="dv_characteristicsTable">'
+                   '<tr><td>Beladung</td><td>Frontlader</td></tr></table></div></div>').encode()
+                  for i, (_, actual, canonical) in enumerate(cases, 1)]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            with (out / "otto_final_targets.csv").open("w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=list(targets[0])); writer.writeheader(); writer.writerows(targets)
+            with patch.object(full_output, "category_output_root", return_value=out), \
+                    patch.object(ldy, "prepare_context", return_value={}), \
+                    patch.object(ldy, "extract_spec", side_effect=lambda *a, **kw: {"ldy_loading_type": None, "ldy_capacity": "9 kg"}), \
+                    patch.object(browser, "BrowserSession") as session, \
+                    patch.object(full_output, "fetch_similar_product_names", return_value={}), \
+                    patch.object(full_output, "collect_review", return_value={}), \
+                    patch.object(full_output, "refresh_sticker_fields"), \
+                    patch.object(full_output, "sticker_diagnostics", return_value={}):
+                session.return_value.fetch_pdp.side_effect = [{"status": 200, "detail_present": True, "body": body} for body in bodies]
+                manifest = full_output.run(ldy, detail_sleep=0)
+            self.assertEqual([a["spec"]["ldy_loading_type"] for a in manifest["attempts"]], ["Front loader", None, None])
+            self.assertEqual([a["pdp_supplement_failure_reason"] for a in manifest["attempts"]],
+                             [None, "product_id_mismatch", "product_id_mismatch"])
+
     def test_full_output_uses_hdr_only_from_selected_option(self):
         targets = [
             {"product_id": "1995107347", "variation_id": vid, "main_rank": rank,

@@ -7,12 +7,12 @@ from uuid import uuid4
 from dry import config, storage, history, notify
 from dry.client import Client, RequestFailure, COMPARISON_FIELD_LABELS
 from dry.events import Events
-from dry.fields import candidates, choose, classify, name_key, classification_evidence, text
+from dry.fields import candidates, choose, classify, name_key, classification_evidence, text, valid_sku, capacity, loading
 
 
-def product_outcome(target, chars, pdf, rating, row, *, options=None):
+def product_outcome(target, chars, pdf, rating, row, *, options=None, pdp=None):
     issues = []
-    for source, payload in (("comparison", chars), ("product_pdf", pdf)):
+    for source, payload in (("comparison", chars), ("product_pdf", pdf), ("product_pdp", pdp or {})):
         if payload.get("_unavailable"):
             issues.append(dict(source=source, kind="unavailable", reason=payload["_unavailable"],
                                missing_fields=payload.get("_missing", [])))
@@ -21,6 +21,10 @@ def product_outcome(target, chars, pdf, rating, row, *, options=None):
     if rating["rating_state"] == "failed":
         reason = rating.get("rating_reason") or "rating_unconfirmed"
         issues.append(dict(source="rating", kind="request" if reason.startswith("request_failed:") else "extraction", reason=reason))
+    pdp_conflicts = (pdp or {}).get("_conflicts", {})
+    if pdp_conflicts:
+        issues.append(dict(source="product_pdp", kind="warning", reason="pdp_conflicting_characteristics",
+                           fields=pdp_conflicts))
     missing = [k for k in ("sku", "capacity", "loading_type", "final_sku_price", "star_rating", "count_of_star_ratings")
                if row.get(k) in (None, "")]
     price_warning = bool(row.get("final_sku_price") and row.get("original_sku_price") and not row.get("savings"))
@@ -30,10 +34,10 @@ def product_outcome(target, chars, pdf, rating, row, *, options=None):
                for field, values in (candidates(target, chars, pdf) if options is None else options).items()}
     comparison_fields = [field for field, source in sources.items() if row.get(field)
                          and source in chars.get("_supplemented_sources", {}).get(field, [])]
-    supplemented = bool(comparison_fields) or any(v == "product_pdf" for v in sources.values()) or sources["sku"] == "listing_title"
+    supplemented = bool(comparison_fields) or any(v in ("product_pdf", "product_pdp") for v in sources.values()) or sources["sku"] == "listing_title"
     return dict(status="supplemented" if supplemented else "collected", missing_fields=missing, issues=issues,
                 comparison_supplemented_fields=comparison_fields,
-                supplemented_items=supplemented, incomplete_items=bool(missing),
+                supplemented_items=supplemented, incomplete_items=bool(missing), pdp_conflict_items=bool(pdp_conflicts),
                 request_error_items=any(i["kind"] == "request" for i in issues),
                 extraction_error_items=any(i["kind"] == "extraction" for i in issues), price_warning_items=price_warning)
 
@@ -203,7 +207,7 @@ def collect(client, events, state, save):
     rows = []
     stats = state["counts"] = dict(reviewed=0, excluded=0, duplicates=0, ambiguous=0, selected=0,
         item_failures=0, eligible=0, tile_http_400_failures=0, supplemented_items=0,
-        incomplete_items=0, request_error_items=0, extraction_error_items=0, price_warning_items=0)
+        incomplete_items=0, request_error_items=0, extraction_error_items=0, price_warning_items=0, pdp_conflict_items=0)
     listing_rows = collect_listing(client, events, state)
     targets = select_targets(client, events, state, listing_rows)
     del listing_rows
@@ -235,6 +239,14 @@ def collect(client, events, state, save):
                                  need_loading=need_loading) if need_sku or need_capacity or need_loading else {}
                 if any(field in pdf or field + "_raw" in pdf for field in options):
                     options = candidates(target, chars, pdf)
+                missing = {field for field, values in options.items() if not any(v for _, _, v in values)}
+                pdp = client.pdp(target, missing, comparison_name=chars.get("_name")) if missing else {}
+                normalizers = {"sku": valid_sku, "capacity": lambda v: capacity(v, labelled=True),
+                               "loading_type": loading}
+                for field in missing:
+                    raw = pdp.get(field)
+                    if raw:
+                        options[field].append(("product_pdp", raw, normalizers[field](raw)))
                 selected = choose(target, chars, pdf, events, options=options)
                 rating = client.rating(target["product_id"])
                 row = dict.fromkeys(config.COLUMNS)
@@ -247,8 +259,8 @@ def collect(client, events, state, save):
                     batch_id=state["batch_id"], **selected)
                 for field in ("final_sku_price", "original_sku_price", "savings"):
                     row[field] = target.get(field)
-                outcome = product_outcome(target, chars, pdf, rating, row, options=options)
-                for counter in ("supplemented_items", "incomplete_items", "request_error_items",
+                outcome = product_outcome(target, chars, pdf, rating, row, options=options, pdp=pdp)
+                for counter in ("supplemented_items", "incomplete_items", "pdp_conflict_items", "request_error_items",
                                 "extraction_error_items", "price_warning_items"):
                     stats[counter] += int(outcome[counter])
                 rows.append(row)
@@ -309,8 +321,18 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
             state["collection_status"] = "running"
             phase = "collection"
             storage.checkpoint(directory, rows, state)
-            rows = collect(client_factory(events), events, state,
-                           lambda current: storage.checkpoint(directory, current, state))
+            client = client_factory(events)
+            try:
+                rows = collect(client, events, state, lambda current: storage.checkpoint(directory, current, state))
+            finally:
+                close = getattr(client, "close", None)
+                if close:
+                    try:
+                        close()
+                    except Exception as exc:
+                        events.emit("failure", scope="collection", reason="pdp_close_failed:" + type(exc).__name__)
+                        if "counts" in state:
+                            state["counts"]["request_error_items"] += 1
             with events.stage("과거 DB 보충"):
                 state["history_backfill"] = (backfill or history.backfill)(table, events, rows)
             with events.stage("CSV 저장"):
@@ -326,7 +348,7 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
             state["db_status"] = "skipped_empty"
         if state.get("history_backfill", {}).get("error") or any(state.get("counts", {}).get(k) for k in
                 ("item_failures", "request_error_items", "extraction_error_items", "price_warning_items",
-                 "tile_unexpected_ids", "tile_unidentified_rows")):
+                 "tile_unexpected_ids", "tile_unidentified_rows", "pdp_conflict_items")):
             code = 2
     except (Exception, KeyboardInterrupt) as exc:
         reason = str(exc) if isinstance(exc, config.DryError) else type(exc).__name__

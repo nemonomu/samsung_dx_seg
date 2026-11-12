@@ -80,6 +80,17 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     rating_failed = int(rating_qa.get("failed") or 0)
     if rating_failed:
         issues.append(f"별점 요청·추출 실패 {rating_failed}/{total} (확인된 값 유지, 실패 필드 NULL)")
+    pdp_failures = [a for a in (full.get("attempts") or [])
+                    if a.get("pdp_supplement_failure_reason")
+                    and a["pdp_supplement_failure_reason"] != "no_allowed_fields_recovered"] if current_full else []
+    if pdp_failures:
+        ids = [str(a.get("variation_id") or a.get("item") or "미확인") for a in pdp_failures]
+        issues.append(f"상세 보강 실패 {len(pdp_failures)}건 (옵션: {', '.join(ids)}; 확인된 값 유지)")
+    pdp_unconfirmed = [a for a in (full.get("attempts") or [])
+                       if a.get("pdp_supplement_failure_reason") == "no_allowed_fields_recovered"] if current_full else []
+    if pdp_unconfirmed:
+        ids = [str(a.get("variation_id") or a.get("item") or "미확인") for a in pdp_unconfirmed]
+        issues.append(f"상세 보강 후 값 미확인 {len(pdp_unconfirmed)}건 (옵션: {', '.join(ids)}; 원본 미제공 가능)")
     contradictions = sum(
         1 for row in rows
         if str(row.get("star_rating") or "").strip() in {"0", "0.0"}

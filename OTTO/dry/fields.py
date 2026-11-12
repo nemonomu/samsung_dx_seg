@@ -392,7 +392,7 @@ def choose(target, chars, pdf=None, events=None, *, options=None):
                         reason=None if winner else "no_valid_value_in_available_sources",
                         candidates=[dict(source=s, raw=r, normalized=v, **(
                             {"reason": sku_rejection(r, from_name=s == "listing_title") if field == "sku"
-                             else capacity_candidate(r, labelled=s.startswith(("listing_spec:", "comparison_spec:")) or s == "product_pdf")[1]}
+                             else capacity_candidate(r, labelled=s.startswith(("listing_spec:", "comparison_spec:")) or s in {"product_pdf", "product_pdp"})[1]}
                             if field in {"sku", "capacity"} and not v else {})) for s, r, v in choices if r],
                         conflict=bool(winner and any(v and v != winner[2] for _, _, v in choices)))
     return result

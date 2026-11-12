@@ -230,6 +230,64 @@ class OttoPdpSupplementPolicyTests(unittest.TestCase):
 
 
 class OttoLdyLoadingPolicyTests(unittest.TestCase):
+    def test_pdp_rejects_conflicting_duplicate_values_but_keeps_other_field(self) -> None:
+        soup = BeautifulSoup('<table class="dv_characteristicsTable">'
+                             '<tr><td>Beladung</td><td>Frontlader</td></tr>'
+                             '<tr><td>Nennkapazität (Waschen)</td><td>9 kg</td></tr></table>'
+                             '<table class="dv_characteristicsTable">'
+                             '<tr><td>Beladung</td><td>Toplader</td></tr></table>', "lxml")
+        spec = ldy_config.extract_pdp_spec(soup, target={"retailer_sku_name": "Waschtrockner MODEL123"})
+        self.assertIsNone(spec["ldy_loading_type"])
+        self.assertEqual(spec["ldy_capacity"], "9 kg")
+        self.assertEqual(spec["_pdp_conflict_fields"], ["ldy_loading_type"])
+        capacity_conflict = BeautifulSoup('<table class="dv_characteristicsTable">'
+            '<tr><td>Beladung</td><td>Frontlader</td></tr>'
+            '<tr><td>Nennkapazität (Waschen)</td><td>9 kg</td></tr>'
+            '<tr><td>Nennkapazität (Waschen)</td><td>8 kg</td></tr></table>', "lxml")
+        spec = ldy_config.extract_pdp_spec(capacity_conflict, target={"retailer_sku_name": "Waschtrockner"})
+        self.assertEqual(spec["ldy_loading_type"], "Front loader")
+        self.assertIsNone(spec["ldy_capacity"])
+        self.assertEqual(spec["_pdp_conflict_fields"], ["ldy_capacity"])
+        repeated = BeautifulSoup('<table class="dv_characteristicsTable">'
+            '<tr><td>Beladung</td><td>-</td></tr><tr><td>Beladung</td><td>Frontlader</td></tr>'
+            '<tr><td>Nennkapazität (Waschen)</td><td>9 kg</td></tr>'
+            '<tr><td>Nennkapazität (Waschen)</td><td>9,0 kg</td></tr></table>', "lxml")
+        spec = ldy_config.extract_pdp_spec(repeated, target={"retailer_sku_name": "Waschtrockner"})
+        self.assertEqual(spec, {"ldy_loading_type": "Front loader", "ldy_capacity": "9 kg"})
+        cross_label = BeautifulSoup('<table class="dv_characteristicsTable">'
+            '<tr><td>Beladung</td><td>Toplader</td></tr><tr><td>Bauart</td><td>Frontlader</td></tr></table>', "lxml")
+        spec = ldy_config.extract_pdp_spec(cross_label, target={"retailer_sku_name": "Waschtrockner"})
+        self.assertEqual(spec["ldy_loading_type"], "Top-loading")
+        self.assertEqual(spec["_pdp_conflict_fields"], ["ldy_loading_type"])
+        zero = BeautifulSoup('<table class="dv_characteristicsTable">'
+            '<tr><td>Nennkapazität (Waschen)</td><td>0 kg</td></tr></table>', "lxml")
+        self.assertIsNone(ldy_config.extract_pdp_spec(zero, target={"retailer_sku_name": "Waschtrockner"})["ldy_capacity"])
+
+    def test_pdp_keeps_installation_separate_from_loading_and_combo_capacity(self) -> None:
+        soup = BeautifulSoup('<table class="dv_characteristicsTable">'
+                             '<tr><td>Bauart</td><td>Freistehend</td></tr>'
+                             '<tr><td>Fassungsvermögen</td><td>6 kg</td></tr></table>', "lxml")
+        self.assertEqual(ldy_config.extract_pdp_spec(soup, target={"retailer_sku_name": "Waschtrockner MODEL123"}),
+                         {"ldy_loading_type": None, "ldy_capacity": None})
+        self.assertEqual(ldy_config.extract_pdp_spec(soup, target={"retailer_sku_name": "Waschmaschine MODEL123"}),
+                         {"ldy_loading_type": None, "ldy_capacity": "6 kg"})
+        self.assertEqual(ldy_config.extract_pdp_spec(soup, target={"retailer_sku_name": "Unbekannt"}),
+                         {"ldy_loading_type": None, "ldy_capacity": None})
+        target = {"retailer_sku_name": "Waschmaschine MODEL123", "variation_id": "v1"}
+        ctx = {"name": {"v1": "Waschtrockner MODEL123"}}
+        self.assertIsNone(ldy_config.extract_pdp_spec(soup, target=target, ctx=ctx)["ldy_capacity"])
+        with_valid_fallback = BeautifulSoup('<table class="dv_characteristicsTable">'
+            '<tr><td>Kapazität Waschen</td><td>-</td></tr>'
+            '<tr><td>Nennkapazität (Waschen)</td><td>9 kg</td></tr></table>', "lxml")
+        self.assertEqual(ldy_config.extract_pdp_spec(with_valid_fallback, target=target, ctx=ctx)["ldy_capacity"], "9 kg")
+        for label in ("Produkttyp", "Produktart", "Gerätetyp"):
+            with self.subTest(label=label):
+                combination = BeautifulSoup('<table class="dv_characteristicsTable">'
+                    f'<tr><td>{label}</td><td>Waschmaschine</td></tr>'
+                    f'<tr><td>{label}</td><td>Waschtrockner</td></tr>'
+                    '<tr><td>Fassungsvermögen</td><td>6 kg</td></tr></table>', "lxml")
+                self.assertIsNone(ldy_config.extract_pdp_spec(combination, target=target)["ldy_capacity"])
+
     def test_installation_terms_are_not_loading_type(self) -> None:
         for value in ("Einbau", "freistehend", "Freistehend", "Standgeraet", "stehend", "Unterbau"):
             with self.subTest(value=value):

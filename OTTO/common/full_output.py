@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from common import datasheet, raw_html
@@ -37,6 +38,10 @@ SUMMARY_UI_TEXT = (
 )
 QA_FILL_WARN = 0.90  # spec-field fill rate below this logs a loud [QA][WARN] (advisory only)
 from common.reco import fetch_similar_product_names
+
+
+class PdpSessionRetryLimit(RuntimeError):
+    pass
 
 BASE_HEAD = [
     "account_name", "product", "country", "page_type", "crawl_strdatetime", "calendar_week", "batch_id",
@@ -351,20 +356,32 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             ctx = cfg.prepare_context()
 
     session = None
+    session_open_failures = 0
 
     def ensure_pdp_session():
-        nonlocal session
+        nonlocal session, session_open_failures
         if pdp_supplement != "zenrows":
             return None
         if session is None:
+            if session_open_failures >= 2:
+                raise PdpSessionRetryLimit()
             from common.browser import BrowserSession
             # Lazy and bounded: only rows with missing spec/PDP supplement fields pay the
             # ZenRows browser cost. One warmed browser is then reused for the run.
-            session = BrowserSession(
+            candidate = BrowserSession(
                 mode="zenrows", proxy_country=proxy_country, warmup_listing_url=cfg.WARMUP_LISTING_URL,
                 nav_timeout_ms=90000, detail_wait_ms=20000, settle_ms=3000, max_attempts=2, retry_backoff_ms=4000,
             )
-            session.open()
+            try:
+                candidate.open()
+            except BaseException:
+                session_open_failures += 1
+                try:
+                    candidate.close()
+                except Exception:
+                    pass
+                raise
+            session = candidate
             print(f"[full/{cfg.PRODUCT}] pdp supplement warmup={session.warmup_status}", flush=True)
         return session
 
@@ -428,7 +445,7 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                         pdp = active_session.fetch_pdp(target.get("product_url"))
                         pdp_status = pdp.get("status")
                         pdp_nav_status = pdp.get("nav_status")
-                        pdp_error = pdp.get("error")
+                        pdp_error = "pdp_fetch_error" if pdp.get("error") else None
                         pdp_attempts = pdp.get("attempts") or 0
                         pdp_elapsed_seconds = pdp.get("elapsed_seconds")
                         pdp_final_url = pdp.get("final_url")
@@ -440,19 +457,36 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                             raw_html.save(f"pdp_{pid}", pdp_body)  # opt-in audit copy (OTTO_SAVE_HTML)
                         if pdp.get("detail_present"):
                             soup = BeautifulSoup(pdp_body.decode("utf-8", errors="replace"), "lxml")
-                            if cfg.PRODUCT == "TV":
+                            if cfg.PRODUCT in {"TV", "LDY"}:
                                 # The requested URL can retain its variationId even when OTTO renders another option.
-                                frame = soup.select_one(".pdp-frame[data-variation-id]")
+                                frames = soup.select(".pdp-frame" if cfg.PRODUCT == "LDY" else ".pdp-frame[data-variation-id]")
+                                frame = frames[0] if frames else None
                                 expected = (target.get("variation_id") or "").strip()
-                                if not expected or frame is None:
+                                if not expected or frame is None or not frame.get("data-variation-id") or (cfg.PRODUCT == "LDY" and len(frames) != 1):
                                     pdp_failure_reason = "variation_id_unverified"
                                 elif frame["data-variation-id"] != expected:
                                     pdp_failure_reason = "variation_id_mismatch"
                                 else:
+                                    if cfg.PRODUCT == "LDY":
+                                        expected_product = (target.get("product_id") or "").strip()
+                                        actual_product = str(frame.get("data-product-id") or "").strip()
+                                        canonicals = soup.select('link[rel="canonical"][href]')
+                                        canonical = urlsplit(canonicals[0]["href"]) if len(canonicals) == 1 else None
+                                        alias = (bool(re.fullmatch(r"C\d+", expected_product))
+                                                 and actual_product == expected_product[1:]
+                                                 and canonical is not None
+                                                 and canonical.hostname == "www.otto.de"
+                                                 and canonical.path.rstrip("/").endswith("-" + expected_product))
+                                        if not expected_product or not actual_product:
+                                            pdp_failure_reason = "product_id_unverified"
+                                        elif actual_product != expected_product and not alias:
+                                            pdp_failure_reason = "product_id_mismatch"
                                     soup = frame.select_one(".pdp_details__characteristics-html")
-                                    if soup is None:
+                                    if soup is None and not pdp_failure_reason:
                                         pdp_failure_reason = "characteristics_not_present"
-                            pdp_spec = {} if pdp_failure_reason else cfg.extract_pdp_spec(soup)
+                            pdp_spec = {} if pdp_failure_reason else (
+                                cfg.extract_pdp_spec(soup, target=target, ctx=ctx) if cfg.PRODUCT == "LDY"
+                                else cfg.extract_pdp_spec(soup))
                             apply_ref_type_policy(pdp_spec)
                             for key in pdp_target_fields:
                                 value = pdp_spec.get(key)
@@ -461,8 +495,12 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                                 if not has_value(spec.get(key)):
                                     pdp_recovered_fields.append(key)
                                 spec[key] = value
+                            conflicts = [field for field in pdp_spec.get("_pdp_conflict_fields", [])
+                                         if field in pdp_target_fields]
+                            if conflicts:
+                                pdp_failure_reason = "pdp_conflicting_characteristics:" + ",".join(conflicts)
                 except Exception as exc:  # noqa: BLE001
-                    pdp_error = type(exc).__name__ + ": " + str(exc)
+                    pdp_error = type(exc).__name__
                     print(f"[full/{cfg.PRODUCT}][WARN] pdp supplement failed rank={target.get('main_rank')} error={pdp_error}", flush=True)
                 missing_after_pdp = missing_spec_fields(spec, cfg)
                 remaining_pdp_fields = [

@@ -22,6 +22,7 @@ def build_report(state, rows):
              f"제외 {counts.get('excluded', 0)} / 중복 {counts.get('duplicates', 0)}",
              f"상품 실패 {counts.get('item_failures', 0)} / 요청 오류 상품 {counts.get('request_error_items', 0)}"
              f" / 추출 오류 상품 {counts.get('extraction_error_items', 0)} / 가격 경고 {counts.get('price_warning_items', 0)}",
+             *([f"상세 사양 충돌 상품 {counts['pdp_conflict_items']}건 (진단 파일 확인)"] if counts.get("pdp_conflict_items") else []),
              *([f"목록 보강 응답: 미요청 옵션 {len(unexpected_ids)}개: {', '.join(unexpected_ids)}"
                 f" / 옵션 ID 미확인 {unidentified_rows}건"] if unexpected_ids or unidentified_rows else []),
              f"DB: {state.get('db_status', 'not_started')} / 삽입 {db.get('inserted', 0)} / 중복 {db.get('duplicates', 0)}",

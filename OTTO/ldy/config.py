@@ -13,6 +13,7 @@ import json
 import re
 import time
 import urllib.request
+from decimal import Decimal
 from typing import Any
 from urllib.parse import urlencode
 
@@ -37,7 +38,7 @@ DB_TABLE = env_value("SEG_LDY_DB_FINAL_TABLE", "dx_seg.dx_seg_ldy_retail_com")
 
 SPEC_FIELDS = ["ldy_loading_type", "ldy_capacity"]
 USE_DATASHEET = False
-PDP_SUPPLEMENT_FIELDS: list[str] = []  # loading_type is Kasada-free via /vergleich/
+PDP_SUPPLEMENT_FIELDS = ["ldy_loading_type", "ldy_capacity"]
 
 # Bauart (German) -> ldy_loading_type (English). Other Bauart values (e.g. a
 # Waschtrockner that reports neither) translate to NULL.
@@ -333,5 +334,52 @@ def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] 
     return pdf_model or _model_from_name(target.get("retailer_sku_name"))
 
 
-def extract_pdp_spec(soup) -> dict[str, Any]:
-    return {}
+def extract_pdp_spec(soup, *, target: dict[str, Any], ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw_values: dict[str, list[str]] = {}
+    for row in soup.select(".dv_characteristicsTable tr"):
+        cells = row.find_all("td")
+        if len(cells) >= 2:
+            label, value = (cell.get_text(" ", strip=True) for cell in cells[:2])
+            raw_values.setdefault(label, []).append(value)
+    conflicts = []
+    loading_by_label = {}
+    for label in ("Beladung", "Bauart"):
+        normalized = {english for value in raw_values.get(label, [])
+                      for german, english in LOADING_MAP.items() if german in (_norm(value) or "")}
+        if len(normalized) > 1:
+            conflicts.append("ldy_loading_type")
+            break
+        if normalized:
+            loading_by_label[label] = next(iter(normalized))
+    loading = None if conflicts else loading_by_label.get("Beladung") or loading_by_label.get("Bauart")
+    if len(set(loading_by_label.values())) > 1:
+        conflicts.append("ldy_loading_type")
+    title = target.get("retailer_sku_name") or ""
+    product_types = [value for label in ("Produkttyp", "Produktart", "Gerätetyp")
+                     for value in raw_values.get(label, [])]
+    vid = str(target.get("variation_id") or "").strip()
+    context = ctx or {}
+    comparison_name = context.get("name", {}).get(vid) or ""
+    comparison_type = context.get("chars", {}).get(vid, {}).get("Produkttyp") or ""
+    descriptions = (title, comparison_name, comparison_type, *product_types)
+    combo = _is_waschtrockner(*descriptions)
+    known_washer = any(word in " ".join(descriptions).lower()
+                       for word in ("waschmaschine", "waschvollautomat", "frontlader", "toplader"))
+    labels = ["Kapazität Waschen", *_CAPACITY_WASCHEN]
+    if known_washer and not combo:
+        labels.extend(_CAPACITY_GENERIC)
+    capacity = None
+    for label in labels:
+        matches = [match for value in raw_values.get(label, [])
+                   if (match := re.fullmatch(r"\s*(\d+(?:[.,]\d+)?)\s*kg\s*", value, re.I))
+                   and Decimal(match.group(1).replace(",", ".")) > 0]
+        if len({Decimal(match.group(1).replace(",", ".")) for match in matches}) > 1:
+            conflicts.append("ldy_capacity")
+            break
+        if matches:
+            capacity = f"{matches[0].group(1)} kg"
+            break
+    result = {"ldy_loading_type": loading, "ldy_capacity": capacity}
+    if conflicts:
+        result["_pdp_conflict_fields"] = conflicts
+    return result

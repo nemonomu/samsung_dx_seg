@@ -1,4 +1,4 @@
-"""Bounded direct HTTP. No browser, raw captures, review pagination or extra APIs."""
+"""Bounded HTTP and lazy, same-option PDP supplementation."""
 import io
 import json
 import re
@@ -41,6 +41,120 @@ class Client:
         self.tile_http_400_failures = 0  # Run total for diagnostics, never the abort counter.
         self.tile_unexpected_ids = []
         self.tile_unidentified_rows = 0
+        self._pdp_session = None
+        self._pdp_error = None
+        self._pdp_open_attempts = 0
+
+    def pdp(self, target, needed, *, comparison_name=None):
+        """Read missing fields only from a verified product and option's PDP."""
+        product = text(target.get("product_id"))
+        variation = text(target.get("variation_id"))
+        try:
+            url = public_product_url(target.get("product_url"), variation) if variation else None
+        except ValueError:
+            url = None
+        if not product or not variation or not url:
+            return {"_error": "pdp_identity_missing", "_error_kind": "extraction"}
+        if self._pdp_error and self._pdp_open_attempts >= 2:
+            self.events.emit("failure_reused", endpoint="product_pdp", count=1, status="failed")
+            return {"_error": self._pdp_error, "_error_kind": "request"}
+        if self._pdp_session is None:
+            session = None
+            self._pdp_open_attempts += 1
+            try:
+                from common.browser import BrowserSession
+                session = BrowserSession(mode="zenrows", proxy_country="de", warmup_listing_url=SEARCH_URL,
+                                         nav_timeout_ms=90000, detail_wait_ms=20000, settle_ms=3000,
+                                         max_attempts=2, retry_backoff_ms=4000)
+                try:
+                    session.open()
+                except BaseException:
+                    try:
+                        session.close()
+                    except Exception:
+                        pass
+                    raise
+                self._pdp_session = session
+                self._pdp_error = None
+            except Exception as exc:
+                self._pdp_error = "pdp_connect_failed:" + type(exc).__name__
+                return {"_error": self._pdp_error, "_error_kind": "request"}
+        self.events.emit("request_start", endpoint="product_pdp", attempt=1)
+        outcome = "failed"
+        try:
+            with self.events.activity("request:product_pdp"):
+                response = self._pdp_session.fetch_pdp(url)
+            if response.get("status") != 200 or not response.get("detail_present"):
+                return {"_error": "pdp_request_failed", "_error_kind": "request"}
+            final_url = response.get("final_url")
+            if final_url and urlsplit(final_url).hostname != "www.otto.de":
+                return {"_error": "pdp_unexpected_host", "_error_kind": "extraction"}
+            soup = BeautifulSoup(response.get("body") or b"", "lxml")
+            frames = soup.select(".pdp-frame")
+            if len(frames) != 1:
+                return {"_error": "pdp_frame_unverified", "_error_kind": "extraction"}
+            frame = frames[0]
+            frame_product = text(frame.get("data-product-id"))
+            frame_variation = text(frame.get("data-variation-id"))
+            canonicals = soup.select('link[rel="canonical"][href]')
+            canonical_url = urlsplit(canonicals[0].get("href", "")) if len(canonicals) == 1 else None
+            group_matches = (re.fullmatch(r"C\d+", product) and frame_product == product[1:]
+                             and canonical_url is not None and canonical_url.hostname == "www.otto.de"
+                             and canonical_url.path.rstrip("/").endswith("-" + product))
+            if frame_variation != variation or (frame_product != product and not group_matches):
+                return {"_error": "pdp_product_or_option_mismatch", "_error_kind": "extraction"}
+            detail = frame.select_one(".pdp_details__characteristics-html")
+            tables = detail.select(".dv_characteristicsTable") if detail else []
+            if not tables:
+                return {"_error": "pdp_table_unverified", "_error_kind": "extraction"}
+            values = {}
+            for table in tables:
+                for row in table.select("tr"):
+                    cells = row.find_all("td")
+                    if len(cells) >= 2:
+                        label, value = (text(cell.get_text(" ", strip=True)) for cell in cells[:2])
+                        if label and value:
+                            values.setdefault(label, set()).add(value)
+            heading = frame.select_one("h1")
+            descriptions = [target.get("retailer_sku_name"), target.get("selection_name"), comparison_name,
+                            heading.get_text(" ", strip=True) if heading else ""]
+            for key in ("Produkttyp", "Produktart", "Gerätetyp"):
+                descriptions.extend(values.get(key, ()))
+            combined = any(re.search(r"\bwasch[- ]?trockner\b", text(value), re.I) for value in descriptions)
+            dry_capacity_labels = tuple(label for label in CAPACITY_LABELS if "trock" in label.casefold())
+            labels = {"sku": ("Modellbezeichnung",), "capacity": dry_capacity_labels if combined else CAPACITY_LABELS,
+                      "loading_type": ("Beladung", "Bauart")}
+            parsers = {"sku": valid_sku, "capacity": lambda v: capacity(v, labelled=True),
+                       "loading_type": loading}
+            result = {}
+            for field in needed:
+                matches = []
+                for label in labels[field]:
+                    found = [(raw, parsers[field](raw)) for raw in sorted(values.get(label, set()))]
+                    found = [(raw, normalized) for raw, normalized in found if normalized]
+                    if len({normalized for _, normalized in found}) > 1:
+                        result.update(_error="pdp_ambiguous_characteristic", _error_kind="extraction")
+                        break
+                    if found:
+                        raw, normalized = found[0]
+                        matches.append({"label": label, "raw": raw, "normalized": normalized})
+                        if field != "loading_type":
+                            break
+                if matches:
+                    result[field] = matches[0]["raw"]
+                if field == "loading_type" and len({match["normalized"] for match in matches}) > 1:
+                    result.setdefault("_conflicts", {})[field] = matches
+            outcome = "success" if "_error" not in result else "failed"
+            return result
+        except Exception as exc:
+            return {"_error": "pdp_request_failed:" + type(exc).__name__, "_error_kind": "request"}
+        finally:
+            self.events.emit("request_end", endpoint="product_pdp", attempt=1, outcome=outcome)
+
+    def close(self):
+        if self._pdp_session is not None:
+            session, self._pdp_session = self._pdp_session, None
+            session.close()
 
     def fetch(self, url, endpoint, *, kind="html", headers=None, attempts=None):
         attempts = attempts or self.attempts

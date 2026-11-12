@@ -359,7 +359,8 @@ class FollowupSummaryTests(base.Offline):
         for recovered,fail in (({},False),({'Bauart':'Freistehend'},False),({},True)):
             with self.subTest(recovered=recovered,fail=fail):
                 c,source,log,fetch=self.scenario(recovered=recovered,fail=fail)
-                with patch.object(c,'fetch',side_effect=fetch):rows,run=self.run_pipeline(c,log,6)
+                with patch.object(c,'fetch',side_effect=fetch), patch.object(c,'pdp',return_value={}):
+                    rows,run=self.run_pipeline(c,log,6)
                 self.assertEqual(run['counts']['supplemented_items'],0)
                 self.assertIsNone(rows[-1]['loading_type'])
                 self.assertEqual(run['counts']['request_error_items'],int(fail))
