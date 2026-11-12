@@ -290,9 +290,30 @@ class OttoReviewSummaryDisabledTests(unittest.TestCase):
                 self.assertEqual("", row["summarized_review_content"])
                 self.assertEqual("4.3", row["star_rating"])
                 self.assertEqual("32", row["count_of_star_ratings"])
-                self.assertEqual("32", row["count_of_reviews"])
+                self.assertEqual("", row["count_of_reviews"])
                 self.assertEqual("90%", row["recommendation_intent"])
                 self.assertEqual(review["detailed_review_content"], row["detailed_review_content"])
+
+    def test_confirmed_unrated_is_zero_but_unconfirmed_count_stays_null(self) -> None:
+        target = {"main_rank": "1", "product_id": "test", "retailer_sku_name": "Test ABC12345"}
+        cfg = SimpleNamespace(PRODUCT="TV", ACCOUNT_NAME="OTTO", COUNTRY="DE", SPEC_FIELDS=[],
+                              USE_DATASHEET=False, extract_spec=lambda *args, **kwargs: {})
+        for review, expected in (({"rating_state": "unrated", "rating_count": 0}, "0"),
+                                 ({"rating_state": "failed", "rating_count": 0}, "")):
+            with self.subTest(review=review), tempfile.TemporaryDirectory() as tmpdir:
+                out = Path(tmpdir)
+                with (out / "otto_final_targets.csv").open("w", encoding="utf-8-sig", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=list(target)); writer.writeheader(); writer.writerow(target)
+                with patch.object(full_output, "category_output_root", return_value=out), \
+                        patch.object(full_output, "collect_review", return_value=review), \
+                        patch.object(full_output, "fetch_similar_product_names", return_value={}), \
+                        patch.object(full_output, "refresh_sticker_fields"), \
+                        patch.object(full_output, "sticker_diagnostics", return_value={}), \
+                        patch("sys.stdout", new=io.StringIO()):
+                    full_output.run(cfg, pdp_supplement="none", detail_sleep=0)
+                with (out / "otto_full_output.csv").open(encoding="utf-8-sig", newline="") as f:
+                    row = next(csv.DictReader(f))
+                self.assertEqual(expected, row["count_of_reviews"])
 
     def test_report_ignores_summary_null_and_stale_summary_warnings(self) -> None:
         cfg = SimpleNamespace(PRODUCT="TV", SPEC_FIELDS=[])

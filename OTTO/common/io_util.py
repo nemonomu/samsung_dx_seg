@@ -59,11 +59,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
         return
-    fields: list[str] = []
-    for row in rows:
-        for key in row:
-            if key not in fields:
-                fields.append(key)
+    fields = list(dict.fromkeys(key for row in rows for key in row))
     with path.open("w", newline="", encoding="utf-8-sig") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()

@@ -1,8 +1,7 @@
 """Step14 (shared): load a category's full output into its DB table (PostgreSQL).
 
-Batch-replace by batch_id + account_name; inserts only columns present in the table;
-empty -> NULL. If the target table does not exist (REF/LDY not created yet), it
-auto-skips as a dry-run instead of failing.
+Insert rows using columns present in the table; empty values become NULL.
+Missing tables are reported as skipped; existing rows are never deleted.
 """
 from __future__ import annotations
 
@@ -94,7 +93,6 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
                 columns = cur.fetchall()
                 existing = [r[0] for r in columns]
                 if not existing:
-                    # table not created yet (REF/LDY) -> graceful skip
                     manifest.update(success=True, dry_run=True, skipped=True, reason=f"table {schema}.{table} not found")
                     write_json(out / "step14_db_save_manifest.json", manifest)
                     print(f"[db/{cfg.PRODUCT}] table {schema}.{table} not found -> skipped (dry-run)")
@@ -153,7 +151,7 @@ def run(cfg, *, dry_run: bool | None = None) -> dict[str, Any]:
                         "continuing DB insert"
                     )
                 csv_fields = list(rows[0].keys())
-                insert_cols = [c for c in existing if c != "id" and c in csv_fields]
+                insert_cols = [c for c in existing if c not in {"id", "is_starting_price"} and c in csv_fields]
                 # NOTE: insert-only. This step NEVER deletes/updates existing DB rows.
                 # Any row removal must be done manually by the user (explicit permission).
                 col_sql = ", ".join(_quote(c) for c in insert_cols)

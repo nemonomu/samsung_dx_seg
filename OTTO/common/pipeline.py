@@ -40,7 +40,10 @@ def run(cfg, args: argparse.Namespace | None = None) -> int:
         # A DB failure (e.g. psycopg2 missing, connection error) must NOT skip the email:
         # log it loudly and continue so notify still runs.
         try:
-            db_save.run(cfg, dry_run=True if args.db_dry_run else None)
+            manifest = db_save.run(cfg, dry_run=True if args.db_dry_run else None)
+            if manifest.get("success") is not True:
+                print(f"[db/{cfg.PRODUCT}] FAILED: {manifest.get('reason', 'unknown')} -- continuing to notify", flush=True)
+                failed_steps.append("db")
         except Exception as exc:
             print(f"[db/{cfg.PRODUCT}] FAILED: {exc!r} -- continuing to notify", flush=True)
             failed_steps.append("db")

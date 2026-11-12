@@ -65,6 +65,17 @@ def build_report(cfg, rows: list[dict]) -> tuple[str, str]:
     null_fields = [f for f in null_fields_check if not any((r.get(f) or "").strip() for r in rows)]
 
     issues = []
+    if listing.get("crocotile_complete") is False:
+        failed_ids = [str(value) for value in listing.get("crocotile_failed_ids") or []]
+        details = f"{len(failed_ids)}건: {', '.join(failed_ids)}" if failed_ids else "건수·옵션 ID 미확인"
+        issues.append(f"최신 목록 상품 정보 보강 실패 {details}")
+    anomalies = listing.get("crocotile_response_anomalies") or []
+    unexpected = list(dict.fromkeys(str(value) for entry in anomalies for value in entry.get("unexpected_ids") or []))
+    invalid = sum(entry.get("invalid_rows", 0) for entry in anomalies)
+    if unexpected:
+        issues.append(f"최신 목록 보강 응답에 요청하지 않은 옵션 {len(unexpected)}건: {', '.join(unexpected)}")
+    if invalid:
+        issues.append(f"최신 목록 보강 응답 형식 오류 또는 옵션 ID 없는 항목 {invalid}건")
     rating_qa = (full.get("rating_qa") or {}) if current_full else {}
     rating_failed = int(rating_qa.get("failed") or 0)
     if rating_failed:

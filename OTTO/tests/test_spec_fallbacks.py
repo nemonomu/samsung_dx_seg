@@ -129,6 +129,16 @@ class OttoRefSpecFallbackTests(unittest.TestCase):
         spec = ref_config.extract_spec(target, {}, {"model": {}}, sku=None)
         self.assertEqual(spec["ref_capacity"], "458 l")
 
+    def test_selected_option_total_beats_stale_product_url_volume(self) -> None:
+        target = {
+            "product_id": "C1826307307", "variation_id": "1826307316",
+            "retailer_sku_name": "GORENJE Kühlschrank R 619 EEW5",
+            "product_url": "https://www.otto.de/p/gorenje-280-liter-volumen-C1826307307/?variationId=1826307316",
+        }
+        ctx = {"model": {"1826307316": {"Gesamtrauminhalt": "398 l"}}}
+        spec = ref_config.extract_spec(target, {}, ctx, sku=None)
+        self.assertEqual(spec["ref_capacity"], "398 l")
+
     def test_freezer_only_capacity_is_total_for_freezer(self) -> None:
         target = {
             "product_id": "freezer-example",

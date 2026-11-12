@@ -125,7 +125,7 @@ EXCLUDE_KEYWORDS = (
     "schublade", "türgriff", "scharnier", "halterung", "untergestell",
     # accessories/consumables that carry "kühlschrank" in the name but aren't fridges
     "möbelfolie", "folie", "aufkleber", "organizer", "abtauhilfe", "flüssigreiniger",
-    "kühlbox", "dosenspender", "reiniger",
+    "kühlbox", "dosenspender", "reiniger", "kinder-kühlschrank", "kinderkühlschrank",
     # measuring / locking accessories (thermometer, padlock) named "... Kühlschrank ..."
     "thermometer", "schloss",
 )
@@ -359,7 +359,6 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
     capacity = None
     for source in (
         lambda: _capacity_from_name(target.get("retailer_sku_name")),
-        lambda: _capacity_from_name(target.get("product_url")),
         lambda: datasheet.value_with_unit(ds, "Gesamtrauminhalt", "l"),
         lambda: datasheet.value_with_unit(ds, "Gesamtnutzinhalt", "l"),
         lambda: _datasheet_sum_capacity(ds),
@@ -369,6 +368,7 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
         lambda: _value_by_exact_label(ctx_values, _STANDALONE_TOTAL_KEYS),
         lambda: _capacity_sum_by_labels(top_infos),
         lambda: _capacity_sum_by_labels(ctx_values),
+        lambda: _capacity_from_name(target.get("product_url")),
         lambda: _single_compartment_capacity(top_infos, compartment_kind),
         lambda: _single_compartment_capacity(ctx_values, compartment_kind),
         lambda: _eprel_capacity(sku),
@@ -405,21 +405,25 @@ def resolve_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] 
         return extract_sku(target, ds, ctx)
     option_sku = model_sku.characteristic(target, ctx, "Modellbezeichnung")
     pdf_key, option_key = _norm(pdf_sku), _norm(option_sku)
-    if not option_key or pdf_key == option_key:
+    if pdf_key == option_key:
         return pdf_sku
 
     # Shared labels can list several options. Require the original comma separators
     # and the exact comparison field so neither source can guess at a model.
     for row in ds.get("rows") or []:
-        for cell in row:
+        for index, cell in enumerate(row):
             label, _, value = cell.partition(":")
             if _label_key(label) not in ("modellkennung", "modellkennungdeslieferanten",
-                                         "modelidentifier", "modellbezeichnung") or "," not in value:
+                                         "modelidentifier", "modellbezeichnung"):
+                continue
+            if not value.strip() and index + 1 < len(row):
+                value = row[index + 1]
+            if "," not in value:
                 continue
             models = [_norm(part) or "" for part in value.split(",")]
-            if (option_key in models and " ".join(models) == pdf_key
+            if (" ".join(models) == pdf_key
                     and all(re.search(r"[a-z]", model) and re.search(r"[0-9]", model) for model in models)):
-                return option_sku.strip()
+                return option_sku.strip() if option_key in models else None
     return pdf_sku
 
 

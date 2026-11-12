@@ -300,11 +300,12 @@ class RatingDBNullTests(unittest.TestCase):
     def run_save(self, nullability):
         tmp = self.enterContext(tempfile.TemporaryDirectory())
         out = Path(tmp)
-        data = dict(item="123", batch_id="new", star_rating="", count_of_star_ratings="200", count_of_reviews="200")
+        data = dict(item="123", batch_id="new", star_rating="", count_of_star_ratings="200", count_of_reviews="200", account_name="OTTO", product="TV")
         with (out / "otto_full_output.csv").open("w", encoding="utf-8-sig", newline="") as f:
             w = csv.DictWriter(f, fieldnames=list(data)); w.writeheader(); w.writerow(data)
         conn = MagicMock(); cur = conn.cursor.return_value.__enter__.return_value
         cur.fetchall.return_value = [(k, nullability if k == "star_rating" else "YES") for k in data]
+        cur.fetchone.return_value = None
         for obj, name, value in ((db_save, "category_output_root", out), (db_save, "db_config", {"host": "mock"}),
                                  (db_save, "safe_backfill_from_retail_history", dict(recovered_rows=0, recovered_fields=0, error=None))):
             self.enterContext(patch.object(obj, name, return_value=value))

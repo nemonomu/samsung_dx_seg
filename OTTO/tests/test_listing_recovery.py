@@ -80,8 +80,12 @@ class OttoListingRecoveryTests(unittest.TestCase):
                     patch.object(listing, "fetch_json", return_value=([], {"http_status": 200})) as details, \
                     patch.object(listing, "REQUEST_SLEEP", 0), \
                     patch.object(listing, "sticker_diagnostics", return_value={"unknown_image_count": 0}):
-                listing.run(cfg)
+                manifest = listing.run(cfg)
             rows = read_csv(out / "otto_listing_topseller_rows.csv")
+        self.assertEqual("completed_with_warnings", manifest["status"])
+        self.assertTrue(manifest["success"])
+        self.assertFalse(manifest["crocotile_complete"])
+        self.assertEqual(["v1", "v2", "v3", "v4", "v5"], manifest["crocotile_failed_ids"])
         self.assertEqual(offsets, [0, 2])
         self.assertEqual([(row["display_rank"], row["variation_id"], row["sku_status"]) for row in rows],
                          [("1", "v1", ""), ("2", "v2", "Sponsored"), ("3", "v3", "Sponsored"),
@@ -95,6 +99,26 @@ class OttoListingRecoveryTests(unittest.TestCase):
             listing.parse_topseller_page(html, 109)
         with self.assertRaisesRegex(ValueError, "position"):
             listing.parse_topseller_page(html.replace(b'data-list-position="1"', b''), 0)
+
+    def test_unexpected_option_is_reported_but_requested_option_is_kept(self):
+        cfg = SimpleNamespace(PRODUCT="TV", SUCHBEGRIFF="fernseher", WARMUP_LISTING_URL=self.REFERER)
+        page_rows = [{"display_rank": 1, "product_id": "p", "variation_id": "v1",
+                      "exposure_type": "organic", "retailer_sku_name": "Test TV"}]
+        response = [{"variationId": "v1", "price": {"retailPrice": 100}}, {"variationId": "other"}]
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            with patch.object(listing, "ensure_dirs", return_value=out), \
+                    patch.object(listing, "fetch_topseller_page", return_value=((page_rows, False), {})), \
+                    patch.object(listing, "fetch_json", return_value=(response, {"http_status": 200})), \
+                    patch.object(listing, "REQUEST_SLEEP", 0), \
+                    patch.object(listing, "sticker_diagnostics", return_value={"unknown_image_count": 0}):
+                manifest = listing.run(cfg)
+            rows = read_csv(out / "otto_listing_topseller_rows.csv")
+        self.assertTrue(manifest["success"])
+        self.assertTrue(manifest["crocotile_complete"])
+        self.assertEqual("completed_with_warnings", manifest["status"])
+        self.assertEqual(["other"], manifest["crocotile_response_anomalies"][0]["unexpected_ids"])
+        self.assertTrue(rows[0]["final_sku_price"])
 
     def test_missing_next_control_requires_last_page_evidence(self):
         html = topseller_html(0, [(1, "a", "v1", "")])
@@ -167,6 +191,26 @@ class OttoListingRecoveryTests(unittest.TestCase):
         self.assertEqual([listing.CROCOTILE_HEADERS] * 3, request_headers)
         for diagnostic in diagnostics:
             self.assert_diagnostic_shape(diagnostic)
+
+    def test_crocotile_rejects_incomplete_and_ambiguous_success_responses(self) -> None:
+        cases = (
+            ([{"variationId": "a"}], ["a"], ["b"]),
+            ([], [], ["a", "b"]),
+            ([{"variationId": "a"}, {"variationId": "a"}], [], ["a", "b"]),
+            ([{"variationId": "a"}, {"variationId": "x"}], ["a"], ["b"]),
+            ([{"variationId": "a"}, {"variationId": "b"}, {"variationId": "x"}], ["a", "b"], []),
+            ([{"variationId": "a"}, None, {"variationId": "b"}], ["a", "b"], []),
+        )
+        for response, valid, failed in cases:
+            with self.subTest(response=response), patch.object(listing, "fetch_json", return_value=(response, {"http_status": 200})):
+                diagnostics = []
+                items, failed_ids = listing.fetch_crocotile_batch(["a", "b"], self.REFERER, diagnostics)
+                self.assertEqual(valid, [item["variationId"] for item in items])
+                self.assertEqual(failed, failed_ids)
+                self.assertNotEqual("success", diagnostics[-1]["outcome"])
+                self.assertEqual(["x"] if {"variationId": "x"} in response else [],
+                                 diagnostics[-1]["unexpected_ids"])
+                self.assertEqual(1 if None in response else 0, diagnostics[-1]["invalid_rows"])
 
     def test_crocotile_isolates_bad_singleton_without_losing_good_ids(self) -> None:
         ids = ["good-1", "bad", "good-2", "good-3"]

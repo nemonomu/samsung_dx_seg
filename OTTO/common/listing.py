@@ -12,6 +12,7 @@ import json
 import os
 import time
 import zlib
+from collections import Counter
 from datetime import datetime
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -342,17 +343,29 @@ def fetch_crocotile_batch(
             ) from exc
         return [], ids
 
-    items = [item for item in (data if isinstance(data, list) else []) if isinstance(item, dict)]
+    items = data if isinstance(data, list) else []
+    returned_ids = [_text(item.get("variationId")) if isinstance(item, dict) else None for item in items]
+    counts = Counter(returned_ids)
+    unexpected_ids = list(dict.fromkeys(vid for vid in returned_ids if vid and vid not in ids))
+    invalid_rows = sum(1 for vid in returned_ids if not vid) + (0 if isinstance(data, list) else 1)
+    valid_items = [
+        item for item, vid in zip(items, returned_ids) if vid in ids and counts[vid] == 1
+    ]
+    valid_ids = {_text(item.get("variationId")) for item in valid_items}
+    failed_ids = [vid for vid in ids if vid not in valid_ids]
     diagnostics.append({
         "attempted_at": attempted_at,
         "variation_ids": ids,
         "requested": len(ids),
         "returned": len(items),
         "split_depth": _split_depth,
-        "outcome": "success",
+        "outcome": "incomplete" if failed_ids or unexpected_ids or invalid_rows else "success",
+        "failed_ids": failed_ids,
+        "unexpected_ids": unexpected_ids,
+        "invalid_rows": invalid_rows,
         **{k: meta.get(k) for k in ("http_status", "body_bytes", "body_sha1", "elapsed_seconds")},
     })
-    return items, []
+    return valid_items, failed_ids
 
 
 def crocotile_fields(tile: dict[str, Any], fallback_name: Any) -> dict[str, Any]:
@@ -377,6 +390,7 @@ def crocotile_fields(tile: dict[str, Any], fallback_name: Any) -> dict[str, Any]
         "retailer_sku_name": name,
         "brand": brand,
         "final_sku_price": _euro(price.get("retailPrice")),
+        "is_starting_price": price.get("isStartingPrice") if isinstance(price.get("isStartingPrice"), bool) else None,
         # original price = UVP (suggestedRetailPrice) or, when absent, the former/
         # comparison price (comparativePrice) that the discount is computed against.
         "original_sku_price": _euro(price.get("suggestedRetailPrice") or price.get("comparativePrice")),
@@ -494,7 +508,9 @@ def run(cfg) -> dict[str, Any]:
         )
         write_csv(listing_csv, rows)
         finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
-        status = "completed_with_warnings" if failed_ids or discount_stickers["unknown_image_count"] else "completed"
+        anomalies = [attempt for attempt in crocotile_diagnostics
+                     if attempt.get("unexpected_ids") or attempt.get("invalid_rows")]
+        status = "completed_with_warnings" if failed_ids or anomalies or discount_stickers["unknown_image_count"] else "completed"
         write_json(diagnostics_path, {
             "run_id": run_id,
             "status": status,
@@ -519,6 +535,7 @@ def run(cfg) -> dict[str, Any]:
             "crocotile_returned": len(tiles),
             "crocotile_complete": not failed_ids,
             "crocotile_failed_ids": failed_ids,
+            "crocotile_response_anomalies": anomalies,
             "crocotile_attempt_count": len(crocotile_diagnostics),
             "crocotile_http_400_count": sum(
                 1 for attempt in crocotile_diagnostics if attempt.get("http_status") == 400

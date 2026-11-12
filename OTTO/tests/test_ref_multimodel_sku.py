@@ -13,14 +13,21 @@ from common import compare, datasheet, full_output
 from ref import config as ref
 
 
+def test_shared_pdf_model_in_separate_cell_uses_exact_option():
+    target = {"variation_id": "1687958964"}
+    ctx = {"model": {"1687958964": {"Modellbezeichnung": "HKGK16155CW"}}}
+    ds = {"sku": "HKGK16155CW HKGK16155CB", "rows": [["Modellkennung", "HKGK16155CW, HKGK16155CB"]]}
+    assert ref.resolve_sku(target, ds, ctx) == "HKGK16155CW"
+
+
 def test_full_output_selects_the_requested_model_from_a_shared_ref_datasheet(tmp_path):
     cases = [
         ("1687958964", "HKGK16155CW, HKGK16155CI, HKGK16155CBI", "HKGK16155CW", "HKGK16155CW"),
         ("1844964878", "HFD18983CWDI, HFD18983CWDBI", "HFD18983CWDBI", "HFD18983CWDBI"),
         ("2040612927", "PRCF 1984 E", "PRCF 984 E", "PRCF 1984 E"),
-        ("unmatched-option", "HFD18983CWDI, HFD18983CWDBI", "HFD18983CW", "HFD18983CWDI HFD18983CWDBI"),
-        ("no-comparison", "HFD18983CWDI, HFD18983CWDBI", None, "HFD18983CWDI HFD18983CWDBI"),
-        ("ambiguous-comparison", "AB123, CD456", "AB123, CD456", "AB123 CD456"),
+        ("unmatched-option", "HFD18983CWDI, HFD18983CWDBI", "HFD18983CW", ""),
+        ("no-comparison", "HFD18983CWDI, HFD18983CWDBI", None, ""),
+        ("ambiguous-comparison", "AB123, CD456", "AB123, CD456", ""),
         ("comma-in-model", "ABC123, PRO", "ABC123", "ABC123 PRO"),
         ("no-comma", "ABC123 DEF456", "ABC123", "ABC123 DEF456"),
         ("no-pdf-model", "", "ABC123 weiss", "ABC123"),

@@ -54,7 +54,7 @@ EXCLUDE_KEYWORDS = (
     # hoses / connections / plumbing
     "schlauch", "anschluss", "siphon", "aquastop-set", "wasserfilter", "filter",
     # covers / mats / locks / boxes / care  (specific compounds only, no bare "matte")
-    "abdeckung", "bezug", "antirutsch", "rutschmatte", "kabelschloss",
+    "abdeckung", "bezug", "schutzhülle", "schützhülle", "antirutsch", "rutschmatte", "kabelschloss",
     "steckerschloss", "transportbehälter", "pulverbox", "perle", "parfüm",
     # anti-vibration mats / pads
     "gummimatte", "antivibration", "anti-vibration", "vibrationsdämpfer",
@@ -62,10 +62,10 @@ EXCLUDE_KEYWORDS = (
     # spin dryers / wash basins / toys / generic accessories
     # (use specific compounds, not bare "schleuder", to never hit a real washer model)
     "wäscheschleuder", "schleuderfunktion", "waschschüssel",
-    "spielzeug", "spielküche", "lernspiel", "kinder-waschmaschine", "kinderwaschmaschine",
+    "spielzeug", "spielküche", "lernspiel", "kinderhaushaltsgerät", "kinder-waschmaschine", "kinderwaschmaschine",
     "ballonmütze", "mütze",
     # laundry balls / lint removers (not a washing machine)
-    "wäschekugel", "waschkugel", "fusselball", "fusselbälle", "tierhaarentferner",
+    "wäschekugel", "waschkugel", "wäscheball", "waschball", "fusselball", "fusselbälle", "tierhaarentferner",
     "griff", "türgriff", "zubehör", "ersatzteil", "ersatz",
     # machine cleaners / descalers (carry "waschmaschine" but are consumables, not washers)
     "reiniger", "entkalker",

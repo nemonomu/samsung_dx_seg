@@ -126,6 +126,8 @@ class DiscountStickerTests(unittest.TestCase):
                      for i in range(4)]
         tiles = [{"variationId": "v" + str(i), "deal": {"image": {"src": url}, "highlight": "nur diesen Monat"}}
                  for i, url in enumerate([KNOWN, UNKNOWN, UNKNOWN, None])]
+        tiles[0]["price"] = {"isStartingPrice": True}
+        tiles[1]["price"] = {"isStartingPrice": False}
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             out = Path(directory)
             stack.enter_context(patch.object(listing, "ensure_dirs", return_value=out))
@@ -157,6 +159,7 @@ class DiscountStickerTests(unittest.TestCase):
             self.assertEqual(UNKNOWN, saved[1]["discount_type_image_url"])
             full_output.run(cfg, pdp_supplement="none", detail_sleep=0)
             final = read_csv(out / "otto_full_output.csv")
+            self.assertEqual(["True", "False", "", ""], [r["is_starting_price"] for r in final])
             self.assertEqual(["Deal of the month", "", "", ""], [r["discount_type"] for r in final])
             self.assertEqual(["Deal of the month", None, None, None],
                              [db_save._empty_to_none(r["discount_type"], "discount_type") for r in final])
@@ -164,14 +167,15 @@ class DiscountStickerTests(unittest.TestCase):
             database = MagicMock()
             connection = database.connect.return_value
             cursor = connection.cursor.return_value.__enter__.return_value
-            cursor.fetchall.return_value = [("discount_type", "YES")]
+            cursor.fetchall.return_value = [(field, "YES") for field in ("discount_type", "batch_id", "account_name", "product", "count_of_reviews")]
+            cursor.fetchone.return_value = None
             with patch.dict(sys.modules, {"psycopg2": database}), \
                     patch.object(db_save, "db_config", return_value={"host": "test.invalid"}), \
                     patch.object(db_save, "safe_backfill_from_retail_history", return_value={
                         "recovered_rows": 0, "recovered_fields": 0, "error": None}):
                 db_save.run(cfg, dry_run=False)
-            self.assertEqual([("Deal of the month",), (None,), (None,), (None,)],
-                             cursor.executemany.call_args.args[1])
+            self.assertEqual(["Deal of the month", None, None, None],
+                             [row[0] for row in cursor.executemany.call_args.args[1]])
             notify.run(cfg)
             send.assert_called_once()
             subject, body = send.call_args.args
