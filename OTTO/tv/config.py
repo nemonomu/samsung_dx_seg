@@ -114,18 +114,18 @@ def _screen_from_detail_value(value: str | None) -> str | None:
 
 def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None,
                  sku: str | None = None) -> dict[str, Any]:
-    # The listing title is the preferred source when it contains an explicit diagonal;
-    # top-info/datasheet are fallbacks for titles without one.
     screen = (_screen_from_name(target.get("retailer_sku_name"))
               or _screen_from_topinfo(target)
               or datasheet.screen_inches(ds)
-              or _screen_cm_from_url_without_zoll(target.get("product_url")))
+              or _screen_cm_from_url_without_zoll(target.get("product_url"))
+              or _screen_from_name(model_sku.characteristic(target, ctx, "Bildschirmdiagonale in Zoll")))
     # The detail step reads HDR only from the selected option's product page.
     return {"screen_size": screen, "estimated_annual_electricity_use": None}
 
 
 def prepare_context(targets=None) -> dict[str, Any]:
-    return model_sku.model_context(targets, SUCHBEGRIFF)
+    return model_sku.model_context(targets, SUCHBEGRIFF,
+                                   labels=("Modellbezeichnung", "Bildschirmdiagonale in Zoll"))
 
 
 def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:

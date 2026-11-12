@@ -341,6 +341,38 @@ class OttoTvPdpSpecTests(unittest.TestCase):
         spec = tv_config.extract_spec(target, {}, {"model": {}}, sku="K-55S3")
         self.assertIsNone(spec["screen_size"])
 
+    def test_selected_option_comparison_inch_value_fills_missing_screen(self) -> None:
+        target = {"variation_id": "S5YW1N25MPJP", "retailer_sku_name": "BBG C20P LED-Fernseher",
+                  "product_url": "https://www.otto.de/p/bbg-c20p-32-zoll-S0YKK0KE/?variationId=S5YW1N25MPJP"}
+        ctx = {"model": {"S5YW1N25MPJP": {"Bildschirmdiagonale in Zoll": '32 "'},
+                         "other": {"Bildschirmdiagonale in Zoll": '65 "'}}}
+        self.assertEqual(tv_config.extract_spec(target, {}, ctx)["screen_size"], "32")
+        self.assertIsNone(tv_config.extract_spec(dict(target, variation_id="missing"), {}, ctx)["screen_size"])
+        ctx["model"]["S5YW1N25MPJP"]["Bildschirmdiagonale in Zoll"] = "32"
+        self.assertIsNone(tv_config.extract_spec(target, {}, ctx)["screen_size"])
+
+    def test_existing_title_precedes_option_comparison(self) -> None:
+        target = {"variation_id": "v1", "retailer_sku_name": "TV Model 55 Zoll"}
+        ctx = {"model": {"v1": {"Bildschirmdiagonale in Zoll": '32 "'}}}
+        self.assertEqual(tv_config.extract_spec(target, {}, ctx)["screen_size"], "55")
+
+    def test_existing_other_screen_sources_precede_option_comparison(self) -> None:
+        ctx = {"model": {"v1": {"Bildschirmdiagonale in Zoll": '32 "'}}}
+        cases = (
+            ({"top_infos": '{"Bildschirmdiagonale": "49 Zoll"}'}, "77", "49"),
+            ({}, "77", "77"),
+            ({"product_url": "https://www.otto.de/p/test-100-cm-item/"}, None, "100 cm"),
+        )
+        for source, pdf_value, expected in cases:
+            with self.subTest(source=source), patch.object(datasheet, "screen_inches", return_value=pdf_value):
+                target = {"variation_id": "v1", "retailer_sku_name": "TV Model", **source}
+                self.assertEqual(tv_config.extract_spec(target, {}, ctx)["screen_size"], expected)
+
+    def test_tv_context_requests_option_diagonal_with_model(self) -> None:
+        with patch.object(tv_config.model_sku, "model_context", return_value={}) as context:
+            tv_config.prepare_context([{"variation_id": "S5YW1N25MPJP"}])
+        self.assertIn("Bildschirmdiagonale in Zoll", context.call_args.kwargs["labels"])
+
 
 if __name__ == "__main__":
     unittest.main()
