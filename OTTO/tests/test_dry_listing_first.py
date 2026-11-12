@@ -228,14 +228,14 @@ class ReuseTests(base.Offline):
         with tempfile.TemporaryDirectory() as root, patch("sys.stdout", new=io.StringIO()):
             code, result = pipeline.execute(limit=1, output_root=root, client_factory=factory,
                 database=database, backfill=lambda table, events, rows: {}, notifier=notifier)
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 0)
         self.assertEqual(result["database"]["inserted"], 1)
         self.assertEqual(database.call_count, 2)
         self.assertEqual(database.call_args.args[2][0]["item"], "1")
         self.assertIn("확인 필요", reports[0][0])
         self.assertIn("미요청 옵션 1개: other / 옵션 ID 미확인 1건", reports[0][1])
 
-    def test_duplicate_tile_is_rejected_without_discarding_other_options(self):
+    def test_duplicate_tile_is_logged_and_options_are_kept(self):
         log = base.Log()
         c = client.Client(log)
         duplicate = [dict(variationId="v1", name="Trockner A", price={"retailPrice": "100"}),
@@ -244,15 +244,15 @@ class ReuseTests(base.Offline):
         with patch.object(c, "fetch", side_effect=[(duplicate, {}),
                                                    ([dict(variationId="v1", name="Trockner A")], {})]):
             result = c.tiles(["v1", "v2"])
-            self.assertEqual(set(result), {"v2"})
+            self.assertEqual(set(result), {"v1", "v2"})
             self.assertEqual(result["v2"]["final_sku_price"], "300 €")
-            self.assertNotIn("v1", c.tile_cache)
+            self.assertIn("v1", c.tile_cache)
             self.assertIn("v1", c.tiles(["v1"]))
         self.assertTrue(any(event == "failure" and values.get("variation_id") == "v1"
                             and values.get("reason") == "duplicate_tile_option"
                             for event, values in log.records))
 
-    def test_duplicate_tile_skips_only_that_product_in_pipeline(self):
+    def test_duplicate_tile_keeps_both_products_in_pipeline(self):
         log = base.Log()
         c = client.Client(log)
         source = base.Source([[base.target(1), base.target(2)]])
@@ -263,9 +263,9 @@ class ReuseTests(base.Offline):
         run = state(2)
         with patch.object(c, "fetch", return_value=(data, {})):
             rows = pipeline.collect(source, log, run, lambda _: None)
-        self.assertEqual([row["item"] for row in rows], ["2"])
-        self.assertEqual(run["counts"]["item_failures"], 1)
-        self.assertEqual(rows[0]["final_sku_price"], "300 €")
+        self.assertEqual([row["item"] for row in rows], ["1", "2"])
+        self.assertEqual(run["counts"]["item_failures"], 0)
+        self.assertEqual(rows[1]["final_sku_price"], "300 €")
 
     def test_comparison_cache_defensive_and_failures_remain_failed(self):
         c=client.Client(base.Log())

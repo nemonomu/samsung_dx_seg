@@ -9,7 +9,7 @@ def build_report(state, rows):
     code = state.get("collection_exit_code", state.get("exit_code", 0))
     unexpected_ids = counts.get("tile_unexpected_ids") or []
     unidentified_rows = counts.get("tile_unidentified_rows") or 0
-    outcome = "실패" if code in (3, 4, 5) else "확인 필요" if code or unexpected_ids or unidentified_rows else "완료"
+    outcome = "실패" if code in (3, 4, 5) else "확인 필요" if code or unexpected_ids or unidentified_rows or counts.get("pdp_conflict_items") else "완료"
     mode = "CSV 재적재" if state.get("mode") == "load_only" else "수집"
     subject = f"[SEG] OTTO DRY {mode} {outcome}"
     main_count = sum(row.get("main_rank") not in (None, "") for row in rows)

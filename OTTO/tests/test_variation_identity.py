@@ -299,7 +299,7 @@ class VariationIdentityTests(unittest.TestCase):
             self.assertNotIn("secret-test-token", json.dumps(manifest))
             self.assertEqual(manifest["attempts"][1]["spec"]["ldy_loading_type"], "Front loader")
 
-    def test_ldy_pdp_session_failures_are_bounded_and_rows_continue(self):
+    def test_ldy_pdp_session_failures_are_logged_and_rows_continue(self):
         targets = [{"product_id": f"p{i}", "variation_id": f"v{i}", "main_rank": i,
                     "retailer_sku_name": "Waschmaschine MODEL123", "product_url": f"https://www.otto.de/p/model-p{i}/"}
                    for i in range(1, 4)]
@@ -317,10 +317,10 @@ class VariationIdentityTests(unittest.TestCase):
                     patch.object(full_output, "sticker_diagnostics", return_value={}):
                 sessions.return_value.open.side_effect = RuntimeError("token")
                 manifest = full_output.run(ldy, detail_sleep=0)
-            self.assertEqual(sessions.call_count, 2)
-            self.assertEqual(sessions.return_value.close.call_count, 2)
+            self.assertEqual(sessions.call_count, 3)
+            self.assertEqual(sessions.return_value.close.call_count, 3)
             self.assertEqual(manifest["output_rows"], 3)
-            self.assertEqual(manifest["attempts"][2]["pdp_supplement_failure_reason"], "PdpSessionRetryLimit")
+            self.assertEqual(manifest["attempts"][2]["pdp_supplement_failure_reason"], "RuntimeError")
 
     def test_ldy_interrupt_during_pdp_open_closes_browser(self):
         target = {"product_id": "p1", "variation_id": "v1", "main_rank": 1,

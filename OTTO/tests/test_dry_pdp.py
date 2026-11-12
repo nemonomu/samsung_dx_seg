@@ -22,6 +22,17 @@ def response(body):
 
 
 class DryerPdpTests(base.Offline):
+    def test_conflicting_label_logs_error_and_tries_alternative(self):
+        html = pdp_html(rows={"Beladung": "Frontlader", "Bauart": "Toplader"})
+        html = html.replace(b'</table>', b'<tr><td>Beladung</td><td>Toplader</td></tr></table>')
+        with patch("common.browser.BrowserSession") as browser:
+            browser.return_value.fetch_pdp.return_value = response(html)
+            c = client.Client(base.Log())
+            result = c.pdp(base.target(1), {"loading_type"})
+            c.close()
+        self.assertEqual(result.get("_error"), "pdp_ambiguous_characteristic")
+        self.assertEqual(result.get("loading_type"), "Toplader")
+
     def test_same_product_and_option_reuse_one_session(self):
         c = client.Client(base.Log())
         with patch("common.browser.BrowserSession") as browser:
@@ -60,7 +71,7 @@ class DryerPdpTests(base.Offline):
                 c.close()
                 self.assertEqual(value.get("loading_type"), "Frontlader" if accepted else None)
 
-    def test_connection_failure_is_cached_closed_and_does_not_expose_secret(self):
+    def test_connection_failure_is_retried_closed_and_does_not_expose_secret(self):
         log = base.Log()
         c = client.Client(log)
         with patch("common.browser.BrowserSession") as browser:
@@ -68,8 +79,8 @@ class DryerPdpTests(base.Offline):
             browser.return_value.close.side_effect = RuntimeError("SECRET_TOKEN")
             values = [c.pdp(base.target(i), {"loading_type"}) for i in (1, 2, 3)]
             c.close()
-        self.assertEqual(browser.call_count, 2)
-        self.assertEqual(browser.return_value.close.call_count, 2)
+        self.assertEqual(browser.call_count, 3)
+        self.assertEqual(browser.return_value.close.call_count, 3)
         self.assertTrue(all(v.get("_error_kind") == "request" for v in values))
         self.assertNotIn("SECRET_TOKEN", repr((values, log.records)))
 
@@ -245,7 +256,7 @@ class DryerPdpPipelineTests(base.Offline):
                                            database=db, backfill=lambda table, events, rows: {})
             rows, _ = storage.read_output(state["csv"])
             diagnostics = Path(state["diagnostics"]).read_text(encoding="utf-8")
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 0)
         self.assertEqual(rows[0]["loading_type"], "Top-loading")
         self.assertEqual(state["counts"]["pdp_conflict_items"], 1)
         self.assertEqual(state["counts"]["extraction_error_items"], 0)

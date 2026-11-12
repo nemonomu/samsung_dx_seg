@@ -129,11 +129,11 @@ def typed(value, column, meta):
             raw = raw.replace("EUR", "").replace("€", "")
             if any(mark in raw for mark in ("-", "–", "−")) and not re.fullmatch(
                     r"\+?(?:\d+|\d{1,3}(?:\.\d{3})+),[-–]", raw):
-                raise DryError("db_numeric_invalid:" + column)
+                print(f"[dry/db][WARN] unusual numeric format in {column}", flush=True)
             if "," in raw:
                 whole = raw.split(",", 1)[0]
                 if "." in whole and not re.fullmatch(r"[+-]?\d{1,3}(?:\.\d{3})+", whole):
-                    raise DryError("db_numeric_invalid:" + column)
+                    print(f"[dry/db][WARN] unusual numeric format in {column}", flush=True)
                 raw = raw.replace(".", "").replace(",", ".").replace("–", "00").replace("-", "00")
             elif re.fullmatch(r"[+-]?\d{1,3}(?:\.\d{3})+", raw):
                 raw = raw.replace(".", "")

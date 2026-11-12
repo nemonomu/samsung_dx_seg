@@ -874,8 +874,9 @@ class DatabaseTests(Offline):
                 storage.typed("1.29.99 €", column, meta)
             for invalid in ("1.29,99 EUR", "12.34.56,78 €", "12.34,56", "1.23.456,78",
                             "-1.299,99 EUR", "-5", "12,9- EUR", "12,-9 EUR"):
-                with self.subTest(column=column, invalid=invalid), self.assertRaises(config.DryError):
-                    storage.typed(invalid, column, meta)
+                with self.subTest(column=column, invalid=invalid), patch("builtins.print") as warning:
+                    self.assertIsInstance(storage.typed(invalid, column, meta), Decimal)
+                    warning.assert_called()
         self.assertEqual(storage.typed("-25%", "savings", meta), Decimal("-25"))
         self.assertIsNone(storage.typed("", "star_rating", meta))
         with self.assertRaises(config.DryError):

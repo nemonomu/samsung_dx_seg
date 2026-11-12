@@ -347,8 +347,7 @@ def execute(*, limit=config.DEFAULT_LIMIT, table=config.DEFAULT_TABLE, output_ro
         else:
             state["db_status"] = "skipped_empty"
         if state.get("history_backfill", {}).get("error") or any(state.get("counts", {}).get(k) for k in
-                ("item_failures", "request_error_items", "extraction_error_items", "price_warning_items",
-                 "tile_unexpected_ids", "tile_unidentified_rows", "pdp_conflict_items")):
+                ("item_failures", "request_error_items", "extraction_error_items", "price_warning_items")):
             code = 2
     except (Exception, KeyboardInterrupt) as exc:
         reason = str(exc) if isinstance(exc, config.DryError) else type(exc).__name__

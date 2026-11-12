@@ -40,9 +40,6 @@ QA_FILL_WARN = 0.90  # spec-field fill rate below this logs a loud [QA][WARN] (a
 from common.reco import fetch_similar_product_names
 
 
-class PdpSessionRetryLimit(RuntimeError):
-    pass
-
 BASE_HEAD = [
     "account_name", "product", "country", "page_type", "crawl_strdatetime", "calendar_week", "batch_id",
     "main_rank", "bsr_rank", "item", "product_url", "retailer_sku_name",
@@ -356,15 +353,11 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             ctx = cfg.prepare_context()
 
     session = None
-    session_open_failures = 0
-
     def ensure_pdp_session():
-        nonlocal session, session_open_failures
+        nonlocal session
         if pdp_supplement != "zenrows":
             return None
         if session is None:
-            if session_open_failures >= 2:
-                raise PdpSessionRetryLimit()
             from common.browser import BrowserSession
             # Lazy and bounded: only rows with missing spec/PDP supplement fields pay the
             # ZenRows browser cost. One warmed browser is then reused for the run.
@@ -375,7 +368,6 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
             try:
                 candidate.open()
             except BaseException:
-                session_open_failures += 1
                 try:
                     candidate.close()
                 except Exception:

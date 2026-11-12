@@ -95,7 +95,7 @@ def test_legacy_listing_can_build_main_without_inventing_bsr(tmp_path):
     assert manifest["bsr_tagged_rows"] == 0
 
 
-def test_failed_or_mismatched_listing_cannot_reuse_previous_rows(tmp_path):
+def test_failed_or_mismatched_listing_warns_and_keeps_existing_behavior(tmp_path):
     manifest_path = tmp_path / "step01_listing_manifest.json"
     offers = [dict(offer(1, "A", "a1", "organic"), discount_sticker_run_id="old")]
     for manifest, reason in (
@@ -103,18 +103,18 @@ def test_failed_or_mismatched_listing_cannot_reuse_previous_rows(tmp_path):
         ({"success": True, "run_id": "new"}, "does not match"),
     ):
         write_json(manifest_path, manifest)
-        with pytest.raises(RuntimeError, match=reason):
-            run_targets(tmp_path, offers, main_limit=1, bsr_limit=1)
-    assert not (tmp_path / "otto_final_targets.csv").exists()
+        rows, result = run_targets(tmp_path, offers, main_limit=1, bsr_limit=1)
+        assert len(rows) == 1
+        assert any(reason in warning for warning in result["warnings"])
 
 
-def test_missing_option_id_does_not_take_a_rank(tmp_path):
+def test_missing_option_id_keeps_listing_identity_and_later_options(tmp_path):
     rows, manifest = run_targets(
         tmp_path,
         [offer(1, "A", "", "organic"), offer(2, "A", "a1", "organic")],
-        main_limit=1,
-        bsr_limit=1,
+        main_limit=2,
+        bsr_limit=2,
     )
 
-    assert [(r["variation_id"], r["main_rank"], r["bsr_rank"]) for r in rows] == [("a1", "1", "1")]
-    assert manifest["excluded_rows"] == 1
+    assert [(r["variation_id"], r["main_rank"], r["bsr_rank"]) for r in rows] == [("", "1", "1"), ("a1", "2", "2")]
+    assert manifest["excluded_rows"] == 0

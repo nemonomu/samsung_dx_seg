@@ -348,10 +348,10 @@ def extract_pdp_spec(soup, *, target: dict[str, Any], ctx: dict[str, Any] | None
                       for german, english in LOADING_MAP.items() if german in (_norm(value) or "")}
         if len(normalized) > 1:
             conflicts.append("ldy_loading_type")
-            break
+            continue
         if normalized:
             loading_by_label[label] = next(iter(normalized))
-    loading = None if conflicts else loading_by_label.get("Beladung") or loading_by_label.get("Bauart")
+    loading = loading_by_label.get("Beladung") or loading_by_label.get("Bauart")
     if len(set(loading_by_label.values())) > 1:
         conflicts.append("ldy_loading_type")
     title = target.get("retailer_sku_name") or ""
@@ -375,7 +375,7 @@ def extract_pdp_spec(soup, *, target: dict[str, Any], ctx: dict[str, Any] | None
                    and Decimal(match.group(1).replace(",", ".")) > 0]
         if len({Decimal(match.group(1).replace(",", ".")) for match in matches}) > 1:
             conflicts.append("ldy_capacity")
-            break
+            continue
         if matches:
             capacity = f"{matches[0].group(1)} kg"
             break

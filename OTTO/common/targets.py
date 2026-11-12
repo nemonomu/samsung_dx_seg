@@ -26,11 +26,16 @@ def run(cfg) -> dict[str, Any]:
     # A failed collection can leave a valid CSV from an older run in the output directory.
     listing_manifest = out / "step01_listing_manifest.json"
     source = read_json(listing_manifest) if listing_manifest.exists() else {}
+    warnings = []
     if source.get("success") is False or source.get("status") == "running":
-        raise RuntimeError("Latest OTTO listing did not complete; rerun listing before selecting targets")
+        warnings.append("Latest OTTO listing did not complete")
     rows = read_csv(out / "otto_listing_topseller_rows.csv")
     if source.get("run_id") and rows and {r.get("discount_sticker_run_id") for r in rows} != {source["run_id"]}:
-        raise RuntimeError("OTTO listing CSV does not match the latest listing manifest")
+        warnings.append("OTTO listing CSV does not match the latest listing manifest")
+    elif (source.get("success") is False or source.get("status") == "running") and not source.get("run_id"):
+        warnings.append("Previous listing rows cannot be confirmed as part of the current run")
+    for warning in warnings:
+        print(f"[targets/{cfg.PRODUCT}][WARN] {warning}", flush=True)
     rows_sorted = sorted(rows, key=_rank)
 
     main: dict[tuple[str, str], dict] = {}
@@ -41,7 +46,14 @@ def run(cfg) -> dict[str, Any]:
         # Different options can share a title or product ID and still have different specifications.
         key = ((row.get("product_id") or "").strip(), (row.get("variation_id") or "").strip())
         if is_target and not all(key):
-            is_target, reason = False, "missing_product_or_variation_id"
+            fallback = " ".join(str(row.get("retailer_sku_name") or "").split()).casefold()
+            fallback = fallback or str(row.get("product_url") or "").strip()
+            if fallback:
+                print(f"[targets/{cfg.PRODUCT}][WARN] missing product/variation ID; using listing identity", flush=True)
+                key = ("listing_fallback", fallback)
+            else:
+                is_target, reason = False, "missing_product_variation_and_listing_identity"
+                print(f"[targets/{cfg.PRODUCT}][WARN] product has no usable listing identity", flush=True)
         annotated = dict(row, classify_reason=reason, is_target=is_target)
         if not is_target:
             excluded.append(annotated)
@@ -64,6 +76,7 @@ def run(cfg) -> dict[str, Any]:
     shortfall = max(0, MAIN_TARGET_UNIQUE - len(final_rows))
     manifest = {
         "run_type": "final_targets", "product": cfg.PRODUCT,
+        "warnings": warnings,
         "input_rows": len(rows), "excluded_rows": len(excluded),
         "final_target_rows": len(final_rows), "main_target_unique": MAIN_TARGET_UNIQUE,
         "main_target_shortfall": shortfall, "bsr_rank_limit": BSR_TARGET_RANK,

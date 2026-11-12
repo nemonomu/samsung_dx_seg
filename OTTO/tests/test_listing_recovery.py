@@ -54,6 +54,30 @@ class StubListingFetchError(listing.ListingFetchError):
 class OttoListingRecoveryTests(unittest.TestCase):
     REFERER = "https://www.otto.de/suche/fernseher/"
 
+    def test_empty_or_unrecognized_page_is_retried(self):
+        for html in (b"<html></html>", topseller_html(0, [])):
+            with self.subTest(html=html):
+                rows, retry = listing.parse_topseller_page(html, 0)
+                self.assertEqual(rows, [])
+                self.assertTrue(retry)
+
+    def test_sponsored_only_page_warns_and_retries_without_stopping(self):
+        cfg = SimpleNamespace(PRODUCT="TV", SUCHBEGRIFF="fernseher", WARMUP_LISTING_URL=self.REFERER)
+        ad = {"display_rank": 1, "product_id": "a", "variation_id": "v1",
+              "exposure_type": "sponsored", "retailer_sku_name": "Test TV"}
+        organic = {"display_rank": 2, "product_id": "b", "variation_id": "v2",
+                   "exposure_type": "organic", "retailer_sku_name": "Test TV"}
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(listing, "ensure_dirs", return_value=Path(directory)), \
+                    patch.object(listing, "fetch_topseller_page", side_effect=[(([ad], True), {}), (([organic], False), {})]) as pages, \
+                    patch.object(listing, "fetch_json", return_value=([], {"http_status": 200})), \
+                    patch.object(listing, "REQUEST_SLEEP", 0), \
+                    patch.object(listing, "sticker_diagnostics", return_value={"unknown_image_count": 0}):
+                manifest = listing.run(cfg)
+        self.assertEqual(pages.call_count, 2)
+        self.assertEqual(manifest["listing_rows"], 2)
+        self.assertTrue(any("cannot advance" in warning for warning in manifest["listing_warnings"]))
+
     def test_run_uses_display_positions_and_advances_by_organic_cards(self):
         ad = 'data-origin="sponsored"'
         pages = {
@@ -93,12 +117,15 @@ class OttoListingRecoveryTests(unittest.TestCase):
         self.assertTrue(rows[4]["product_url"].endswith("?variationId=v2"))
         self.assertEqual(variation_ids_from_url(details.call_args.args[0]), ["v1", "v2", "v3", "v4", "v5"])
 
-    def test_topseller_requires_real_position_and_requested_offset(self):
+    def test_topseller_logs_position_and_offset_issues_and_keeps_cards(self):
         html = topseller_html(0, [(1, "a", "v1", "")])
-        with self.assertRaisesRegex(ValueError, "offset"):
-            listing.parse_topseller_page(html, 109)
-        with self.assertRaisesRegex(ValueError, "position"):
-            listing.parse_topseller_page(html.replace(b'data-list-position="1"', b''), 0)
+        with patch("builtins.print") as warning:
+            rows, _ = listing.parse_topseller_page(html, 109)
+            self.assertEqual(rows[0]["variation_id"], "v1")
+            rows, _ = listing.parse_topseller_page(html.replace(b'data-list-position="1"', b''), 0)
+            self.assertEqual(rows[0]["variation_id"], "v1")
+            self.assertIsNone(rows[0]["display_rank"])
+        self.assertGreaterEqual(warning.call_count, 2)
 
     def test_unexpected_option_is_reported_but_requested_option_is_kept(self):
         cfg = SimpleNamespace(PRODUCT="TV", SUCHBEGRIFF="fernseher", WARMUP_LISTING_URL=self.REFERER)
@@ -120,11 +147,14 @@ class OttoListingRecoveryTests(unittest.TestCase):
         self.assertEqual(["other"], manifest["crocotile_response_anomalies"][0]["unexpected_ids"])
         self.assertTrue(rows[0]["final_sku_price"])
 
-    def test_missing_next_control_requires_last_page_evidence(self):
+    def test_missing_next_control_logs_and_attempts_next_page(self):
         html = topseller_html(0, [(1, "a", "v1", "")])
         html = html.replace(b'reptile-paging-next', b'renamed-pager')
-        with self.assertRaisesRegex(ValueError, "pagination"):
-            listing.parse_topseller_page(html, 0)
+        with patch("builtins.print") as warning:
+            rows, has_next = listing.parse_topseller_page(html, 0)
+        self.assertTrue(has_next)
+        self.assertEqual(rows[0]["variation_id"], "v1")
+        warning.assert_called()
         last = html.replace(b'renamed-pager', b'reptile-paging-current')
         self.assertFalse(listing.parse_topseller_page(last, 0)[1])
 
@@ -196,7 +226,7 @@ class OttoListingRecoveryTests(unittest.TestCase):
         cases = (
             ([{"variationId": "a"}], ["a"], ["b"]),
             ([], [], ["a", "b"]),
-            ([{"variationId": "a"}, {"variationId": "a"}], [], ["a", "b"]),
+            ([{"variationId": "a"}, {"variationId": "a"}], ["a", "a"], ["b"]),
             ([{"variationId": "a"}, {"variationId": "x"}], ["a"], ["b"]),
             ([{"variationId": "a"}, {"variationId": "b"}, {"variationId": "x"}], ["a", "b"], []),
             ([{"variationId": "a"}, None, {"variationId": "b"}], ["a", "b"], []),

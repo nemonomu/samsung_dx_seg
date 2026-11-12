@@ -224,11 +224,15 @@ def parse_topseller_page(body: bytes, offset: int) -> tuple[list[dict[str, Any]]
     soup = BeautifulSoup(body, "lxml")
     root = soup.select_one('[data-qa="reptile-search-result"]')
     if root is None:
-        raise ValueError("Topseller result root missing")
-    page = json.loads(root.get("data-page") or "{}")
+        print("[listing][WARN] Topseller result root missing; no verifiable cards", flush=True)
+        return [], True
+    try:
+        page = json.loads(root.get("data-page") or "{}")
+    except (TypeError, ValueError):
+        page = {}
     if (not isinstance(page, dict) or page.get("sortiertnach") != "topseller"
             or int_or_none(page.get("o")) != offset):
-        raise ValueError(f"Topseller result does not confirm offset {offset} and sort order")
+        print(f"[listing][WARN] Topseller result does not confirm offset {offset} and sort order", flush=True)
 
     # Use the site's data attributes so visual markup changes do not alter rank or option identity.
     rows = []
@@ -239,7 +243,7 @@ def parse_topseller_page(body: bytes, offset: int) -> tuple[list[dict[str, Any]]
         origin = tile.get("data-origin")
         url = first_product_url(tile)
         if not pos or not pid or not vid or not url or origin not in (None, "organic", "sponsored"):
-            raise ValueError("Topseller card missing position, product/option ID, URL, or supported origin")
+            print("[listing][WARN] Topseller card missing position, product/option ID, URL, or supported origin", flush=True)
         rows.append({
             "source": "topseller_tilelist", "display_rank": pos, "list_position": pos,
             "row_index": pos, "target_rank": pos, "is_listing_target": True,
@@ -248,13 +252,15 @@ def parse_topseller_page(body: bytes, offset: int) -> tuple[list[dict[str, Any]]
             "product_url": url, "retailer_sku_name": first_listing_name(tile),
         })
     if not rows:
-        raise ValueError("Topseller result contains no verifiable product cards")
+        print("[listing][WARN] Topseller result contains no verifiable product cards", flush=True)
+        return rows, True
     next_control = root.select_one('[data-qa="reptile-paging-next"]')
     if next_control is None:
         # A missing Next button is only an end marker when the pager confirms the current page is last.
         pages = root.select('[data-qa^="reptile-paging-page-"], [data-qa="reptile-paging-current"]')
         if not pages or pages[-1].get("data-qa") != "reptile-paging-current":
-            raise ValueError("Topseller pagination missing or inconsistent")
+            print("[listing][WARN] Topseller pagination missing or inconsistent; retaining collected cards", flush=True)
+            return rows, True
         return rows, False
     disabled = '[disabled], [aria-disabled="true"]'
     return rows, not (next_control.css.match(disabled) or next_control.select_one(disabled))

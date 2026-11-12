@@ -43,7 +43,6 @@ class Client:
         self.tile_unidentified_rows = 0
         self._pdp_session = None
         self._pdp_error = None
-        self._pdp_open_attempts = 0
 
     def pdp(self, target, needed, *, comparison_name=None):
         """Read missing fields only from a verified product and option's PDP."""
@@ -55,12 +54,8 @@ class Client:
             url = None
         if not product or not variation or not url:
             return {"_error": "pdp_identity_missing", "_error_kind": "extraction"}
-        if self._pdp_error and self._pdp_open_attempts >= 2:
-            self.events.emit("failure_reused", endpoint="product_pdp", count=1, status="failed")
-            return {"_error": self._pdp_error, "_error_kind": "request"}
         if self._pdp_session is None:
             session = None
-            self._pdp_open_attempts += 1
             try:
                 from common.browser import BrowserSession
                 session = BrowserSession(mode="zenrows", proxy_country="de", warmup_listing_url=SEARCH_URL,
@@ -134,7 +129,7 @@ class Client:
                     found = [(raw, normalized) for raw, normalized in found if normalized]
                     if len({normalized for _, normalized in found}) > 1:
                         result.update(_error="pdp_ambiguous_characteristic", _error_kind="extraction")
-                        break
+                        continue
                     if found:
                         raw, normalized = found[0]
                         matches.append({"label": label, "raw": raw, "normalized": normalized})
@@ -300,10 +295,10 @@ class Client:
         for vid in needed:
             if counts[vid] > 1:
                 self.events.emit("failure", stage="listing", variation_id=vid,
-                                 reason="duplicate_tile_option", row_saved=False)
+                                 reason="duplicate_tile_option", row_saved=True)
         for tile in data:
             vid = str(tile.get("variationId") or "")
-            if vid in needed and counts[vid] == 1:
+            if vid in needed:
                 self.tile_cache[vid] = minimal_tile(tile)
                 self.events.emit("parsed", endpoint="tiles", count=1)
         return {vid: deepcopy(self.tile_cache[vid]) for vid in ids if vid in self.tile_cache}

@@ -346,10 +346,11 @@ def fetch_crocotile_batch(
     items = data if isinstance(data, list) else []
     returned_ids = [_text(item.get("variationId")) if isinstance(item, dict) else None for item in items]
     counts = Counter(returned_ids)
+    duplicate_ids = [vid for vid, count in counts.items() if vid and vid in ids and count > 1]
     unexpected_ids = list(dict.fromkeys(vid for vid in returned_ids if vid and vid not in ids))
     invalid_rows = sum(1 for vid in returned_ids if not vid) + (0 if isinstance(data, list) else 1)
     valid_items = [
-        item for item, vid in zip(items, returned_ids) if vid in ids and counts[vid] == 1
+        item for item, vid in zip(items, returned_ids) if vid in ids
     ]
     valid_ids = {_text(item.get("variationId")) for item in valid_items}
     failed_ids = [vid for vid in ids if vid not in valid_ids]
@@ -359,9 +360,10 @@ def fetch_crocotile_batch(
         "requested": len(ids),
         "returned": len(items),
         "split_depth": _split_depth,
-        "outcome": "incomplete" if failed_ids or unexpected_ids or invalid_rows else "success",
+        "outcome": "incomplete" if failed_ids or unexpected_ids or invalid_rows or duplicate_ids else "success",
         "failed_ids": failed_ids,
         "unexpected_ids": unexpected_ids,
+        "duplicate_ids": duplicate_ids,
         "invalid_rows": invalid_rows,
         **{k: meta.get(k) for k in ("http_status", "body_bytes", "body_sha1", "elapsed_seconds")},
     })
@@ -445,6 +447,7 @@ def run(cfg) -> dict[str, Any]:
     tiles: dict[str, dict[str, Any]] = {}
     failed_ids: list[str] = []
     tilelist_meta: list[dict[str, Any]] = []
+    listing_warnings: list[str] = []
     crocotile_diagnostics: list[dict[str, Any]] = []
     phase = "tilelist"
     try:
@@ -453,10 +456,11 @@ def run(cfg) -> dict[str, Any]:
             (page_rows, has_next), meta = fetch_topseller_page(cfg.SUCHBEGRIFF, offset, cfg.WARMUP_LISTING_URL)
             positions = [row["display_rank"] for row in page_rows]
             if positions != list(range(len(rows) + 1, len(rows) + len(page_rows) + 1)):
-                raise ValueError(f"Topseller page {page} has repeated, missing or out-of-order positions")
+                listing_warnings.append(f"page {page} has repeated, missing or out-of-order positions")
+                print(f"[listing/{cfg.PRODUCT}][WARN] {listing_warnings[-1]}", flush=True)
+            if not page_rows:
+                listing_warnings.append(f"page {page} has no verifiable product cards")
             organic = sum(row["exposure_type"] == "organic" for row in page_rows)
-            if has_next and not organic:
-                raise ValueError(f"Topseller page {page} cannot advance the organic offset")
             rows.extend(dict(row, page_number=page, page_offset=offset) for row in page_rows)
             tilelist_meta.append({
                 "page": page,
@@ -465,6 +469,9 @@ def run(cfg) -> dict[str, Any]:
                 "sponsored_rows": len(page_rows) - organic,
                 **{k: meta.get(k) for k in ("http_status", "body_bytes", "elapsed_seconds")},
             })
+            if has_next and not organic:
+                listing_warnings.append(f"page {page} cannot advance the organic offset")
+                print(f"[listing/{cfg.PRODUCT}][WARN] {listing_warnings[-1]}; retrying the current offset", flush=True)
             if not has_next:
                 break
             # OTTO paginates the ranked stream; ads occupy display slots without consuming its offset.
@@ -508,8 +515,8 @@ def run(cfg) -> dict[str, Any]:
         write_csv(listing_csv, rows)
         finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
         anomalies = [attempt for attempt in crocotile_diagnostics
-                     if attempt.get("unexpected_ids") or attempt.get("invalid_rows")]
-        status = "completed_with_warnings" if failed_ids or anomalies or discount_stickers["unknown_image_count"] else "completed"
+                     if attempt.get("unexpected_ids") or attempt.get("invalid_rows") or attempt.get("duplicate_ids")]
+        status = "completed_with_warnings" if failed_ids or anomalies or listing_warnings or discount_stickers["unknown_image_count"] else "completed"
         write_json(diagnostics_path, {
             "run_id": run_id,
             "status": status,
@@ -526,7 +533,8 @@ def run(cfg) -> dict[str, Any]:
         manifest = {
             **base_manifest,
             "status": status,
-            "success": True,
+            "success": bool(rows),
+            "listing_warnings": listing_warnings,
             "finished_at": finished_at,
             "listing_pages_collected": len(tilelist_meta),
             "listing_rows": len(rows),
