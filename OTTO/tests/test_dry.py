@@ -282,12 +282,12 @@ class ClientTests(Offline):
             self.assertEqual(fetch.call_count, 1)
             self.assertEqual(fetch.call_args.args[0], "https://www.otto.de/kundenbewertungen/100/")
 
-    def test_unrated_without_score_keeps_average_null(self):
+    def test_unrated_without_score_uses_legacy_zero_average(self):
         c = client.Client(Log())
         body = '<div class="js_pdp_cr_sidebar__noReviewsText">Für diesen Artikel wurde noch keine Bewertung abgegeben.</div>'.encode()
         with patch.object(c, "fetch", return_value=(body, {"status": 200})):
             value = c.rating("100")
-        self.assertEqual((value["average_rating"], value["rating_count"], value["rating_state"]), (None, 0, "unrated"))
+        self.assertEqual((value["average_rating"], value["rating_count"], value["rating_state"]), ("0.0", 0, "unrated"))
 
     def test_rating_failure_preserves_independent_field(self):
         for body, expected in ((rating_document(mean="bad"), (None, 123)),
@@ -609,13 +609,14 @@ class PipelineTests(Offline):
             with self.assertRaisesRegex(config.DryError, "output_not_completed"):
                 storage.read_output(state["csv"])
 
-    def test_ratings_and_written_reviews_are_distinct_in_csv(self):
+    def test_rating_count_is_also_saved_as_review_count_in_csv(self):
         cases = (
             ([rating_document()], ("4.3", "123", "rated")),
             ([rating_document(mean="0", count="0")], ("0.0", "0", "unrated")),
-            ([b'<div class="js_pdp_cr_sidebar__noReviewsText">F\xc3\xbcr diesen Artikel wurde noch keine Bewertung abgegeben.</div>'], ("", "0", "unrated")),
+            ([b'<div class="js_pdp_cr_sidebar__noReviewsText">F\xc3\xbcr diesen Artikel wurde noch keine Bewertung abgegeben.</div>'], ("0.0", "0", "unrated")),
             ([rating_document(count="bad")], ("4.3", "", "failed")),
             ([rating_document(mean="bad")], ("", "123", "failed")),
+            ([rating_document(mean="bad", count="0")], ("", "0", "failed")),
             ([rating_document(mean="bad", count="0"), rating_document(count="bad")], ("4.3", "", "failed")),
             ([rating_document(count="bad"), rating_document(mean="bad")], ("4.3", "123", "failed")),
         )
@@ -632,7 +633,7 @@ class PipelineTests(Offline):
                                                    database=MagicMock(return_value={"status": "loaded"}))
                 row = storage.read_output(state["csv"])[0][0]
                 self.assertEqual(row["star_rating"], expected[0])
-                self.assertEqual(row["count_of_reviews"], "0" if expected[2] == "unrated" else "")
+                self.assertEqual(row["count_of_reviews"], "" if expected[1] == "0" and expected[2] == "failed" else expected[1])
                 self.assertEqual(row["count_of_star_ratings"], expected[1])
                 self.assertEqual(log.records[-1][1]["rating_state"], expected[2])
                 self.assertEqual(code, 2 if expected[2] == "failed" else 0)

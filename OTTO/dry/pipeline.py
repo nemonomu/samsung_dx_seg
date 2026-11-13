@@ -252,7 +252,7 @@ def collect(client, events, state, save):
                 row = dict.fromkeys(config.COLUMNS)
                 row.update(country=config.COUNTRY, account_name=config.ACCOUNT_NAME,
                     item=target["product_id"], retailer_sku_name=target["retailer_sku_name"],
-                    product_url=target["product_url"], count_of_reviews=0 if rating["rating_state"] == "unrated" else None,
+                    product_url=target["product_url"], count_of_reviews=rating["rating_count"] if rating["rating_count"] != 0 or rating["rating_state"] == "unrated" else None,
                     count_of_star_ratings=rating["rating_count"], star_rating=rating["average_rating"],
                     main_rank=number, bsr_rank=number if number <= config.BSR_LIMIT else None,
                     calendar_week=state["calendar_week"], crawl_datetime=state["crawl_datetime"],

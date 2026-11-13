@@ -290,7 +290,7 @@ class OttoReviewSummaryDisabledTests(unittest.TestCase):
                 self.assertEqual("", row["summarized_review_content"])
                 self.assertEqual("4.3", row["star_rating"])
                 self.assertEqual("32", row["count_of_star_ratings"])
-                self.assertEqual("", row["count_of_reviews"])
+                self.assertEqual("32", row["count_of_reviews"])
                 self.assertEqual("90%", row["recommendation_intent"])
                 self.assertEqual(review["detailed_review_content"], row["detailed_review_content"])
 
@@ -299,7 +299,9 @@ class OttoReviewSummaryDisabledTests(unittest.TestCase):
         cfg = SimpleNamespace(PRODUCT="TV", ACCOUNT_NAME="OTTO", COUNTRY="DE", SPEC_FIELDS=[],
                               USE_DATASHEET=False, extract_spec=lambda *args, **kwargs: {})
         for review, expected in (({"rating_state": "unrated", "rating_count": 0}, "0"),
-                                 ({"rating_state": "failed", "rating_count": 0}, "")):
+                                 ({"rating_state": "failed", "rating_count": 0}, ""),
+                                 ({"rating_state": "failed", "rating_count": None}, ""),
+                                 ({"rating_state": "failed", "rating_count": 32}, "32")):
             with self.subTest(review=review), tempfile.TemporaryDirectory() as tmpdir:
                 out = Path(tmpdir)
                 with (out / "otto_final_targets.csv").open("w", encoding="utf-8-sig", newline="") as f:

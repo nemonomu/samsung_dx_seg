@@ -95,7 +95,7 @@ class RatingParserTests(unittest.TestCase):
             with self.subTest(html=html):
                 r = parse(html)
                 self.assertEqual("unrated", r["rating_state"])
-                self.assertIsNone(r["average_rating"])
+                self.assertEqual("0.0", r["average_rating"])
                 self.assertEqual(0, r["rating_count"])
 
     def test_missing_summary_is_not_no_reviews(self):
@@ -221,11 +221,11 @@ class RatingCollectionTests(unittest.TestCase):
         self.assertEqual(1, calls)
         self.assertEqual("unrated", r["rating_state"])
 
-    def test_no_reviews_text_has_no_invented_average(self):
+    def test_no_reviews_text_uses_legacy_zero_average(self):
         body = '<div class="js_pdp_cr_sidebar__noReviewsText">Für diesen Artikel wurde noch keine Bewertung abgegeben.</div>'.encode()
         r, calls = self.collect([response(body)])
         self.assertEqual(1, calls)
-        self.assertEqual((None, 0, "unrated"), (r["average_rating"], r["rating_count"], r["rating_state"]))
+        self.assertEqual(("0.0", 0, "unrated"), (r["average_rating"], r["rating_count"], r["rating_state"]))
 
     def test_independent_valid_fields_are_not_overwritten_by_partial_retry(self):
         r, calls = self.collect([response(document(count="bad")),

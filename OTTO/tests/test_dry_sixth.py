@@ -159,7 +159,7 @@ class SixthComparisonTests(base.Offline):
         self.assertEqual([r['sku'] for r in rows], ['GOOD' + str(i).zfill(4) for i in range(1, 11)])
         self.assertEqual([r['capacity'] for r in rows], ['9 kg'] * 10)
         self.assertEqual([r['main_rank'] for r in rows], list(range(1, 11)))
-        self.assertTrue(all(r['count_of_reviews'] is None for r in rows))
+        self.assertTrue(all(r['count_of_reviews'] == 123 for r in rows))
         self.assertTrue(all(r['count_of_star_ratings'] == 123 for r in rows))
         self.assertFalse(any(call[0] == 'pdf' for call in source.calls))
         self.assertEqual(sum(call[0] == 'rating' for call in source.calls), 10)

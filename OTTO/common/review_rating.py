@@ -30,7 +30,7 @@ def parse_rating(soup) -> dict:
                 for n in soup.select(".js_pdp_cr_sidebar__noReviewsText, .cr_list-wrapper--no-review p"))
     if not wrappers:
         if empty and not soup.select_one(".pdp_cr-item-content"):
-            result.update(rating_count=0, rating_state="unrated")
+            result.update(average_rating="0.0", rating_count=0, rating_state="unrated")
         else:
             result["rating_reason"] = "rating_summary_missing"
         return result
