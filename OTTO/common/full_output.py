@@ -509,6 +509,10 @@ def run(cfg, *, limit: int = 0, start: int = 1, pdp_supplement: str = "zenrows",
                     else:
                         pdp_failure_reason = "no_allowed_fields_recovered"
 
+            if cfg.PRODUCT == "TV" and not has_value(spec.get("estimated_annual_electricity_use")):
+                if hasattr(cfg, "extract_power_fallback"):
+                    spec["estimated_annual_electricity_use"] = cfg.extract_power_fallback(target, ds, ctx, sku)
+
             # star rating: per-variation, from the review page ONLY (Kasada-free, matches
             # the actual product page). The crocotile listing aggregate over-counts (it is a
             # model-level number projected onto every variation tile), so it is NOT used.

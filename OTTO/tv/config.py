@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from common import datasheet, model_sku, parsers
+from common import datasheet, eprel, model_sku, parsers
 from common.io_util import RETAILER, COUNTRY as _COUNTRY, env_value, top_info, transliterate
 
 PRODUCT = "TV"
@@ -125,7 +125,23 @@ def extract_spec(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any]
 
 def prepare_context(targets=None) -> dict[str, Any]:
     return model_sku.model_context(targets, SUCHBEGRIFF,
-                                   labels=("Modellbezeichnung", "Bildschirmdiagonale in Zoll"))
+                                   labels=("Modellbezeichnung", "Bildschirmdiagonale in Zoll", HDR_POWER_LABEL))
+
+
+def extract_power_fallback(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any],
+                           sku: str | None) -> str | None:
+    def watt(value):
+        match = re.search(r"([0-9]+(?:[.,][0-9]+)?)[ ]*W(?:$|[^A-Za-z])", str(value or ""), re.I)
+        return f"{match.group(1).replace(',', '.')} W" if match else None
+
+    power = (watt(datasheet.power_by_label(ds, hdr=True))
+             or watt(model_sku.characteristic(target, ctx, HDR_POWER_LABEL)))
+    if power:
+        return power
+    try:
+        return watt(eprel.display_on_mode_power(sku, timeout=30))
+    except Exception:
+        return None
 
 
 def extract_sku(target: dict[str, Any], ds: dict[str, Any], ctx: dict[str, Any] | None = None) -> str | None:

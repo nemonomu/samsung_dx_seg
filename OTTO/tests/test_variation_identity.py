@@ -387,7 +387,9 @@ class VariationIdentityTests(unittest.TestCase):
                 writer.writeheader()
                 writer.writerows(targets)
             with patch.object(full_output, "category_output_root", return_value=out), \
-                    patch.object(tv, "prepare_context", return_value={}), \
+                    patch.object(tv, "prepare_context", return_value={"model": {"other": {tv.HDR_POWER_LABEL: "100 W"}}}), \
+                    patch.object(tv.eprel, "display_on_mode_power", return_value=None), \
+                    patch.object(tv, "extract_power_fallback", wraps=tv.extract_power_fallback) as power_fallback, \
                     patch.object(browser, "BrowserSession") as session, \
                     patch.object(full_output, "fetch_similar_product_names", return_value={}), \
                     patch.object(full_output, "collect_review", return_value={}), \
@@ -397,9 +399,10 @@ class VariationIdentityTests(unittest.TestCase):
                     {"status": 200, "detail_present": True, "body": body} for body in responses
                 ]
                 manifest = full_output.run(tv, detail_sleep=0)
+            self.assertEqual(power_fallback.call_count, 2)
             with (out / "otto_full_output.csv").open(encoding="utf-8-sig", newline="") as f:
                 rows = list(csv.DictReader(f))
-            self.assertEqual([r["estimated_annual_electricity_use"] for r in rows], ["114 W", "", ""])
+            self.assertEqual([r["estimated_annual_electricity_use"] for r in rows], ["114 W", "100 W", ""])
             self.assertEqual(manifest["attempts"][1]["pdp_supplement_failure_reason"], "variation_id_mismatch")
             self.assertEqual(manifest["attempts"][2]["pdp_supplement_failure_reason"], "no_allowed_fields_recovered")
 

@@ -206,6 +206,7 @@ def power_by_label(parsed: dict[str, Any], *, hdr: bool):
     for anchor in anchors:
         for m in re.finditer(re.escape(anchor), flat, re.I):
             win = flat[m.end(): m.end() + 45]
+            win = re.split(r"\bBluetooth(?:[-\s]+Version)?\b", win, maxsplit=1, flags=re.I)[0]
             w = re.search(r"(\d+(?:[.,]\d+)?)\s*W\b", win) or re.search(r"(\d+[.,]\d+)", win)
             if w:
                 return f"{w.group(1).replace(',', '.')} W"

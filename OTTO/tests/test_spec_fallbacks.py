@@ -328,6 +328,11 @@ class EprelMatchConfidenceTests(unittest.TestCase):
 
 
 class OttoTvPdpSpecTests(unittest.TestCase):
+    def test_pdf_hdr_text_does_not_read_bluetooth_version(self) -> None:
+        label = "Leistungsaufnahme im Ein-Zustand bei hohem Dynamikumfang (HDR)"
+        self.assertIsNone(datasheet.power_by_label({"text": label + " Bluetooth-Version 5.3"}, hdr=True))
+        self.assertEqual(datasheet.power_by_label({"text": label + " 114.0 W Bluetooth-Version 5.3"}, hdr=True), "114.0 W")
+
     def test_saved_pdp_reads_the_actual_hdr_row(self) -> None:
         for filename, size, power in (
             ("detail.html", "32", "36 W"),
@@ -359,18 +364,26 @@ class OttoTvPdpSpecTests(unittest.TestCase):
                 )
                 self.assertIsNone(tv_config.extract_pdp_spec(soup).get("estimated_annual_electricity_use"))
 
-    def test_hdr_cannot_be_filled_from_non_pdp_sources(self) -> None:
+    def test_hdr_fallbacks_keep_existing_source_order(self) -> None:
         target = {"retailer_sku_name": "Coocaa 55 Zoll 55R5G LCD-LED Fernseher", "variation_id": "v1"}
         ctx = {"model": {"v1": {tv_config.HDR_POWER_LABEL: "100 W"}}}
-        with patch.object(datasheet, "power_by_label", return_value="5.3 W") as pdf_power, \
+        with patch.object(datasheet, "power_by_label", return_value="90 W") as pdf_power, \
                 patch.object(eprel, "display_on_mode_power", return_value="110 W") as eprel_power:
-            spec = tv_config.extract_spec(target, {}, ctx, sku="55R5G")
-            empty_spec = tv_config.extract_spec(target, {}, {}, sku="55R5G")
-        pdf_power.assert_not_called()
-        eprel_power.assert_not_called()
-        self.assertIsNone(spec["estimated_annual_electricity_use"])
-        self.assertIsNone(empty_spec["estimated_annual_electricity_use"])
-        self.assertEqual(spec["screen_size"], "55")
+            self.assertEqual(tv_config.extract_power_fallback(target, {}, ctx, "55R5G"), "90 W")
+            eprel_power.assert_not_called()
+            pdf_power.return_value = None
+            self.assertEqual(tv_config.extract_power_fallback(target, {}, ctx, "55R5G"), "100 W")
+            eprel_power.assert_not_called()
+            self.assertEqual(tv_config.extract_power_fallback(target, {}, {}, "55R5G"), "110 W")
+            eprel_power.side_effect = OSError("unavailable")
+            self.assertIsNone(tv_config.extract_power_fallback(target, {}, {}, "55R5G"))
+
+    def test_tv_fallback_uses_only_selected_option(self) -> None:
+        target = {"variation_id": "v1"}
+        ctx = {"model": {"v2": {tv_config.HDR_POWER_LABEL: "100 W"}}}
+        with patch.object(datasheet, "power_by_label", return_value=None), \
+                patch.object(eprel, "display_on_mode_power", return_value=None):
+            self.assertIsNone(tv_config.extract_power_fallback(target, {}, ctx, "55R5G"))
 
     def test_url_cm_fallback_used_when_no_zoll_sources(self) -> None:
         cases = [
@@ -430,6 +443,7 @@ class OttoTvPdpSpecTests(unittest.TestCase):
         with patch.object(tv_config.model_sku, "model_context", return_value={}) as context:
             tv_config.prepare_context([{"variation_id": "S5YW1N25MPJP"}])
         self.assertIn("Bildschirmdiagonale in Zoll", context.call_args.kwargs["labels"])
+        self.assertIn(tv_config.HDR_POWER_LABEL, context.call_args.kwargs["labels"])
 
 
 if __name__ == "__main__":
