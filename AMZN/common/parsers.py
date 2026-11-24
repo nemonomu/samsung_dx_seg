@@ -444,19 +444,49 @@ def _ref_capacity_from_title(value: Any) -> str | None:
     return None
 
 
-def _discount_type_value(root: Any) -> str | None:
-    """Extract the first supported deal label without considering coupons."""
-    selectors = (
-        '[id*="DEAL_"][id$="-label"] span',
-        '#dealBadgeSupportingText',
-        '#dealBadge_feature_div .a-badge-text',
-    )
+def _visible_discount_type_value(root: Any, selectors: tuple[str, ...]) -> str | None:
+    """Return the first visible, policy-approved label from a trusted scope."""
     for selector in selectors:
         for node in root.select(selector):
+            if any(
+                parent.has_attr("hidden")
+                or {"aok-hidden", "a-hidden"}.intersection(parent.get("class", []))
+                or re.search(
+                    r"display\s*:\s*none|visibility\s*:\s*hidden",
+                    parent.get("style", ""),
+                    re.I,
+                )
+                for parent in (node, *node.parents)
+            ):
+                continue
             value = normalize_discount_type(clean_text(node.get_text(" ")))
             if value:
                 return value
     return None
+
+
+def _listing_discount_type_value(root: Any) -> str | None:
+    """Extract a deal label only from the current search-result card."""
+    return _visible_discount_type_value(
+        root,
+        (
+            '[id*="DEAL_"][id$="-label"] .a-badge-text',
+            '[id*="DEAL_"][id$="-label"]',
+        ),
+    )
+
+
+def _detail_discount_type_value(root: Any) -> str | None:
+    """Extract the current PDP's visible deal label, excluding recommendations."""
+    return _visible_discount_type_value(
+        root,
+        (
+            "#apex_desktop #dealBadge_feature_div #dealBadgeSupportingText",
+            "#dealBadge_feature_div #dealBadgeSupportingText",
+            "#apex_desktop #dealBadge_feature_div .dealBadgeTextColor:not(.aok-hidden)",
+            "#dealBadge_feature_div .dealBadgeTextColor:not(.aok-hidden)",
+        ),
+    )
 
 
 def parse_listing_html(html: str, *, page: int, sort: str, start_rank: int = 1) -> list[dict[str, Any]]:
@@ -479,7 +509,7 @@ def parse_listing_html(html: str, *, page: int, sort: str, start_rank: int = 1) 
             "retailer_sku_name": clean_text(name_node.get_text(" ")) if name_node else None,
             "final_sku_price": _price_text(item),
             "original_sku_price": _original_price(item),
-            "discount_type": _discount_type_value(item),
+            "discount_type": _listing_discount_type_value(item),
             "sku_popularity": translate_field("sku_popularity", clean_text(item.select_one(".a-badge-label .a-badge-text, .a-badge-label").get_text(" ") if item.select_one(".a-badge-label .a-badge-text, .a-badge-label") else None)),
             "number_of_units_purchased_past_month": clean_text(item.select_one("span.a-size-base.a-color-secondary").get_text(" ") if item.select_one("span.a-size-base.a-color-secondary") else None),
             "sku_status": "Sponsored" if (item.select_one(".puis-sponsored-label-text") or "Gesponsert" in item.get_text(" ")) else None,
@@ -582,7 +612,7 @@ def parse_product_detail_html(html: str, *, product: str | None = None) -> dict[
     )
     data["original_sku_price"] = _original_price(soup)
     data["savings"] = _savings_percentage(soup)
-    data["discount_type"] = _discount_type_value(soup)
+    data["discount_type"] = _detail_discount_type_value(soup)
     data["star_rating"] = _rating_text(soup)
     rating_count = soup.select_one("#acrCustomerReviewText")
     if rating_count:

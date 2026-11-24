@@ -24,9 +24,34 @@ _DISCOUNT_TYPE_EXACT = {
     "limited time deal": "Limited time deal",
     "befristetes angebot": "Limited Time Offer",
     "zeitlich begrenztes angebot": "Limited Time Offer",
+    "black friday big deal": "Black Friday Big Deal",
+    "black friday deal": "Black Friday Deal",
+    "black-friday-angebot": "Black Friday Deal",
+    "black friday angebot": "Black Friday Deal",
+    "angebot des tages": "Deal of the Day",
+    "deal des tages": "Deal of the Day",
+    "blitzangebot": "Lightning Deal",
 }
 _DISCOUNT_TYPE_ENDS_IN_RE = re.compile(
     r"^(?:(?:angebot|offer)\s+)?(?:endet\s+in|ends\s+in)(?:\s+(.+))?$",
+    flags=re.IGNORECASE,
+)
+_DISCOUNT_TYPE_BLOCKED_RE = re.compile(
+    r"(?:coupon|gutschein|voucher|amazon(?:'|’)?s\s+choice|amazons\s+tipp|"
+    r"bestseller|sponsored|gesponsert|prime\s+exclusive|prime\s+exklusiv|"
+    r"top\s+offer|top\s+angebot|du\s+zahlst|you\s+pay)",
+    flags=re.IGNORECASE,
+)
+_DISCOUNT_TYPE_CURRENCY_RE = re.compile(
+    r"[€₹£$¥]|\b(?:EUR|USD|GBP|INR|JPY)\b",
+    flags=re.IGNORECASE,
+)
+_DISCOUNT_TYPE_LABEL_RE = re.compile(
+    r"(?<!\w)(?:deal|offer|sale|angebot|aktion)(?!\w)",
+    flags=re.IGNORECASE,
+)
+_DISCOUNT_TYPE_TIMER_TEMPLATE_RE = re.compile(
+    r"NO_OF_(?:HOURS|MINUTES|SECONDS)",
     flags=re.IGNORECASE,
 )
 _WEEKDAYS = {
@@ -133,12 +158,12 @@ def _clean(value: Any) -> str | None:
 
 
 def normalize_discount_type(value: Any) -> str | None:
-    """Keep only the supported Amazon deal labels in canonical English.
+    """Return a canonical or safely preserved Amazon deal-badge label.
 
-    Amazon.de renders the same deal concepts in German, while coupon price
-    messages use separate text such as ``Du zahlst ... Coupon ...``.  Rejecting
-    everything outside this allowlist prevents coupon and popularity labels
-    from reaching JSONL/CSV/DB output even if an XPath becomes too broad.
+    Known German labels are translated to English. New deal-like labels are
+    preserved so seasonal names do not disappear, while coupons, popularity
+    badges, price messages, hidden timer templates, and other noisy values are
+    rejected at every output boundary that reuses this function.
     """
     text = _clean(value)
     if text is None:
@@ -146,11 +171,21 @@ def normalize_discount_type(value: Any) -> str | None:
     exact = _DISCOUNT_TYPE_EXACT.get(text.casefold())
     if exact:
         return exact
-    match = _DISCOUNT_TYPE_ENDS_IN_RE.fullmatch(text)
-    if not match:
+    if len(text) > 80:
         return None
-    timer = _clean(match.group(1))
-    return "Ends in" if timer is None else f"Ends in {timer}"
+    if _DISCOUNT_TYPE_BLOCKED_RE.search(text):
+        return None
+    if _DISCOUNT_TYPE_CURRENCY_RE.search(text) or re.search(r"\d\s*%", text):
+        return None
+    if _DISCOUNT_TYPE_TIMER_TEMPLATE_RE.search(text):
+        return None
+    match = _DISCOUNT_TYPE_ENDS_IN_RE.fullmatch(text)
+    if match:
+        timer = _clean(match.group(1))
+        return "Ends in" if timer is None else f"Ends in {timer}"
+    if _DISCOUNT_TYPE_LABEL_RE.search(text):
+        return text
+    return None
 
 
 def _replace_case_insensitive(text: str, pattern: str, repl: str) -> str:

@@ -42,43 +42,37 @@ FALLBACK_MAIN_SELECTORS = {
     },
 }
 
-_LOWER = 'translate(normalize-space(.),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")'
-_ALLOWED_RAW_PREDICATE = f"""
-    {_LOWER} = "limited time offer"
-    or {_LOWER} = "hot deal"
-    or {_LOWER} = "limited time deal"
-    or {_LOWER} = "ends in"
-    or starts-with({_LOWER}, "ends in ")
-    or {_LOWER} = "befristetes angebot"
-    or {_LOWER} = "zeitlich begrenztes angebot"
-    or {_LOWER} = "endet in"
-    or starts-with({_LOWER}, "endet in ")
-    or {_LOWER} = "angebot endet in"
-    or starts-with({_LOWER}, "angebot endet in ")
-"""
-
-# Search/listing deal badges have an ASIN-specific DEAL_* label.  Restricting
-# the search to that subtree excludes Amazon's Choice/Tipp and coupon blocks.
-PROPOSED_MAIN_XPATH = f"""
-.//*[contains(@id,"DEAL_") and contains(@id,"-label")]//span[
-{_ALLOWED_RAW_PREDICATE}
-]
+# Select the structural deal-badge location and leave label policy to the
+# shared normalizer. This lets seasonal names through without scanning coupon,
+# navigation, or recommendation text.
+PROPOSED_MAIN_XPATH = """
+(
+  .//*[contains(@id,"DEAL_") and contains(@id,"-label")]
+  //span[contains(concat(" ",normalize-space(@class)," ")," a-badge-text ")]
+)[1]
 """.strip()
 
-# PDPs primarily expose deal text in dealBadgeSupportingText.  The additional
-# branches cover page variants without scanning unrelated coupon/price blocks.
-PROPOSED_DETAIL_XPATH = f"""
-//*[@id="dealBadgeSupportingText"][
-{_ALLOWED_RAW_PREDICATE}
-]
-|
-//*[@id="dealBadge_feature_div"]//span[
-{_ALLOWED_RAW_PREDICATE}
-]
-|
-//*[contains(@id,"DEAL_") and contains(@id,"-label")]//span[
-{_ALLOWED_RAW_PREDICATE}
-]
+PROPOSED_MAIN_FALLBACK_XPATH = """
+(
+  .//*[contains(@id,"DEAL_") and contains(@id,"-label")]
+)[1]
+""".strip()
+
+PROPOSED_DETAIL_XPATH = """
+(
+  //*[@id="apex_desktop"]
+  //*[@id="dealBadge_feature_div"]
+  //*[@id="dealBadgeSupportingText"]
+)[1]
+""".strip()
+
+PROPOSED_DETAIL_FALLBACK_XPATH = """
+(
+  //*[@id="apex_desktop"]
+  //*[@id="dealBadge_feature_div"]
+  //*[contains(concat(" ",normalize-space(@class)," ")," dealBadgeTextColor ")
+      and not(contains(concat(" ",normalize-space(@class)," ")," aok-hidden "))]
+)[1]
 """.strip()
 
 CSV_FIELDS = (
@@ -291,9 +285,13 @@ def _make_row(
     root: Any,
     db_selector: dict[str, str | None] | None,
     proposed_xpath: str,
+    proposed_fallback_xpath: str | None,
 ) -> dict[str, Any]:
     db_raw = _first_xpath(root, db_selector)
-    proposed_raw = _first_xpath(root, {"xpath": proposed_xpath, "fallback": None})
+    proposed_raw = _first_xpath(
+        root,
+        {"xpath": proposed_xpath, "fallback": proposed_fallback_xpath},
+    )
     badge_texts = _unique_css_texts(root, ".a-badge-text")
     coupon_texts = _unique_css_texts(
         root,
@@ -370,6 +368,7 @@ def _listing_rows(
                     root=card,
                     db_selector=current_discount,
                     proposed_xpath=PROPOSED_MAIN_XPATH,
+                    proposed_fallback_xpath=PROPOSED_MAIN_FALLBACK_XPATH,
                 )
             )
             rank += 1
@@ -425,6 +424,7 @@ def _detail_rows(
             root=driver,
             db_selector=current_discount,
             proposed_xpath=PROPOSED_DETAIL_XPATH,
+            proposed_fallback_xpath=PROPOSED_DETAIL_FALLBACK_XPATH,
         )
         rows.append(row)
         print(
