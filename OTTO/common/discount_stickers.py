@@ -1,16 +1,16 @@
-"""Read circular promotion stickers from existing Crocotile image URLs.
-
-No browser, OCR, credentials, or extra product API request is needed. Unknown
-images are retained for manual review, never inferred from deal.highlight.
-"""
+"""Resolve OTTO campaign stickers and retain evidence for unresolved images."""
 from __future__ import annotations
 
+import base64
 import hashlib
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, urlopen
+
+from bs4 import BeautifulSoup
 
 from common.translate import translate_discount_type
 
@@ -67,8 +67,59 @@ def sticker_fields(image_url: Any, deal_id: Any = None) -> dict[str, Any]:
     }
 
 
+def campaign_title(body: bytes) -> str | None:
+    soup = BeautifulSoup(body, "lxml", from_encoding="utf-8")
+    heading = soup.select_one('body > [slot="headline"], .campaign-sheet__container > h1')
+    return _title_text(heading.get_text(" ", strip=True)) if heading else None
+
+
+def _title_text(value: str | None) -> str | None:
+    text = " ".join((value or "").split())
+    return text if 0 < len(text) <= 160 else None
+
+
+def pdp_sticker_title(body: bytes, variation_id: str, deal_id: str) -> str | None:
+    soup = BeautifulSoup(body, "lxml", from_encoding="utf-8")
+    for button in soup.select("button[data-benefit-id][aria-haspopup=dialog]"):
+        if button.get("data-benefit-id") != deal_id:
+            continue
+        encoded = button.get("data-oc-sheet-v1-create.base64-url", "")
+        try:
+            sheet = urlsplit(base64.b64decode(encoded, validate=True).decode("utf-8"))
+        except ValueError:
+            continue
+        if (sheet.scheme or sheet.netloc
+                or sheet.path != f"/benefit-sheet/sheet/pdpProductCampaignFlag/{deal_id}"
+                or parse_qs(sheet.query).get("variationId") != [variation_id]):
+            continue
+        aria = button.get("aria-label", "")
+        title = _title_text(aria.removeprefix("Details zu ")) if aria.startswith("Details zu ") else None
+        if title:
+            return title
+        image = button.select_one("img[alt]")
+        if image:
+            title = _title_text(re.sub(r"\s+Badge$", "", image["alt"], flags=re.I))
+            if title:
+                return title
+    return None
+
+
+def apply_campaign_title(row: dict[str, Any], raw: str, source: str) -> None:
+    row.update(
+        discount_type_raw=raw,
+        discount_type=translate_discount_type(raw) or raw,
+        discount_type_source=source,
+        discount_sticker_status="known",
+    )
+
+
 def refresh_sticker_fields(row: dict[str, Any]) -> None:
-    """Allow offline reprocessing after a mapping update; reject legacy highlights."""
+    """Keep verified titles and refresh the image fallback for older targets."""
+    if row.get("discount_type_source") in {"campaign_sheet", "pdp_sticker"}:
+        raw = _title_text(row.get("discount_type_raw"))
+        if raw:
+            apply_campaign_title(row, raw, row["discount_type_source"])
+            return
     url = row.get("discount_type_image_url")
     legacy = (not url and not row.get("discount_sticker_status")
               and (row.get("discount_type_raw") or row.get("discount_type")))

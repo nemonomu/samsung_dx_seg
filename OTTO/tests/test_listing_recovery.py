@@ -168,6 +168,7 @@ class OttoListingRecoveryTests(unittest.TestCase):
             offset = int(query["o"][0])
             offsets.append(offset)
             return nullcontext(SimpleNamespace(read=lambda: gzip.compress(pages[offset]), status=200,
+                                               geturl=lambda: request.full_url,
                                                headers={"Content-Encoding": "gzip"}))
 
         cfg = SimpleNamespace(PRODUCT="TV", SUCHBEGRIFF="fernseher", WARMUP_LISTING_URL=self.REFERER)

@@ -1,6 +1,7 @@
 """Offline coverage of sticker extraction, retention, output and notification."""
 from __future__ import annotations
 
+import base64
 import io
 import sys
 import tempfile
@@ -9,6 +10,7 @@ from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import discount_stickers as stickers
@@ -19,6 +21,7 @@ from common.translate import translate_discount_type
 
 KNOWN = "https://i.otto.de/i/otto/mpp360_130782_162312"
 UNKNOWN = "https://i.otto.de/i/otto/test_new_sticker"
+BLACK_FRIDAY = "https://i.otto.de/i/otto/mpp360_323650_546679"
 
 
 class DiscountStickerTests(unittest.TestCase):
@@ -100,6 +103,38 @@ class DiscountStickerTests(unittest.TestCase):
                              '<span>nur bis Dienstag</span></div>', "html.parser").div
         self.assertEqual("Deal of the month", parsers.extract_listing_labels(tile)["discount_type"])
 
+    def test_sheet_uses_only_a_campaign_heading(self):
+        self.assertEqual("Black Friday", stickers.campaign_title(b'<span slot="headline">Black Friday</span>'))
+        self.assertEqual("Deal des Monats", stickers.campaign_title(
+            b'<div class="campaign-sheet__container"><h1>Deal des Monats</h1>'
+            b'<span slot="expired">Leider abgelaufen</span></div>'))
+        self.assertIsNone(stickers.campaign_title(b'<h1>Access Denied</h1><p>50 Euro Gutschein</p>'))
+
+    def test_failed_sheet_uses_only_the_matching_detail_sticker(self):
+        row = dict(variation_id="v1", discount_type_deal_id="deal-test",
+                   product_url="https://www.otto.de/p/test/?variationId=wrong")
+
+        def fetch(url, _referer, parser, **_kwargs):
+            query = parse_qs(urlsplit(url).query)
+            self.assertEqual(["v1"], query["variationId"])
+            if "/benefit-sheet/" in url:
+                self.assertEqual(["(und.(suchbegriff.fernseher).(~.(v.1)))"], query["contextDreson"])
+                raise listing.ListingFetchError(url, status=403)
+            badges = []
+            for option, aria, alt in [("v2", "Details zu Wrong option", ""),
+                                      ("v1", "", "Spar-Aktion Badge")]:
+                path = f"/benefit-sheet/sheet/pdpProductCampaignFlag/deal-test?variationId={option}"
+                encoded = base64.b64encode(path.encode()).decode()
+                badges.append(f'<button data-benefit-id="deal-test" aria-haspopup="dialog" aria-label="{aria}" '
+                              f'data-oc-sheet-v1-create.base64-url="{encoded}"><img alt="{alt}"></button>')
+            body = "".join(badges).encode()
+            self.assertIsNone(stickers.pdp_sticker_title(body, "v3", "deal-test"))
+            return parser(body), {"http_status": 200, "final_url": "https://www.otto.de/p/test/"}
+
+        with patch.object(listing, "_fetch", side_effect=fetch), patch.object(listing, "REQUEST_SLEEP", 0):
+            self.assertEqual(("Spar-Aktion", "pdp_sticker", None),
+                             listing.fetch_discount_title(row, "fernseher", row["product_url"]))
+
     def test_report_legacy_and_mismatched_listing_run(self):
         cfg = SimpleNamespace(PRODUCT="TV", SPEC_FIELDS=[])
         rows = [{"batch_id": "test", "main_rank": "1", "bsr_rank": "1"}]
@@ -124,9 +159,17 @@ class DiscountStickerTests(unittest.TestCase):
         page_rows = [dict(display_rank=i + 1, product_id=f"p{i}", variation_id=f"v{i}", exposure_type="organic",
                           source="topseller_tilelist",
                           product_url=f"https://www.otto.de/p/test-{i}/", retailer_sku_name=f"Test TV {i}")
-                     for i in range(4)]
-        tiles = [{"variationId": "v" + str(i), "deal": {"image": {"src": url}, "highlight": "nur diesen Monat"}}
-                 for i, url in enumerate([KNOWN, UNKNOWN, UNKNOWN, None])]
+                     for i in range(7)]
+        tiles = [{"variationId": "v" + str(i), "deal": {"image": {"src": url}, "highlight": "nur diesen Monat",
+                                                      "dealId": f"campaign-{i}" if i >= 4 else None}}
+                 for i, url in enumerate([KNOWN, UNKNOWN, UNKNOWN, None, BLACK_FRIDAY, BLACK_FRIDAY, UNKNOWN])]
+        headings = {"campaign-4": "Black Friday", "campaign-5": "Black Friday Hot-Deals", "campaign-6": "Heroes"}
+
+        def fetch_sheet(url, _referer, parser, **_kwargs):
+            path = urlsplit(url).path
+            label = headings[path.rsplit("/", 1)[-1]]
+            return parser(f'<span slot="headline">{label}</span>'.encode()), {"http_status": 200, "final_url": url}
+
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             out = Path(directory)
             stack.enter_context(patch.object(listing, "ensure_dirs", return_value=out))
@@ -134,13 +177,14 @@ class DiscountStickerTests(unittest.TestCase):
             page = stack.enter_context(patch.object(listing, "fetch_topseller_page",
                                                    return_value=((page_rows, False), {"http_status": 200})))
             api = stack.enter_context(patch.object(listing, "fetch_json", return_value=(tiles, {"http_status": 200})))
+            sheets = stack.enter_context(patch.object(listing, "_fetch", side_effect=fetch_sheet))
             stack.enter_context(patch.object(listing, "LISTING_PAGES_TO_COLLECT", 1))
             stack.enter_context(patch.object(listing, "REQUEST_SLEEP", 0))
             image = stack.enter_context(patch.object(stickers, "urlopen", side_effect=TimeoutError))
             for module in (targets, full_output, notify, db_save):
                 stack.enter_context(patch.object(module, "category_output_root", return_value=out))
-            stack.enter_context(patch.object(targets, "MAIN_TARGET_UNIQUE", 4))
-            stack.enter_context(patch.object(targets, "BSR_TARGET_RANK", 4))
+            stack.enter_context(patch.object(targets, "MAIN_TARGET_UNIQUE", 7))
+            stack.enter_context(patch.object(targets, "BSR_TARGET_RANK", 7))
             stack.enter_context(patch.object(full_output, "fetch_similar_product_names", return_value={}))
             stack.enter_context(patch.object(full_output, "collect_review", return_value={
                 "average_rating": "4.3", "rating_count": 32, "rating_state": "rated"}))
@@ -151,15 +195,19 @@ class DiscountStickerTests(unittest.TestCase):
             listing.run(cfg)
             page.assert_called_once()
             api.assert_called_once()
+            self.assertEqual(3, sheets.call_count)
             image.assert_called_once()
             targets.run(cfg)
             saved = read_csv(out / "otto_final_targets.csv")
             self.assertEqual("Deal des Monats", saved[0]["discount_type_raw"])
             self.assertEqual(UNKNOWN, saved[1]["discount_type_image_url"])
+            self.assertEqual("Heroes", saved[6]["discount_type_raw"])
+            self.assertEqual("campaign_sheet", saved[6]["discount_type_source"])
             full_output.run(cfg, pdp_supplement="none", detail_sleep=0)
             final = read_csv(out / "otto_full_output.csv")
-            self.assertEqual(["Deal of the month", "", "", ""], [r["discount_type"] for r in final])
-            self.assertEqual(["Deal of the month", None, None, None],
+            expected = ["Deal of the month", None, None, None, "Black Friday", "Black Friday Hot-Deals", "Our Hero"]
+            self.assertEqual([value or "" for value in expected], [r["discount_type"] for r in final])
+            self.assertEqual(expected,
                              [db_save._empty_to_none(r["discount_type"], "discount_type") for r in final])
             cfg.DB_TABLE = "public.test_table"
             database = MagicMock()
@@ -172,7 +220,7 @@ class DiscountStickerTests(unittest.TestCase):
                     patch.object(db_save, "safe_backfill_from_retail_history", return_value={
                         "recovered_rows": 0, "recovered_fields": 0, "error": None}):
                 db_save.run(cfg, dry_run=False)
-            self.assertEqual(["Deal of the month", None, None, None],
+            self.assertEqual(expected,
                              [row[0] for row in cursor.executemany.call_args.args[1]])
             notify.run(cfg)
             send.assert_called_once()

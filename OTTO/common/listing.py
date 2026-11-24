@@ -10,18 +10,22 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import time
 import zlib
 from collections import Counter
 from datetime import datetime
+from http.client import HTTPException
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 from common import translate
 from common.parsers import ensure_variation_query, parse_topseller_page
-from common.discount_stickers import sticker_fields, sticker_diagnostics
+from common.discount_stickers import (
+    apply_campaign_title, campaign_title, pdp_sticker_title, sticker_diagnostics, sticker_fields,
+)
 from common.io_util import REFERENCES_ROOT, category_output_root, ensure_dirs, write_csv, write_json
 
 EVERGLADES_URL = "https://www.otto.de/everglades/products"
@@ -153,6 +157,7 @@ def _fetch(
             with urlopen(Request(url, headers=request_headers, method="GET"), timeout=timeout) as resp:
                 body = resp.read()
                 status = resp.status
+                final_url = resp.geturl()
                 response_headers = dict(resp.headers.items())
                 compressed = resp.headers.get("Content-Encoding", "").casefold() == "gzip"
         except HTTPError as exc:
@@ -190,6 +195,7 @@ def _fetch(
             else:
                 meta = {
                     "http_status": status,
+                    "final_url": final_url,
                     "body_bytes": len(body),
                     "body_sha1": hashlib.sha1(body).hexdigest(),
                     "elapsed_seconds": round(time.perf_counter() - started, 3),
@@ -219,6 +225,49 @@ def fetch_topseller_page(suchbegriff: str, offset: int, referer: str) -> tuple[t
     })
     return _fetch(url, referer, lambda body: parse_topseller_page(body, offset),
                   extra_headers={"Accept": "text/html", "Accept-Encoding": "gzip"})
+
+
+def fetch_discount_title(row: dict[str, Any], suchbegriff: str, referer: str) -> tuple[str | None, str | None, str | None]:
+    variation_id = _text(row.get("variation_id")) or ""
+    deal_id = _text(row.get("discount_type_deal_id")) or ""
+    if not all(re.fullmatch(r"[A-Za-z0-9_-]+", value) for value in (variation_id, deal_id)):
+        return None, None, "missing_or_invalid_campaign_identity"
+
+    path = f"/benefit-sheet/sheet/listProductCampaignFlag/{deal_id}"
+    params = urlencode({
+        "variationId": variation_id,
+        "contextDreson": f"(und.(suchbegriff.{suchbegriff}).(~.(v.1)))",
+    })
+    candidates = [(OTTO_BASE_URL + path + "?" + params, campaign_title, "campaign_sheet")]
+    try:
+        product = urlsplit(row.get("product_url") or "")
+    except ValueError:
+        product = None
+    if product and product.scheme == "https" and product.netloc == "www.otto.de" and product.path.startswith("/p/"):
+        product_url = ensure_variation_query(product.geturl(), variation_id)
+        candidates.append((product_url, lambda body: pdp_sticker_title(body, variation_id, deal_id), "pdp_sticker"))
+
+    errors = []
+    for url, parse, source in candidates:
+        if REQUEST_SLEEP > 0:
+            time.sleep(REQUEST_SLEEP)
+        try:
+            title, meta = _fetch(url, referer, parse, timeout=8, retries=0,
+                                 extra_headers={"Accept": "text/html", "Accept-Encoding": "gzip"})
+        except (ListingFetchError, HTTPException, OSError) as exc:
+            status = getattr(exc, "status", None)
+            errors.append(f"{source}:HTTP {status}" if status else f"{source}:{type(exc).__name__}")
+            continue
+        final = urlsplit(meta["final_url"])
+        origin_valid = final.scheme == "https" and final.netloc == "www.otto.de"
+        identity_valid = (
+            final.path == path and parse_qs(final.query).get("variationId") == [variation_id]
+            if source == "campaign_sheet" else final.path.startswith("/p/")
+        )
+        if meta["http_status"] == 200 and origin_valid and identity_valid and title:
+            return title, source, None
+        errors.append(f"{source}:title_missing_or_unverified")
+    return None, None, ", ".join(errors)
 
 
 def build_everglades_url(suchbegriff: str, offset: int) -> str:
@@ -549,14 +598,29 @@ def run(cfg) -> dict[str, Any]:
             if REQUEST_SLEEP > 0:
                 time.sleep(REQUEST_SLEEP)
 
-        phase = "write_output"
+        phase = "discount_stickers"
+        titles = {}
         for row in rows:
             row["discount_sticker_run_id"] = run_id
             tile = tiles.get(str(row.get("variation_id") or ""))
             if tile:
                 row.update({key: value for key, value in crocotile_fields(tile, row.get("retailer_sku_name")).items()
                             if value not in (None, "") or key.startswith("discount_")})
+            if not row.get("discount_type_image_url"):
+                continue
+            key = (row.get("variation_id"), row.get("discount_type_deal_id"))
+            if key not in titles:
+                titles[key] = fetch_discount_title(row, cfg.SUCHBEGRIFF, cfg.WARMUP_LISTING_URL)
+                if titles[key][2]:
+                    print(f"[WARN][discount_type] product={cfg.PRODUCT} variation_id={key[0]} "
+                          f"deal_id={key[1]} lookup_error={titles[key][2]}", flush=True)
+            raw, source, error = titles[key]
+            if raw and source:
+                apply_campaign_title(row, raw, source)
+            if error:
+                row["discount_sticker_lookup_error"] = error
 
+        phase = "write_output"
         discount_stickers = sticker_diagnostics(
             rows, cache_dir=REFERENCES_ROOT / "discount_stickers", product=cfg.PRODUCT, log=True,
         )

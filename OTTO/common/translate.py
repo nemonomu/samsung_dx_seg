@@ -40,6 +40,7 @@ STICKER_TRANSLATIONS = {
     "Deal der Woche": "Deal of the week",
     "Deal & Gewinne": "Deal & Win",
     "Unser Hero": "Our Hero",
+    "Heroes": "Our Hero",
     "Premium Hero": "Premium Hero",
     "Technik Highlights": "Tech Highlights",
     "Pre-Sale": "Pre-Sale",
