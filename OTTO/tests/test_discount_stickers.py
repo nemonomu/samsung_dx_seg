@@ -163,6 +163,17 @@ class DiscountStickerTests(unittest.TestCase):
         tiles = [{"variationId": "v" + str(i), "deal": {"image": {"src": url}, "highlight": "nur diesen Monat",
                                                       "dealId": f"campaign-{i}" if i >= 4 else None}}
                  for i, url in enumerate([KNOWN, UNKNOWN, UNKNOWN, None, BLACK_FRIDAY, BLACK_FRIDAY, UNKNOWN])]
+        delivery_cases = [
+            ("bis Mo., 30. Nov. bei dir", "At your door by Monday, November 30"),
+            ("bis morgen, 27. Nov. bei dir", "At your door by tomorrow, November 27"),
+            ("bis Sa., 28. Nov. bei dir", "At your door by Saturday, November 28"),
+            ("bis Di., 1. Dez. bei dir", "At your door by Tuesday, December 1"),
+            ("bis Mi., 2. Dez. bei dir", "At your door by Wednesday, December 2"),
+            ("in 7-9 Werktagen bei dir", "Available - at your door in 7-9 working days"),
+            ("lieferbar in 2 Wochen", "Available in 2 weeks"),
+        ]
+        for tile, (raw_delivery, _) in zip(tiles, delivery_cases):
+            tile["availability"] = {"detail": raw_delivery}
         headings = {"campaign-4": "Black Friday", "campaign-5": "Black Friday Hot-Deals", "campaign-6": "Heroes"}
 
         def fetch_sheet(url, _referer, parser, **_kwargs):
@@ -205,6 +216,10 @@ class DiscountStickerTests(unittest.TestCase):
             self.assertEqual("campaign_sheet", saved[6]["discount_type_source"])
             full_output.run(cfg, pdp_supplement="none", detail_sleep=0)
             final = read_csv(out / "otto_full_output.csv")
+            self.assertEqual([raw for raw, _ in delivery_cases],
+                             [r["delivery_availability_raw"] for r in saved])
+            expected_delivery = [english for _, english in delivery_cases]
+            self.assertEqual(expected_delivery, [r["delivery_availability"] for r in final])
             expected = ["Deal of the month", None, None, None, "Black Friday", "Black Friday Hot-Deals", "Our Hero"]
             self.assertEqual([value or "" for value in expected], [r["discount_type"] for r in final])
             self.assertEqual(expected,
@@ -213,7 +228,8 @@ class DiscountStickerTests(unittest.TestCase):
             database = MagicMock()
             connection = database.connect.return_value
             cursor = connection.cursor.return_value.__enter__.return_value
-            cursor.fetchall.return_value = [(field, "YES") for field in ("discount_type", "batch_id", "account_name", "product", "count_of_reviews")]
+            cursor.fetchall.return_value = [(field, "YES") for field in ("discount_type", "delivery_availability", "batch_id",
+                "account_name", "product", "count_of_reviews")]
             cursor.fetchone.return_value = None
             with patch.dict(sys.modules, {"psycopg2": database}), \
                     patch.object(db_save, "db_config", return_value={"host": "test.invalid"}), \
@@ -222,6 +238,8 @@ class DiscountStickerTests(unittest.TestCase):
                 db_save.run(cfg, dry_run=False)
             self.assertEqual(expected,
                              [row[0] for row in cursor.executemany.call_args.args[1]])
+            self.assertEqual(expected_delivery,
+                             [row[1] for row in cursor.executemany.call_args.args[1]])
             notify.run(cfg)
             send.assert_called_once()
             subject, body = send.call_args.args

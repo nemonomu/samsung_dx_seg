@@ -6,11 +6,20 @@ delivery_availability. Unknown discount names stay NULL; other fields keep raw.
 from __future__ import annotations
 
 import re
+from datetime import date
 
 WEEKDAYS = {
-    "montag": "Monday", "dienstag": "Tuesday", "mittwoch": "Wednesday",
-    "donnerstag": "Thursday", "freitag": "Friday", "samstag": "Saturday",
-    "sonntag": "Sunday", "morgen": "tomorrow", "heute": "today",
+    "mo": "Monday", "di": "Tuesday", "mi": "Wednesday", "do": "Thursday",
+    "fr": "Friday", "sa": "Saturday", "so": "Sunday",
+    "morgen": "tomorrow", "heute": "today",
+}
+
+DELIVERY_MONTHS = {
+    "jan": (1, "January"), "feb": (2, "February"), "mär": (3, "March"),
+    "mrz": (3, "March"), "apr": (4, "April"), "mai": (5, "May"),
+    "jun": (6, "June"), "jul": (7, "July"), "aug": (8, "August"),
+    "sep": (9, "September"), "sept": (9, "September"), "okt": (10, "October"),
+    "nov": (11, "November"), "dez": (12, "December"),
 }
 
 
@@ -69,6 +78,24 @@ def translate_delivery(value: str | None) -> str | None:
     m = re.match(r"lieferbar - in\s+(\d+(?:-\d+)?) werktagen bei dir", low)
     if m:
         return f"Available - at your door in {m.group(1)} working days"
+    working_days = re.fullmatch(
+        r"in ([1-9][0-9]*)\s*[-–]\s*([1-9][0-9]*) werktagen bei dir", low,
+    )
+    if working_days:
+        first, last = working_days.groups()
+        if (len(first), first) <= (len(last), last):
+            return f"Available - at your door in {first}-{last} working days"
+    deadline = re.fullmatch(r"bis ([a-z]+)\.?, ([0-9]{1,2})\. ([a-zä]+)\.? bei dir", low)
+    if deadline:
+        weekday, day, month = deadline.groups()
+        if weekday in WEEKDAYS and month in DELIVERY_MONTHS:
+            month_number, english_month = DELIVERY_MONTHS[month]
+            try:
+                # OTTO omits the year, so allow February 29.
+                date(2000, month_number, int(day))
+            except ValueError:
+                return s
+            return f"At your door by {WEEKDAYS[weekday]}, {english_month} {int(day)}"
     m = re.match(r"lieferbar in\s+(\d+(?:-\d+)?) wochen", low)
     if m:
         weeks = m.group(1)
